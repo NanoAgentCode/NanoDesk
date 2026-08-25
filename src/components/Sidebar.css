@@ -138,7 +138,6 @@
   background: linear-gradient(100deg, rgba(14, 65, 116, 0.62), rgba(17, 48, 85, 0.82));
 }
 .sidebar-project-item.active .sidebar-project-dot { background: #29dcb6; box-shadow: 0 0 10px rgba(41, 220, 182, 0.72); }
-.project-index-badge { border: 0; color: #8299b1; }
 .project-detail { border-left-color: rgba(94, 145, 190, 0.22); }
 .new-chat-btn, .project-expand-btn, .project-add-chat-btn { color: #a3b8cc; }
 .new-chat-btn:hover, .project-expand-btn:hover, .project-add-chat-btn:hover { color: #42d6ff; background: rgba(29, 145, 227, 0.18); }
@@ -298,19 +297,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.project-index-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: var(--control-radius-sm);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1;
 }
 .sidebar-project-group {
   display: flex;

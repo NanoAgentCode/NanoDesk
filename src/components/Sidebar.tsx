@@ -105,7 +105,6 @@ export default function Sidebar({
               const projectIndexStats = projects.getProjectIndexStatsForPath(project.path);
               const latestDocumentRun = projectIndexStats?.runs.find((run) => run.indexer === "document");
               const isIndexingProject = projects.indexingProjectPath === project.path;
-              const totalIndexUnits = (latestCodeRun?.entity_count || 0) + (latestDocumentRun?.chunk_count || 0);
               const projectIndexTitle = latestCodeRun || latestDocumentRun
                 ? `项目索引：代码 ${latestCodeRun?.entity_count || 0} 个实体，文档 ${latestDocumentRun?.chunk_count || 0} 个片段`
                 : "建立项目索引";
@@ -141,21 +140,25 @@ export default function Sidebar({
                     {isCollapsed ? <Folder size={16} className="sidebar-project-icon" /> : <span className="sidebar-project-dot" />}
                     {!isCollapsed && <span className="project-title" title={tooltipText}>
                       {project.name}
-                      {totalIndexUnits > 0 && <span className="project-index-badge" title={projectIndexTitle}>{totalIndexUnits}</span>}
                     </span>}
-                    {!isCollapsed && <button
-                      className="project-add-chat-btn"
-                      type="button"
-                      aria-label="建立项目索引"
-                      title={isIndexingProject ? "正在建立项目索引" : projectIndexTitle}
-                      disabled={isIndexingProject}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void projects.handleIndexProject(project);
-                      }}
+                    {!isCollapsed && <Tooltip
+                      label={isIndexingProject ? "正在建立项目索引" : projectIndexTitle}
+                      position="right"
+                      openDelay={450}
                     >
-                      <Database size={16} />
-                    </button>}
+                      <button
+                        className="project-add-chat-btn"
+                        type="button"
+                        aria-label={isIndexingProject ? "正在建立项目索引" : projectIndexTitle}
+                        disabled={isIndexingProject}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void projects.handleIndexProject(project);
+                        }}
+                      >
+                        <Database size={16} />
+                      </button>
+                    </Tooltip>}
                     {!isCollapsed && <button
                       className="project-add-chat-btn"
                       type="button"
