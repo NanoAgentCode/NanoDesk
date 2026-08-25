@@ -351,7 +351,7 @@
 }
 .mcp-config-grid .model-config-list { padding: 8px; gap: 4px; }
 .skills-config-list {
-  background: var(--bg-sidebar) !important;
+  background: var(--bg-pane);
   padding: 8px;
   gap: 4px;
 }

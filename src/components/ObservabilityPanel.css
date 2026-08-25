@@ -15,7 +15,7 @@
 .observability-trace-list {
   min-height: 0; overflow-y: auto; display: flex;
   flex-direction: column; gap: 4px; padding: 8px;
-  border-right: 1px solid var(--border-color); background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color); background: var(--bg-pane);
 }
 .observability-span-list {
   min-height: 0; overflow: hidden; display: flex;

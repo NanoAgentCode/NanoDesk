@@ -820,7 +820,7 @@
   overflow: auto;
   padding: 8px;
   border-right: 1px solid var(--border-color);
-  background: var(--bg-sidebar);
+  background: var(--bg-pane);
 }
 .model-config-row {
   display: flex;
@@ -912,7 +912,9 @@
 .model-form-card select:focus {
   border-color: var(--border-color-focus);
   box-shadow: var(--focus-ring);
-  background: var(--bg-sidebar);
+  background: var(--bg-pane);
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
 }
 .model-form-card select {
   cursor: pointer;
