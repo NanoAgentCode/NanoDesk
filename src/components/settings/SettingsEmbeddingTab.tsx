@@ -1,5 +1,6 @@
 import { Activity, Loader2, Save } from "lucide-react";
-import { Button, PasswordInput, Select, TextInput } from "@mantine/core";
+import { PasswordInput, Select, TextInput } from "@mantine/core";
+import IconTooltipButton from "../IconTooltipButton";
 import type { UseModelReturn } from "../../hooks/useModel";
 
 interface SettingsEmbeddingTabProps {
@@ -39,12 +40,12 @@ export default function SettingsEmbeddingTab({ model }: SettingsEmbeddingTabProp
               </span>
             )}
             {(model.embeddingTestStatus.status === "idle" || model.embeddingTestStatus.status === "testing") && <div className="status-spacer" />}
-            <Button variant="default" leftSection={model.embeddingTestStatus.status === "testing" ? <Loader2 className="svg-spin" /> : <Activity />} onClick={model.handleTestEmbedding} disabled={model.embeddingTestStatus.status === "testing"}>
-              测试连接
-            </Button>
-            <Button leftSection={<Save />} onClick={model.handleSaveEmbeddingModel}>
-              保存并使用
-            </Button>
+            <IconTooltipButton label={model.embeddingTestStatus.status === "testing" ? "测试中" : "测试连接"} onClick={model.handleTestEmbedding} disabled={model.embeddingTestStatus.status === "testing"}>
+              {model.embeddingTestStatus.status === "testing" ? <Loader2 size={18} className="svg-spin" /> : <Activity size={18} />}
+            </IconTooltipButton>
+            <IconTooltipButton label="保存并使用" tone="success" onClick={model.handleSaveEmbeddingModel}>
+              <Save size={18} />
+            </IconTooltipButton>
           </div>
         </div>
       </div>

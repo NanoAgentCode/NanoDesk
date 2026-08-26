@@ -192,17 +192,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-secondary);
   cursor: pointer;
-}
-.skills-source-info-btn:hover,
-.skills-source-info-btn:focus-visible {
-  border-color: var(--control-primary-border);
-  color: var(--accent-indigo);
-  background: var(--control-primary-soft-bg);
 }
 .skills-github-source {
   display: flex;

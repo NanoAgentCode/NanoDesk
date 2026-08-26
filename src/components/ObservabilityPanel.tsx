@@ -1,6 +1,7 @@
 import { Activity, ChevronDown, ChevronRight, RotateCcw, Trash2, Loader2 } from "lucide-react";
 import type { ObservabilitySpan } from "../types";
 import ObservabilityDetailPanel from "./ObservabilityDetailPanel";
+import IconTooltipButton from "./IconTooltipButton";
 import {
   buildObservabilitySpanDetail,
   formatDuration,
@@ -53,12 +54,12 @@ export default function ObservabilityPanel({
           <p className="description">查看最近的本地调用链路、耗时和错误状态。</p>
         </div>
         <div className="observability-actions">
-          <button className="icon-text-btn" onClick={onRefresh} disabled={isLoading} title="刷新" type="button">
+          <IconTooltipButton label={isLoading ? "刷新中" : "刷新链路"} onClick={onRefresh} disabled={isLoading}>
             {isLoading ? <Loader2 size={18} className="svg-spin" /> : <RotateCcw size={18} />}
-          </button>
-          <button className="icon-text-btn danger-btn" onClick={onClear} disabled={spanCount === 0} title="清空" type="button">
+          </IconTooltipButton>
+          <IconTooltipButton label="清空链路" tone="danger" onClick={onClear} disabled={spanCount === 0}>
             <Trash2 size={18} />
-          </button>
+          </IconTooltipButton>
         </div>
       </div>
 

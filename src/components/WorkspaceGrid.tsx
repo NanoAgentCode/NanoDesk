@@ -1,4 +1,5 @@
 import { Search, Save, Trash2, Plus } from "lucide-react";
+import IconTooltipButton from "./IconTooltipButton";
 import { kindLabels, statusLabels, workspaceLabels } from "../lib/appHelpers";
 import type { ItemKind } from "../types";
 import type { UseWorkspaceReturn } from "../hooks/useWorkspace";
@@ -70,16 +71,12 @@ export default function WorkspaceGrid({ workspace, memory, workspaceRef }: Works
         </div>
         {workspace.activeKind !== "memory" && (
           <div style={{ padding: "12px", borderTop: "1px solid var(--border-color)", display: "flex", justifyContent: "center" }}>
-            <button
-              className="icon-text-btn secondary"
+            <IconTooltipButton
               onClick={() => void workspace.handleNewItem(workspace.activeKind === "all" ? "note" : workspace.activeKind as ItemKind)}
-              title={`新建${kindLabels[workspace.activeKind as ItemKind] || "笔记"}`}
-              aria-label={`新建${kindLabels[workspace.activeKind as ItemKind] || "笔记"}`}
-              type="button"
+              label={`新建${kindLabels[workspace.activeKind as ItemKind] || "笔记"}`}
             >
-              <Plus />
-              <span>新建{kindLabels[workspace.activeKind as ItemKind] || "笔记"}</span>
-            </button>
+              <Plus size={18} />
+            </IconTooltipButton>
           </div>
         )}
       </section>
@@ -98,12 +95,12 @@ export default function WorkspaceGrid({ workspace, memory, workspaceRef }: Works
                 用于对话上下文
               </label>
               <div className="editor-actions memory-actions">
-                <button className="icon-text-btn success-btn" onClick={() => void memory.handleSaveMemory(workspace.query)} disabled={!memory.selectedMemory} type="button" aria-label="保存" title="保存">
+                <IconTooltipButton label="保存记忆" tone="success" onClick={() => void memory.handleSaveMemory(workspace.query)} disabled={!memory.selectedMemory}>
                   <Save size={18} />
-                </button>
-                <button className="icon-text-btn danger-btn" onClick={() => void memory.handleDeleteMemory(workspace.query)} disabled={!memory.selectedMemory} type="button" aria-label="删除" title="删除">
+                </IconTooltipButton>
+                <IconTooltipButton label="删除记忆" tone="danger" onClick={() => void memory.handleDeleteMemory(workspace.query)} disabled={!memory.selectedMemory}>
                   <Trash2 size={18} />
-                </button>
+                </IconTooltipButton>
               </div>
             </div>
 
@@ -139,12 +136,12 @@ export default function WorkspaceGrid({ workspace, memory, workspaceRef }: Works
                 <option value="archived">已归档</option>
               </select>
               <div className="editor-actions">
-                <button className="icon-text-btn success-btn" onClick={workspace.handleSaveItem} disabled={!workspace.selectedItem} type="button" aria-label="保存" title="保存">
+                <IconTooltipButton label="保存" tone="success" onClick={workspace.handleSaveItem} disabled={!workspace.selectedItem}>
                   <Save size={18} />
-                </button>
-                <button className="icon-text-btn danger-btn" onClick={workspace.handleDeleteItem} disabled={!workspace.selectedItem} type="button" aria-label="删除" title="删除">
+                </IconTooltipButton>
+                <IconTooltipButton label="删除" tone="danger" onClick={workspace.handleDeleteItem} disabled={!workspace.selectedItem}>
                   <Trash2 size={18} />
-                </button>
+                </IconTooltipButton>
               </div>
             </div>
 

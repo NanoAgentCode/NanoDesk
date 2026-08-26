@@ -1,4 +1,5 @@
 import { Archive, RotateCcw, Trash2 } from "lucide-react";
+import IconTooltipButton from "../IconTooltipButton";
 import { formatDateTime } from "../../lib/formatters";
 import { formatWebSearchBadge, renderMessageContent } from "../../lib/appHelpers";
 import { parseToolResult } from "../../lib/messageHelpers";
@@ -61,28 +62,25 @@ export default function SettingsArchiveTab({
                   </span>
                 </div>
                 <div className="archive-preview-actions">
-                  <button
-                    className="icon-text-btn"
+                  <IconTooltipButton
+                    label="恢复归档对话"
                     onClick={() => {
                       const conversation = archivedConversations.find((c) => c.id === previewArchivedId);
                       if (conversation) void handleRestoreConversation(conversation);
                     }}
-                    type="button"
-                    title="恢复"
                   >
                     <RotateCcw size={18} />
-                  </button>
-                  <button
-                    className="icon-text-btn danger-btn"
+                  </IconTooltipButton>
+                  <IconTooltipButton
+                    label="删除归档对话"
+                    tone="danger"
                     onClick={() => {
                       const conversation = archivedConversations.find((c) => c.id === previewArchivedId);
                       if (conversation) void handleDeleteArchivedConversation(conversation);
                     }}
-                    type="button"
-                    title="删除"
                   >
                     <Trash2 size={18} />
-                  </button>
+                  </IconTooltipButton>
                 </div>
               </div>
               <div className="archive-preview-messages-container">

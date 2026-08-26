@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { CircleAlert, DownloadCloud, Save, Power, Trash2, Plus, Pencil } from "lucide-react";
+import { CircleAlert, DownloadCloud, Loader2, Save, Power, Trash2, Plus, Pencil, X } from "lucide-react";
+import IconTooltipButton from "../IconTooltipButton";
 import { isBuiltInSkill } from "../../lib/skills";
 import type { UseSkillsReturn } from "../../hooks/useSkills";
 
@@ -35,14 +36,14 @@ export default function SettingsSkillsTab({ skills }: SettingsSkillsTabProps) {
           </button>
         </div>
         {activeSkillsPane === "skills" && (
-          <button className="icon-only-btn compact" onClick={() => { skills.setIsAddingSkill(true); skills.setSelectedSkillId(""); }} title="添加自定义技能" aria-label="添加自定义技能" type="button">
-            <Plus />
-          </button>
+          <IconTooltipButton onClick={() => { skills.setIsAddingSkill(true); skills.setSelectedSkillId(""); }} label="添加自定义技能">
+            <Plus size={18} />
+          </IconTooltipButton>
         )}
         {activeSkillsPane === "sources" && (
-          <button className="icon-only-btn compact" onClick={() => { setSourcePanelMode("edit"); skills.handleNewGitHubSource(); }} title="新建 Skills 源" aria-label="新建 Skills 源" type="button">
-            <Plus />
-          </button>
+          <IconTooltipButton onClick={() => { setSourcePanelMode("edit"); skills.handleNewGitHubSource(); }} label="新建 Skills 源">
+            <Plus size={18} />
+          </IconTooltipButton>
         )}
       </div>
       <p className="description">配置并扩展 AI 助手的工具与自动化能力（例如内置 Anthropic 官方的 Text Editor、Bash Tool 等）。</p>
@@ -63,24 +64,20 @@ export default function SettingsSkillsTab({ skills }: SettingsSkillsTabProps) {
                   <strong>{source.name}</strong>
                   <span>{source.repo}{source.path ? `/${source.path}` : ""}</span>
                 </button>
-                <button
+                <IconTooltipButton
                   className="skills-source-info-btn"
                   onClick={() => { setSourcePanelMode("preview"); skills.handlePreviewGitHubSourceSkills(source.id); }}
-                  type="button"
-                  title="查看该源包含的 Skills"
-                  aria-label={`查看 ${source.name} 包含的 Skills`}
+                  label={`查看 ${source.name} 包含的 Skills`}
                 >
                   <CircleAlert size={16} />
-                </button>
-                <button
+                </IconTooltipButton>
+                <IconTooltipButton
                   className="skills-source-info-btn"
                   onClick={() => { setSourcePanelMode("edit"); skills.handleSelectGitHubSource(source.id); }}
-                  type="button"
-                  title="编辑该 Skills 源"
-                  aria-label={`编辑 ${source.name}`}
+                  label={`编辑 ${source.name}`}
                 >
                   <Pencil size={15} />
-                </button>
+                </IconTooltipButton>
               </div>
             ))}
           </div>
@@ -140,22 +137,19 @@ export default function SettingsSkillsTab({ skills }: SettingsSkillsTabProps) {
                   />
                 </div>
                 <div className="skills-source-actions">
-                  <button className="icon-text-btn" onClick={skills.handleSaveGitHubSource} type="button" title="保存源">
+                  <IconTooltipButton label="保存源" tone="success" onClick={skills.handleSaveGitHubSource}>
                     <Save size={16} />
-                  </button>
-                  <button className="icon-text-btn danger-btn" onClick={skills.handleDeleteGitHubSource} type="button" title="删除源">
+                  </IconTooltipButton>
+                  <IconTooltipButton label="删除源" tone="danger" onClick={skills.handleDeleteGitHubSource}>
                     <Trash2 size={16} />
-                  </button>
-                  <button
-                    className="icon-text-btn skills-github-sync-btn"
+                  </IconTooltipButton>
+                  <IconTooltipButton
+                    label={skills.isSyncingGitHubSkills ? "同步中" : "从当前源同步技能"}
                     onClick={skills.handleSyncGitHubSkills}
                     disabled={skills.isSyncingGitHubSkills}
-                    type="button"
-                    title="从当前源同步技能"
                   >
-                    <DownloadCloud size={16} />
-                    {skills.isSyncingGitHubSkills ? "同步中" : "同步"}
-                  </button>
+                    {skills.isSyncingGitHubSkills ? <Loader2 size={16} className="svg-spin" /> : <DownloadCloud size={16} />}
+                  </IconTooltipButton>
                 </div>
               </>
             ) : skills.sourceSkillPreview ? (
@@ -238,8 +232,8 @@ export default function SettingsSkillsTab({ skills }: SettingsSkillsTabProps) {
                 <textarea value={skills.newSkillDraft.description} onChange={(e) => skills.setNewSkillDraft(prev => ({ ...prev, description: e.target.value }))} placeholder="描述该技能的作用以及模型如何调用它..." rows={2} className="skills-textarea-custom" />
               </div>
               <div className="skills-add-form-actions">
-                <button className="secondary" onClick={() => { skills.setIsAddingSkill(false); if (skills.skills.length > 0) skills.setSelectedSkillId(skills.skills[0].id); }} type="button">取消</button>
-                <button className="primary" onClick={skills.handleSaveNewSkill} type="button"><Save size={15} /> 确认添加</button>
+                <IconTooltipButton label="取消添加" onClick={() => { skills.setIsAddingSkill(false); if (skills.skills.length > 0) skills.setSelectedSkillId(skills.skills[0].id); }}><X size={16} /></IconTooltipButton>
+                <IconTooltipButton label="确认添加" tone="success" onClick={skills.handleSaveNewSkill}><Save size={16} /></IconTooltipButton>
               </div>
             </div>
           ) : (() => {
@@ -266,13 +260,13 @@ export default function SettingsSkillsTab({ skills }: SettingsSkillsTabProps) {
                   </div>
                 </div>
                 <div className="skills-form-actions">
-                  <button className={skill.enabled ? "icon-text-btn danger-btn" : "icon-text-btn"} onClick={() => skills.handleToggleSkill(skill.id, !skill.enabled)} type="button" title={skill.enabled ? "禁用技能" : "启用技能"}>
+                  <IconTooltipButton label={skill.enabled ? "禁用技能" : "启用技能"} tone={skill.enabled ? "danger" : "default"} onClick={() => skills.handleToggleSkill(skill.id, !skill.enabled)}>
                     <Power size={18} />
-                  </button>
+                  </IconTooltipButton>
                   {!isSystemSkill && (
-                    <button className="icon-text-btn danger-btn" onClick={() => skills.handleDeleteSkill(skill.id)} type="button" title="删除技能">
+                    <IconTooltipButton label="删除技能" tone="danger" onClick={() => skills.handleDeleteSkill(skill.id)}>
                       <Trash2 size={18} />
-                    </button>
+                    </IconTooltipButton>
                   )}
                 </div>
               </>

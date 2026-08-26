@@ -28,6 +28,7 @@
 }
 .env-actions-menu button {
   display: flex; align-items: center; width: 100%;
+  gap: 8px;
   min-height: 34px; padding: 0 10px;
   border-radius: var(--control-radius-sm);
   color: var(--control-text); font-size: var(--font-size-md); text-align: left;

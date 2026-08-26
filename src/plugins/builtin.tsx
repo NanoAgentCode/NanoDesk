@@ -1,8 +1,9 @@
-import { Activity, Archive, Bot, Brain, Cpu, Monitor, Server, Settings, Sparkles, Sun } from "lucide-react";
+import { Activity, Archive, Bot, Brain, Cpu, Fingerprint, Monitor, Server, Settings, Sparkles, Sun } from "lucide-react";
 import { AppPluginRegistry, type FrontendPlugin } from "../core/plugins";
 import OpsPanel from "../components/OpsPanel";
 import SettingsThemeTab from "../components/settings/SettingsThemeTab";
 import SettingsMemoryTab from "../components/settings/SettingsMemoryTab";
+import SettingsProfileTab from "../components/settings/SettingsProfileTab";
 import SettingsArchiveTab from "../components/settings/SettingsArchiveTab";
 import SettingsModelTab from "../components/settings/SettingsModelTab";
 import SettingsEmbeddingTab from "../components/settings/SettingsEmbeddingTab";
@@ -30,9 +31,15 @@ const coreUiPlugin: FrontendPlugin = {
       label: "记忆库",
       icon: Brain,
       onActivate: ({ workspace }) => workspace.handleKindChange("memory"),
-      render: ({ workspace, memory, workspaceRef, model }) => (
-        <SettingsMemoryTab workspace={workspace} memory={memory} workspaceRef={workspaceRef as React.Ref<HTMLElement>} activeModelId={model.activeModelId} />
+      render: ({ workspace, memory, workspaceRef }) => (
+        <SettingsMemoryTab workspace={workspace} memory={memory} workspaceRef={workspaceRef as React.Ref<HTMLElement>} />
       )
+    },
+    {
+      id: "profile",
+      label: "用户画像",
+      icon: Fingerprint,
+      render: ({ model }) => <SettingsProfileTab activeModelId={model.activeModelId} />
     },
     {
       id: "model",

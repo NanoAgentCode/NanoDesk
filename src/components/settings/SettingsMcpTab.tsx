@@ -1,14 +1,11 @@
-import { AlertTriangle, Info, Loader2, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, Info, Loader2, PlugZap, Plus, RotateCcw, Save, Trash2, Unplug } from "lucide-react";
 import {
-  ActionIcon,
   Alert,
-  Button,
-  Group,
   Select,
   Textarea,
-  TextInput,
-  Tooltip
+  TextInput
 } from "@mantine/core";
+import IconTooltipButton from "../IconTooltipButton";
 import { formatMcpTransportLabel } from "../../lib/formatters";
 import type { UseMcpReturn } from "../../hooks/useMcp";
 import type { McpServerDraft } from "../../types";
@@ -69,16 +66,14 @@ export default function SettingsMcpTab({ mcp }: SettingsMcpTabProps) {
       <div className="mcp-kv-field">
         <div className="mcp-kv-field-header">
           <span>{label}</span>
-          <Tooltip label={`添加${label}`} openDelay={450}>
-            <ActionIcon variant="subtle" size="sm" onClick={() => mcp.setMcpDraft(addObjectEntry(mcp.mcpDraft, field))} aria-label={`添加${label}`}><Plus /></ActionIcon>
-          </Tooltip>
+          <IconTooltipButton className="settings-icon-compact" label={`添加${label}`} onClick={() => mcp.setMcpDraft(addObjectEntry(mcp.mcpDraft, field))}><Plus size={15} /></IconTooltipButton>
         </div>
         <div className="mcp-kv-list">
           {entries.map(([key, value], index) => (
             <div className="mcp-kv-row" key={`${field}-${index}`}>
               <TextInput size="xs" value={key} onChange={(event) => mcp.setMcpDraft(updateObjectEntry(mcp.mcpDraft, field, index, event.currentTarget.value, value))} placeholder="名称" />
               <TextInput size="xs" value={value} onChange={(event) => mcp.setMcpDraft(updateObjectEntry(mcp.mcpDraft, field, index, key, event.currentTarget.value))} placeholder="值" />
-              <ActionIcon variant="subtle" color="red" size="sm" onClick={() => mcp.setMcpDraft(removeObjectEntry(mcp.mcpDraft, field, index))} aria-label={`删除${label}`}><Trash2 /></ActionIcon>
+              <IconTooltipButton className="settings-icon-compact" label={`删除${label}`} tone="danger" onClick={() => mcp.setMcpDraft(removeObjectEntry(mcp.mcpDraft, field, index))}><Trash2 size={15} /></IconTooltipButton>
             </div>
           ))}
           {entries.length === 0 && <div className="mcp-kv-empty">未配置</div>}
@@ -91,9 +86,7 @@ export default function SettingsMcpTab({ mcp }: SettingsMcpTabProps) {
     <div className="settings-tab-content model-tab-content">
       <div className="model-header-row">
         <h3>MCP 配置</h3>
-        <Tooltip label="添加 MCP 服务器" openDelay={450}>
-          <ActionIcon variant="light" color="nanoBlue" onClick={mcp.handleNewMcpServer} aria-label="添加 MCP 服务器"><Plus /></ActionIcon>
-        </Tooltip>
+        <IconTooltipButton label="添加 MCP 服务器" onClick={mcp.handleNewMcpServer}><Plus size={18} /></IconTooltipButton>
       </div>
       <p className="description description--tight">连接符合 Model Context Protocol 规范的工具服务器，支持 stdio、SSE 和 Streamable HTTP。</p>
       <div className="model-config-grid mcp-config-grid">
@@ -106,13 +99,13 @@ export default function SettingsMcpTab({ mcp }: SettingsMcpTabProps) {
                 onClick={() => mcp.setSelectedMcpServerId(server.config.id)} type="button">
                 <div className="mcp-config-row-header">
                   <strong>{server.config.name}</strong>
-                  <Button className={connected ? "mcp-connection-badge connected" : "mcp-connection-badge"}
-                    variant="subtle" color={connected ? "teal" : "gray"} size="compact-xs"
+                  <IconTooltipButton className="settings-icon-compact"
+                    label={busy ? "处理中" : connected ? "断开 MCP 服务器" : "连接 MCP 服务器"}
+                    tone={connected ? "success" : "default"}
                     onClick={(event) => { event.stopPropagation(); if (connected) { void mcp.handleDisconnectMcpServer(server.config.id); } else { void mcp.handleConnectMcpServer(server.config.id); } }}
-                    loading={busy}>
-                    {busy ? <Loader2 className="svg-spin mcp-loader-small" /> : <span className="mcp-pill-indicator" />}
-                    <span>{connected ? "已连接" : "未连接"}</span>
-                  </Button>
+                    disabled={busy}>
+                    {busy ? <Loader2 size={15} className="svg-spin mcp-loader-small" /> : connected ? <Unplug size={15} /> : <PlugZap size={15} />}
+                  </IconTooltipButton>
                 </div>
                 <span title={server.config.command || server.config.url}>{formatMcpTransportLabel(server.config.transport)} · {server.config.command || server.config.url} · {server.tools.length} tools</span>
                 {server.status.error && (
@@ -164,15 +157,15 @@ export default function SettingsMcpTab({ mcp }: SettingsMcpTabProps) {
               )}
               {mcp.selectedMcpServer && (
                 <div className="mcp-tools-tooltip-wrap">
-                  <ActionIcon variant="subtle" size="sm" aria-label="查看工具详情"><Info /></ActionIcon>
+                  <IconTooltipButton className="settings-icon-compact" label="查看工具详情"><Info size={15} /></IconTooltipButton>
                   <div className="mcp-tools-tooltip" role="tooltip">
                     <div className="mcp-tools-tooltip-header">
                       <strong>工具详情{mcp.selectedMcpServer.status.connected ? ` · ${mcp.selectedMcpServer.tools.length}` : ""}</strong>
                       {mcp.selectedMcpServer.status.connected && (
-                        <ActionIcon variant="subtle" size="sm" onClick={() => void mcp.handleRefreshMcpTools(mcp.selectedMcpServer!.config.id)}
-                          disabled={mcp.mcpBusyId === mcp.selectedMcpServer.config.id} aria-label="刷新工具列表">
-                          {mcp.mcpBusyId === mcp.selectedMcpServer.config.id ? <Loader2 className="svg-spin" /> : <RotateCcw />}
-                        </ActionIcon>
+                        <IconTooltipButton className="settings-icon-compact" label={mcp.mcpBusyId === mcp.selectedMcpServer.config.id ? "刷新中" : "刷新工具列表"} onClick={() => void mcp.handleRefreshMcpTools(mcp.selectedMcpServer!.config.id)}
+                          disabled={mcp.mcpBusyId === mcp.selectedMcpServer.config.id}>
+                          {mcp.mcpBusyId === mcp.selectedMcpServer.config.id ? <Loader2 size={15} className="svg-spin" /> : <RotateCcw size={15} />}
+                        </IconTooltipButton>
                       )}
                     </div>
                     {!mcp.selectedMcpServer.status.connected && <div className="mcp-tools-tooltip-empty">连接后可查看工具</div>}
@@ -191,10 +184,10 @@ export default function SettingsMcpTab({ mcp }: SettingsMcpTabProps) {
                 </div>
               )}
             </div>
-            <Group gap="xs">
-              <Button leftSection={<Save />} onClick={mcp.handleSaveMcpServer}>保存配置</Button>
-              <Button color="red" variant="light" leftSection={<Trash2 />} onClick={mcp.handleDeleteMcpServer} disabled={mcp.mcpBusyId === mcp.mcpDraft.id}>删除</Button>
-            </Group>
+            <div className="profile-header-actions">
+              <IconTooltipButton label="保存 MCP 配置" tone="success" onClick={mcp.handleSaveMcpServer}><Save size={18} /></IconTooltipButton>
+              <IconTooltipButton label="删除 MCP 配置" tone="danger" onClick={mcp.handleDeleteMcpServer} disabled={mcp.mcpBusyId === mcp.mcpDraft.id}><Trash2 size={18} /></IconTooltipButton>
+            </div>
           </div>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { Activity, Edit3, Loader2, Plus, Save, Trash2 } from "lucide-react";
-import { ActionIcon, PasswordInput, Select, TextInput, Tooltip, UnstyledButton } from "@mantine/core";
+import { PasswordInput, Select, TextInput, UnstyledButton } from "@mantine/core";
+import IconTooltipButton from "../IconTooltipButton";
 import { normalizeModelDraft } from "../../hooks/useModel";
 import type { UseModelReturn } from "../../hooks/useModel";
 
@@ -16,11 +17,9 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
     <div className="settings-tab-content model-tab-content">
       <div className="model-header-row">
         <h3>LLM管理</h3>
-        <Tooltip label="新建模型配置" openDelay={450}>
-          <ActionIcon variant="light" color="nanoBlue" onClick={() => model.handleNewModelConfig(setShowModelConfig)} aria-label="新建模型配置">
-            <Plus size={15} />
-          </ActionIcon>
-        </Tooltip>
+        <IconTooltipButton label="新建模型配置" onClick={() => model.handleNewModelConfig(setShowModelConfig)}>
+          <Plus size={18} />
+        </IconTooltipButton>
       </div>
       <p className="description description--tight">配置用于聊天对话的大语言模型，供 AI 助手和会话调用。</p>
       <div className="model-config-grid llm-config-grid">
@@ -92,21 +91,15 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
               </span>
             )}
             {(model.llmTestStatus.status === "idle" || model.llmTestStatus.status === "testing") && <div className="status-spacer" />}
-            <Tooltip label={model.llmTestStatus.status === "testing" ? "测试中" : "测试连接"}>
-              <ActionIcon variant="default" onClick={model.handleTestLlm} disabled={model.llmTestStatus.status === "testing"} aria-label="测试连接">
-                {model.llmTestStatus.status === "testing" ? <Loader2 className="svg-spin" /> : <Activity />}
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label={isEditingModel ? "保存修改并使用" : "创建模型并使用"}>
-              <ActionIcon variant="filled" color="nanoBlue" onClick={model.handleSaveModel} aria-label="保存模型">
-                {isEditingModel ? <Edit3 /> : <Save />}
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="删除模型">
-              <ActionIcon variant="light" color="red" aria-label="删除模型" onClick={model.handleDeleteModel} disabled={!isEditingModel}>
-                <Trash2 />
-              </ActionIcon>
-            </Tooltip>
+            <IconTooltipButton label={model.llmTestStatus.status === "testing" ? "测试中" : "测试连接"} onClick={model.handleTestLlm} disabled={model.llmTestStatus.status === "testing"}>
+              {model.llmTestStatus.status === "testing" ? <Loader2 size={18} className="svg-spin" /> : <Activity size={18} />}
+            </IconTooltipButton>
+            <IconTooltipButton label={isEditingModel ? "保存修改并使用" : "创建模型并使用"} tone="success" onClick={model.handleSaveModel}>
+              {isEditingModel ? <Edit3 size={18} /> : <Save size={18} />}
+            </IconTooltipButton>
+            <IconTooltipButton label="删除模型" tone="danger" onClick={model.handleDeleteModel} disabled={!isEditingModel}>
+              <Trash2 size={18} />
+            </IconTooltipButton>
           </div>
         </div>
       </div>

@@ -190,7 +190,6 @@
 .body-input:focus {
   border-color: var(--border-color-focus);
   box-shadow: 0 0 0 3px rgba(0,240,255,0.08);
-  background: var(--bg-sidebar);
 }
 .tag-input { flex: 0 0 auto; background: var(--bg-pane); }
 .model-panel {
@@ -225,7 +224,7 @@
 .editor-header select:focus, .search-bar input:focus,
 .title-input:focus, .tag-input:focus, .body-input:focus {
   border-color: var(--border-color-focus);
-  box-shadow: var(--focus-ring); background: var(--bg-sidebar);
+  box-shadow: var(--focus-ring);
 }
 .row-resizer {
   flex: 0 0 7px; cursor: row-resize;

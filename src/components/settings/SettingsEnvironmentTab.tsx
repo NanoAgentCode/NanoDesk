@@ -1,4 +1,5 @@
-import { ChevronDown } from "lucide-react";
+import { Download, FolderCog, Loader2, MoreHorizontal, RefreshCw, Save } from "lucide-react";
+import IconTooltipButton from "../IconTooltipButton";
 import type { UseEnvReturn } from "../../hooks/useEnv";
 
 interface SettingsEnvironmentTabProps {
@@ -29,20 +30,20 @@ export default function SettingsEnvironmentTab({ env }: SettingsEnvironmentTabPr
           </div>
           <div className="env-status-actions">
             <div className="env-actions-menu-wrap">
-              <button className="secondary env-action-btn" type="button" onClick={() => env.setShowEnvActionsMenu((current) => !current)} aria-expanded={env.showEnvActionsMenu}>
-                更多<ChevronDown size={16} />
-              </button>
+              <IconTooltipButton label="更多环境操作" onClick={() => env.setShowEnvActionsMenu((current) => !current)} aria-expanded={env.showEnvActionsMenu}>
+                <MoreHorizontal size={18} />
+              </IconTooltipButton>
               {env.showEnvActionsMenu && (
                 <div className="env-actions-menu">
                   <button type="button" onClick={() => { env.setShowEnvActionsMenu(false); void env.runEnvCheck(); }} disabled={env.isCheckingEnv || env.isInstallingEnv}>
-                    {env.isCheckingEnv ? "正在检测..." : "重新检测环境"}
+                    {env.isCheckingEnv ? <Loader2 size={15} className="svg-spin" /> : <RefreshCw size={15} />} {env.isCheckingEnv ? "正在检测..." : "重新检测环境"}
                   </button>
                   <button type="button" onClick={() => { env.setShowEnvActionsMenu(false); void env.handleAutoInstallMissing(); }} disabled={env.isCheckingEnv || env.isInstallingEnv}>
-                    {env.isInstallingEnv ? "正在安装..." : "自动配置/安装 (winget)"}
+                    {env.isInstallingEnv ? <Loader2 size={15} className="svg-spin" /> : <Download size={15} />} {env.isInstallingEnv ? "正在安装..." : "自动配置/安装 (winget)"}
                   </button>
                   {env.envStatus.node && env.envStatus.python && (
                     <button type="button" onClick={() => { env.setShowEnvActionsMenu(false); env.setShowCustomPaths((current) => !current); }}>
-                      {env.showCustomPaths ? "隐藏自定义配置" : "配置自定义路径"}
+                      <FolderCog size={15} /> {env.showCustomPaths ? "隐藏自定义配置" : "配置自定义路径"}
                     </button>
                   )}
                 </div>
@@ -87,9 +88,9 @@ export default function SettingsEnvironmentTab({ env }: SettingsEnvironmentTabPr
           </div>
           {!env.envStatus.tavily_cli && (
             <div className="env-status-actions">
-              <button className="secondary env-action-btn" type="button" onClick={env.handleInstallTavilyCli} disabled={env.isInstallingEnv || env.isCheckingEnv}>
-                {env.isInstallingEnv ? "安装中..." : "安装 CLI"}
-              </button>
+              <IconTooltipButton label={env.isInstallingEnv ? "安装中" : "安装 Tavily CLI"} onClick={env.handleInstallTavilyCli} disabled={env.isInstallingEnv || env.isCheckingEnv}>
+                {env.isInstallingEnv ? <Loader2 size={17} className="svg-spin" /> : <Download size={17} />}
+              </IconTooltipButton>
             </div>
           )}
         </div>
@@ -103,9 +104,9 @@ export default function SettingsEnvironmentTab({ env }: SettingsEnvironmentTabPr
             <label className="env-section-label">Tavily API Key:</label>
             <input type="password" value={env.tavilyApiKey} onChange={(e) => env.setTavilyApiKey(e.target.value)} placeholder="tvly-..." className="env-input-compact" />
           </div>
-          <button className="secondary" onClick={env.handleSaveTavilyApiKey} disabled={env.isSavingTavilyApiKey} type="button" style={{ height: "32px" }}>
-            {env.isSavingTavilyApiKey ? "保存中..." : "保存 Key"}
-          </button>
+          <IconTooltipButton label={env.isSavingTavilyApiKey ? "保存中" : "保存 Tavily API Key"} tone="success" onClick={env.handleSaveTavilyApiKey} disabled={env.isSavingTavilyApiKey}>
+            {env.isSavingTavilyApiKey ? <Loader2 size={17} className="svg-spin" /> : <Save size={17} />}
+          </IconTooltipButton>
         </div>
       </div>
       <div className="env-status-banner">
@@ -125,9 +126,9 @@ export default function SettingsEnvironmentTab({ env }: SettingsEnvironmentTabPr
           </div>
           {!env.envStatus.paddleocr && (
             <div className="env-status-actions">
-              <button className="secondary env-action-btn" type="button" onClick={env.handleInstallPaddleOcr} disabled={env.isInstallingEnv || env.isCheckingEnv || !env.envStatus.python}>
-                {env.isInstallingEnv ? "安装中..." : "安装 OCR"}
-              </button>
+              <IconTooltipButton label={env.isInstallingEnv ? "安装中" : "安装 PaddleOCR"} onClick={env.handleInstallPaddleOcr} disabled={env.isInstallingEnv || env.isCheckingEnv || !env.envStatus.python}>
+                {env.isInstallingEnv ? <Loader2 size={17} className="svg-spin" /> : <Download size={17} />}
+              </IconTooltipButton>
             </div>
           )}
         </div>

@@ -1743,6 +1743,39 @@
   background: color-mix(in srgb, var(--bg-card) 92%, transparent);
 }
 
+.icon-tooltip-target {
+  display: inline-flex;
+}
+
+.icon-tooltip-target > .icon-text-btn {
+  width: var(--control-height-sm);
+  padding: 0;
+}
+
+.icon-tooltip-target > .icon-text-btn.settings-icon-compact {
+  width: 28px;
+  min-height: 28px;
+}
+
+.icon-tooltip-target > .icon-text-btn.skills-source-info-btn {
+  width: 28px;
+  min-height: 28px;
+}
+
+.icon-tooltip-target > .settings-icon-action:not(.success-btn):not(.danger-btn) {
+  border-color: var(--control-primary-border);
+  color: var(--accent-indigo);
+  background: var(--control-primary-soft-bg);
+}
+
+.icon-tooltip-target > .settings-icon-action:not(.success-btn):not(.danger-btn):hover:not(:disabled),
+.icon-tooltip-target > .settings-icon-action:not(.success-btn):not(.danger-btn):focus-visible:not(:disabled) {
+  border-color: var(--control-primary-bg);
+  color: var(--control-primary-text);
+  background: var(--control-primary-bg);
+  box-shadow: var(--control-primary-shadow);
+}
+
 .profile-settings-title-row,
 .profile-settings-actions,
 .profile-header-actions,
@@ -1755,6 +1788,28 @@
 .profile-settings-title-row {
   justify-content: space-between;
   gap: 16px;
+}
+
+.profile-settings-summary {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.profile-settings-expand {
+  flex: 0 0 auto;
+}
+
+.profile-settings-expand svg {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  transition: transform 160ms ease;
+}
+
+.profile-settings-expand svg.is-expanded {
+  transform: rotate(180deg);
 }
 
 .profile-settings-title-row h4,
