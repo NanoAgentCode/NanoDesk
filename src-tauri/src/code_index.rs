@@ -493,7 +493,7 @@ fn extract_pending_relations(
     relations
 }
 
-fn entity_for_line<'a>(entities: &'a [CodeEntity], line: i64) -> Option<&'a CodeEntity> {
+fn entity_for_line(entities: &[CodeEntity], line: i64) -> Option<&CodeEntity> {
     entities
         .iter()
         .filter(|entity| entity.start_line <= line && entity.end_line >= line)
@@ -523,7 +523,7 @@ fn extract_invoke_target(line: &str) -> Option<String> {
 }
 
 fn quoted_value(value: &str) -> Option<String> {
-    let start = value.find(|ch| ch == '"' || ch == '\'')?;
+    let start = value.find(['"', '\''])?;
     let quote = value[start..].chars().next()?;
     let rest = &value[start + quote.len_utf8()..];
     let end = rest.find(quote)?;

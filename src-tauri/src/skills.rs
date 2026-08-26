@@ -329,7 +329,7 @@ async fn github_status_error(response: reqwest::Response) -> AppError {
             })
         })
         .filter(|message| !message.trim().is_empty())
-        .unwrap_or_else(|| text);
+        .unwrap_or(text);
 
     AppError::Message(format!(
         "GitHub request failed with HTTP {status}: {detail}"

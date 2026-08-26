@@ -490,7 +490,7 @@ fn is_profile_statement(value: &str, explicit_context: bool) -> bool {
     ]
     .iter()
     .any(|marker| lower.contains(marker));
-    (first_person && stable_marker) || (explicit_context && stable_marker)
+    (first_person || explicit_context) && stable_marker
 }
 
 fn is_log_or_secret_line(value: &str) -> bool {

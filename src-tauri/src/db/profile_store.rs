@@ -31,6 +31,16 @@ struct ReadyObservation {
     observed_at: DateTime<Utc>,
 }
 
+struct ProfileFactAssertion<'a> {
+    work: &'a ProfileBatchWork,
+    operation: &'a ProfileOperation,
+    value: &'a str,
+    normalized: &'a str,
+    meta: ProfileDimensionMeta,
+    max_revision: i64,
+    sources: &'a [ProfileBatchObservation],
+}
+
 impl Database {
     pub fn get_profile_settings(&self) -> AppResult<ProfileSettings> {
         self.conn
@@ -765,15 +775,15 @@ impl Database {
                     .unwrap_or(0);
 
                 match operation.action.as_str() {
-                    "assert" => self.assert_profile_fact(
+                    "assert" => self.assert_profile_fact(ProfileFactAssertion {
                         work,
                         operation,
-                        &value,
-                        &normalized,
+                        value: &value,
+                        normalized: &normalized,
                         meta,
                         max_revision,
-                        &sources,
-                    )?,
+                        sources: &sources,
+                    })?,
                     "retract" => self.retract_profile_fact(
                         &operation.dimension,
                         &normalized,
@@ -1101,16 +1111,16 @@ impl Database {
             .unwrap_or(0))
     }
 
-    fn assert_profile_fact(
-        &self,
-        work: &ProfileBatchWork,
-        operation: &ProfileOperation,
-        value: &str,
-        normalized: &str,
-        meta: ProfileDimensionMeta,
-        max_revision: i64,
-        sources: &[ProfileBatchObservation],
-    ) -> AppResult<()> {
+    fn assert_profile_fact(&self, assertion: ProfileFactAssertion<'_>) -> AppResult<()> {
+        let ProfileFactAssertion {
+            work,
+            operation,
+            value,
+            normalized,
+            meta,
+            max_revision,
+            sources,
+        } = assertion;
         if meta.single {
             let newer_revision: i64 = self.conn.query_row(
                 "SELECT COALESCE(MAX(last_observation_revision), 0) FROM user_profile_facts WHERE dimension = ?1",

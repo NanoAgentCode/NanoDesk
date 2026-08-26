@@ -1,5 +1,6 @@
 use tauri::State;
 
+use crate::db::RagFileReplacement;
 use crate::error::{AppError, AppResult};
 use crate::llm::create_embeddings;
 use crate::models::{RagChunkMatch, RagFile, RagFileDraft};
@@ -55,16 +56,16 @@ pub async fn index_rag_file(state: State<'_, AppState>, draft: RagFileDraft) -> 
     }
 
     let content_hash = rag_content_hash(&draft.name, &content);
-    state.db.lock().await.replace_rag_file(
-        &draft.conversation_id,
-        &draft.name,
-        &draft.mime,
-        draft.size,
-        &content_hash,
-        &chunks,
-        &embeddings,
-        &embedding_model,
-    )
+    state.db.lock().await.replace_rag_file(RagFileReplacement {
+        conversation_id: &draft.conversation_id,
+        name: &draft.name,
+        mime: &draft.mime,
+        size: draft.size,
+        content_hash: &content_hash,
+        chunks: &chunks,
+        embeddings: &embeddings,
+        embedding_model: &embedding_model,
+    })
 }
 
 #[tauri::command]

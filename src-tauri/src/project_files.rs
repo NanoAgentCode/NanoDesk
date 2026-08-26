@@ -421,7 +421,7 @@ fn open_file_location_in_file_manager(
         command
             .spawn()
             .map_err(|err| AppError::Message(format!("打开资源管理器失败: {err}")))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "macos")]

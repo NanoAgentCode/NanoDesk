@@ -3,7 +3,7 @@ use std::io::Read;
 use tauri::State;
 
 use crate::error::{AppError, AppResult};
-use crate::{finish_observation, start_observation, AppState};
+use crate::{finish_observation, start_observation, AppState, ObservationStart};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct AbsoluteFileContent {
@@ -19,13 +19,15 @@ pub async fn read_absolute_file(
 ) -> AppResult<AbsoluteFileContent> {
     let span = start_observation(
         &state,
-        "read_absolute_file",
-        "tool",
-        Some("file"),
-        Some(path.clone()),
-        None,
-        serde_json::json!({}),
-        None,
+        ObservationStart {
+            operation: "read_absolute_file",
+            category: "tool",
+            entity_type: Some("file"),
+            entity_id: Some(path.clone()),
+            input_summary: None,
+            metadata: serde_json::json!({}),
+            trace_id: None,
+        },
     )
     .await;
     let result = (|| -> AppResult<AbsoluteFileContent> {
@@ -216,11 +218,11 @@ fn extract_doc_binary_text(data: &[u8]) -> String {
         let mut j = i;
         while j + 1 < data.len() {
             let value = u16::from_le_bytes([data[j], data[j + 1]]);
-            if (value >= 0x20 && value <= 0x7E)
+            if (0x20..=0x7E).contains(&value)
                 || value == 0x0A
                 || value == 0x0D
                 || value == 0x09
-                || (value >= 0x4E00 && value <= 0x9FFF)
+                || (0x4E00..=0x9FFF).contains(&value)
             {
                 utf16_chars.push(value);
                 j += 2;

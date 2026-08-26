@@ -622,10 +622,10 @@ fn prompt_line(theme: &CliTheme, label: &str, default: Option<&str>) -> AppResul
     match default {
         Some(default) => print!(
             "  {} {} ",
-            theme.prompt(&format!("{label}:")),
-            theme.muted(&format!("[{default}]"))
+            theme.prompt(format!("{label}:")),
+            theme.muted(format!("[{default}]"))
         ),
-        None => print!("  {} ", theme.prompt(&format!("{label}:"))),
+        None => print!("  {} ", theme.prompt(format!("{label}:"))),
     }
     io::stdout().flush()?;
     let mut value = String::new();
@@ -909,10 +909,10 @@ async fn build_system_message(
 fn default_app_data_dir() -> AppResult<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        return env::var_os("APPDATA")
+        env::var_os("APPDATA")
             .map(PathBuf::from)
             .map(|path| path.join(APP_IDENTIFIER))
-            .ok_or_else(|| AppError::Message("无法确定 APPDATA 目录".to_string()));
+            .ok_or_else(|| AppError::Message("无法确定 APPDATA 目录".to_string()))
     }
     #[cfg(target_os = "macos")]
     {
@@ -946,7 +946,7 @@ fn print_banner(
     println!(
         "{} {}",
         theme.brand("◆ Nano CLI"),
-        theme.accent(&format!("· {} ({})", model.name, model.model))
+        theme.accent(format!("· {} ({})", model.name, model.model))
     );
     match project {
         Some(path) => {
@@ -959,18 +959,14 @@ fn print_banner(
                     theme.command(short_session_id(&conversation.id)),
                     conversation.title,
                 ),
-                None => println!(
-                    "{} {}",
-                    theme.label("会话："),
-                    "新会话（首次发送消息时保存）"
-                ),
+                None => println!("{} 新会话（首次发送消息时保存）", theme.label("会话：")),
             }
         }
-        None => println!("{} {}", theme.label("模式："), "普通临时对话（不保存会话）"),
+        None => println!("{} 普通临时对话（不保存会话）", theme.label("模式：")),
     }
     println!(
         "{}\n",
-        theme.muted(&format!(
+        theme.muted(format!(
             "输入 {} 查看命令，{} 退出。",
             theme.command("/help"),
             theme.command("/exit")
@@ -995,7 +991,7 @@ fn print_sessions(sessions: &[Conversation]) {
     }
     println!(
         "\n{}",
-        theme.muted(&format!(
+        theme.muted(format!(
             "使用 {} 恢复，或 {} 恢复最近会话。",
             theme.command("nano --resume <会话ID>"),
             theme.command("nano --continue")
@@ -1074,10 +1070,9 @@ fn display_project_path(path: &Path) -> String {
         if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
             return format!(r"\\{unc}");
         }
-        return path
-            .strip_prefix(r"\\?\")
+        path.strip_prefix(r"\\?\")
             .unwrap_or(path.as_ref())
-            .to_string();
+            .to_string()
     }
     #[cfg(not(target_os = "windows"))]
     {

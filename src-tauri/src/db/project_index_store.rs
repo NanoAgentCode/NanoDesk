@@ -236,7 +236,7 @@ impl Database {
                 let mut rows = stmt.query(params![
                     project_path,
                     indexer,
-                    like_patterns.get(0).map(String::as_str).unwrap_or(""),
+                    like_patterns.first().map(String::as_str).unwrap_or(""),
                     like_patterns.get(1).map(String::as_str).unwrap_or(""),
                     like_patterns.get(2).map(String::as_str).unwrap_or(""),
                     like_patterns.get(3).map(String::as_str).unwrap_or(""),
