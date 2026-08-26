@@ -1,6 +1,8 @@
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
+#[cfg(not(test))]
+use std::thread;
 
 use uuid::Uuid;
 
@@ -262,7 +264,8 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         None => default_app_data_dir()?,
     };
     std::fs::create_dir_all(&data_dir)?;
-    let db = Database::open(data_dir.join("nano-agent.sqlite3"))?;
+    let db_path = data_dir.join("nano-agent.sqlite3");
+    let db = Database::open(db_path.clone())?;
     let project = match &options.mode {
         SessionMode::Temporary => None,
         SessionMode::Project(path) => {
@@ -329,6 +332,7 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
             rebuild_project_indexes(&db, root)?;
         }
     }
+    start_profile_worker(db_path);
 
     if let Some(prompt) = options.prompt.as_deref() {
         ask(
@@ -341,6 +345,13 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
             prompt,
         )
         .await?;
+        if let Err(error) = crate::profile::run_database_worker_cycle(&db).await {
+            crate::logging::warn(
+                "profile-cli-worker",
+                "post-response cycle failed",
+                serde_json::json!({ "error": error.to_string() }),
+            );
+        }
         return Ok(());
     }
 
@@ -416,6 +427,52 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
     }
     Ok(())
 }
+
+#[cfg(not(test))]
+fn start_profile_worker(db_path: PathBuf) {
+    thread::spawn(move || {
+        let runtime = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                crate::logging::warn(
+                    "profile-cli-worker",
+                    "runtime creation failed",
+                    serde_json::json!({ "error": error.to_string() }),
+                );
+                return;
+            }
+        };
+        let db = match Database::open(db_path) {
+            Ok(db) => db,
+            Err(error) => {
+                crate::logging::warn(
+                    "profile-cli-worker",
+                    "database open failed",
+                    serde_json::json!({ "error": error.to_string() }),
+                );
+                return;
+            }
+        };
+        runtime.block_on(async move {
+            loop {
+                if let Err(error) = crate::profile::run_database_worker_cycle(&db).await {
+                    crate::logging::warn(
+                        "profile-cli-worker",
+                        "background cycle failed",
+                        serde_json::json!({ "error": error.to_string() }),
+                    );
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+            }
+        });
+    });
+}
+
+#[cfg(test)]
+fn start_profile_worker(_db_path: PathBuf) {}
 
 fn resolve_requested_conversation(
     db: &Database,
@@ -685,6 +742,7 @@ async fn ask(
     messages.push(user_message.clone());
 
     let request_id = Uuid::new_v4().to_string();
+    let lease_owner = format!("cli-chat-{request_id}");
     let request = ChatStreamRequest {
         request_id,
         model_config_id: model.id.clone(),
@@ -696,19 +754,30 @@ async fn ask(
     let mut stream_error = None;
     print!("\n{} ", CliTheme::stdout().brand("nano:"));
     io::stdout().flush()?;
-    stream_chat_completion(model.clone(), request, |event| {
-        match event {
-            ChatStreamEvent::Delta { content, .. } => {
-                print!("{content}");
-                io::stdout().flush()?;
-                answer.push_str(&content);
+    db.start_profile_foreground_lease(&lease_owner, 30)?;
+    let stream_result = {
+        let stream = stream_chat_completion(model.clone(), request, |event| {
+            match event {
+                ChatStreamEvent::Delta { content, .. } => {
+                    print!("{content}");
+                    io::stdout().flush()?;
+                    answer.push_str(&content);
+                }
+                ChatStreamEvent::Error { message, .. } => stream_error = Some(message),
+                ChatStreamEvent::ReasoningDelta { .. } | ChatStreamEvent::Done { .. } => {}
             }
-            ChatStreamEvent::Error { message, .. } => stream_error = Some(message),
-            ChatStreamEvent::ReasoningDelta { .. } | ChatStreamEvent::Done { .. } => {}
+            Ok(())
+        });
+        tokio::pin!(stream);
+        loop {
+            match tokio::time::timeout(std::time::Duration::from_secs(10), &mut stream).await {
+                Ok(result) => break result,
+                Err(_) => db.start_profile_foreground_lease(&lease_owner, 30)?,
+            }
         }
-        Ok(())
-    })
-    .await?;
+    };
+    db.finish_profile_foreground_lease(&lease_owner)?;
+    stream_result?;
     println!("\n");
     if let Some(message) = stream_error {
         return Err(AppError::Message(message));
@@ -757,6 +826,9 @@ async fn build_system_message(
         "你是 NanoAgent 的终端助手。回答应准确、简明、可执行。当前临时会话只保存在进程内，退出后不会写入对话历史。"
     };
     let mut sections = vec![session_instruction.to_string()];
+    if let Some(profile_context) = crate::profile::load_profile_context(db)? {
+        sections.push(profile_context);
+    }
     if !memory_context.is_empty() {
         sections.push(format!(
             "用户相关记忆（仅在与问题有关时使用）：\n{memory_context}"

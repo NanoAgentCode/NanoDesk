@@ -38,105 +38,11 @@ export function extractMemoryDraft(content: string) {
   };
 }
 
-export function extractPersonalizationMemoryDraft(content: string) {
-  const normalized = compactPersonalizationText(content);
-  if (!normalized || normalized.length > 240 || normalized.endsWith("?") || normalized.endsWith("？")) {
-    return null;
-  }
-
-  const lower = normalized.toLowerCase();
-  const isPreference =
-    /(我.*(喜欢|偏好|更喜欢|不喜欢|讨厌|习惯|希望你|以后.*回答|回复.*尽量|默认.*用)|请你以后|以后请)/.test(normalized) ||
-    /\b(i|i'm|i am|me)\b.*\b(prefer|like|dislike|usually|always|want you to|don't like)\b/.test(lower);
-  const isProfile =
-    /(我是|我叫|我的名字|我目前|我正在|我主要|我负责|我的工作|我用的是|常用|工作目录|项目是)/.test(normalized) ||
-    /\b(i am|i'm|my name is|i work on|i use|my role is|i'm responsible for)\b/.test(lower);
-
-  if (!isPreference && !isProfile) {
-    return null;
-  }
-
-  const policy = classifyPersonalization(normalized, lower, isPreference);
-  const tags = ["auto", "personalization", isPreference ? "preference" : "profile"];
-  if (policy.dimension) {
-    tags.push(`${policy.multi ? "profile-dimension" : "personalization"}:${policy.dimension}`);
-  }
-  if (policy.always) {
-    tags.push("personalization:always");
-  }
-  const title = buildPersonalizationTitle(normalized, isPreference ? "偏好" : "用户画像");
-
-  return {
-    title,
-    content: normalized,
-    tags,
-    enabled: true
-  };
-}
-
-function compactPersonalizationText(content: string) {
-  return content
-    .replace(/!\[[^\]]*]\([^)]+\)/g, "")
-    .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
-    .replace(/\s+/g, " ")
-    .replace(/^(请|帮我|麻烦你|你)?\s*(记住|记一下|记到记忆|保存到记忆|加入记忆|以后记得)[：:\s,，]*/i, "")
-    .trim();
-}
-
-function classifyPersonalization(content: string, lower: string, isPreference: boolean) {
-  if (isPreference) {
-    if (/(中文|英文|英语|语言).*(回答|回复)|(?:回答|回复).*(中文|英文|英语|语言)/.test(content) || /\b(chinese|english|language)\b.*\b(answer|reply|respond)/.test(lower)) {
-      return { dimension: "response-language", always: true };
-    }
-    if (/(简洁|简短|精简|详细|展开|啰嗦|回答长度|回复长度)/.test(content) || /\b(concise|brief|short|detailed|verbose)\b/.test(lower)) {
-      return { dimension: "response-length", always: true };
-    }
-    if (/(表格|列表|要点|分点|markdown|代码块|回答格式|回复格式)/i.test(content) || /\b(table|bullet|markdown|format)\b/.test(lower)) {
-      return { dimension: "response-format", always: true };
-    }
-    if (/(语气|表达风格|回答风格|回复风格|正式|随意|直接一点)/.test(content) || /\b(tone|response style|formal|casual)\b/.test(lower)) {
-      return { dimension: "response-tone", always: true };
-    }
-    if (/(希望你|以后.*(?:回答|回复)|请你以后|以后请)/.test(content) || /\b(always|want you to)\b/.test(lower)) {
-      return { dimension: "response-style", always: true };
-    }
-    if (/(工作方式|工作流程|我习惯|先.+再|每次.+先)/.test(content) || /\b(workflow|i usually)\b/.test(lower)) {
-      return { dimension: "workflow", always: false, multi: true };
-    }
-    return { dimension: null, always: false };
-  }
-
-  if (/(我叫|我的名字)/.test(content) || /\b(my name is)\b/.test(lower)) {
-    return { dimension: "profile-name", always: true };
-  }
-  if (/(我的工作|我的角色|我负责|我是.*(?:工程师|开发|设计师|产品|经理|学生|教师))/.test(content) || /\b(my role is|i'm responsible for|i am an? .*?(engineer|developer|designer|manager))\b/.test(lower)) {
-    return { dimension: "profile-role", always: true };
-  }
-  if (/(工作目录|项目目录|workspace)/i.test(content)) {
-    return { dimension: "profile-workspace", always: false };
-  }
-  if (/(我用的是|操作系统|windows|macos|linux)/i.test(content)) {
-    return { dimension: "profile-environment", always: false };
-  }
-  if (/(常用|主要使用|技术栈|开发语言|框架)/.test(content) || /\b(i use|tech stack|framework|programming language)\b/.test(lower)) {
-    return { dimension: "tooling", always: false, multi: true };
-  }
-  if (/(项目是|我正在做|我主要维护|长期项目)/.test(content) || /\b(i work on|my project|i maintain)\b/.test(lower)) {
-    return { dimension: "project", always: false, multi: true };
-  }
-  if (/(我关注|我感兴趣|研究方向)/.test(content) || /\b(i am interested in|i care about)\b/.test(lower)) {
-    return { dimension: "interest", always: false, multi: true };
-  }
-  return { dimension: null, always: false };
-}
-
-function buildPersonalizationTitle(content: string, fallback: string) {
-  const title = content
-    .replace(/[。.!！?？\n\r].*$/s, "")
-    .replace(/^(请|麻烦你|以后请|请你以后)\s*/, "")
-    .slice(0, 24)
-    .trim();
-  return title || fallback;
+export function isExplicitProfileInstruction(content: string) {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  const explicit = /(记住我|请记住我的|以后都|从现在起)|\b(remember that i|please remember my|from now on)\b/i.test(normalized);
+  const profileSignal = /(我|我的).*(偏好|喜欢|习惯|默认|身份|角色|工作|使用|项目|环境|语言|格式|语气|简洁|详细)|\b(i|my)\b.*\b(prefer|like|usually|always|role|work|use|project|language|format|tone)\b/i.test(normalized);
+  return explicit && profileSignal;
 }
 
 export interface ParsedToolCall {

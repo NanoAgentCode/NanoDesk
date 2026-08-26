@@ -17,6 +17,7 @@ export const systemMessage: ChatMessage = {
 
 export function buildSystemMessage(
   memories: Memory[],
+  profileContext: string | null = null,
   activeProject: ProjectEntry | null = null,
   projectFiles: ProjectFileEntry[] = [],
   skills: any[] = [],
@@ -161,6 +162,7 @@ export function buildSystemMessage(
 
   const sections = [
     runtimeContext,
+    profileContext || "",
     projectContext,
     mcpContext,
     skillsContext || mcpContext ? `当前已启用的技能列表与工具调用规范：\n${skillsContext || "无已启用本地技能"}\n\n${toolsSystemInstruction}` : "",

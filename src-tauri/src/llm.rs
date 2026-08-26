@@ -13,11 +13,20 @@ struct OpenAiChatRequest {
     temperature: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
 struct OpenAiChatResponse {
     choices: Vec<OpenAiChoice>,
+    usage: Option<OpenAiUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiUsage {
+    prompt_tokens: i64,
+    completion_tokens: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,6 +89,13 @@ struct AnthropicMessage {
 #[derive(Debug, Deserialize)]
 struct AnthropicChatResponse {
     content: Vec<AnthropicContentBlock>,
+    usage: Option<AnthropicUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicUsage {
+    input_tokens: i64,
+    output_tokens: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -218,6 +234,7 @@ async fn send_openai_chat_completion(
         messages: request.messages,
         temperature: request.temperature.unwrap_or(0.4),
         stream: None,
+        max_tokens: request.max_tokens,
     };
 
     let client = reqwest::Client::new();
@@ -240,6 +257,7 @@ async fn send_openai_chat_completion(
     }
 
     let parsed: OpenAiChatResponse = serde_json::from_str(&text)?;
+    let usage = parsed.usage;
     let content = parsed
         .choices
         .into_iter()
@@ -247,7 +265,11 @@ async fn send_openai_chat_completion(
         .map(|choice| choice.message.content)
         .ok_or_else(|| AppError::Message("model returned no choices".to_string()))?;
 
-    Ok(ChatResponse { content })
+    Ok(ChatResponse {
+        content,
+        input_tokens: usage.as_ref().map(|usage| usage.prompt_tokens),
+        output_tokens: usage.as_ref().map(|usage| usage.completion_tokens),
+    })
 }
 
 async fn send_anthropic_chat_completion(
@@ -261,6 +283,7 @@ async fn send_anthropic_chat_completion(
         request.messages,
         request.temperature.unwrap_or(0.4),
         None,
+        request.max_tokens.unwrap_or(4096),
     );
 
     let response = reqwest::Client::new()
@@ -280,6 +303,7 @@ async fn send_anthropic_chat_completion(
     }
 
     let parsed: AnthropicChatResponse = serde_json::from_str(&text)?;
+    let usage = parsed.usage;
     let content = parsed
         .content
         .into_iter()
@@ -287,7 +311,11 @@ async fn send_anthropic_chat_completion(
         .collect::<Vec<_>>()
         .join("");
 
-    Ok(ChatResponse { content })
+    Ok(ChatResponse {
+        content,
+        input_tokens: usage.as_ref().map(|usage| usage.input_tokens),
+        output_tokens: usage.as_ref().map(|usage| usage.output_tokens),
+    })
 }
 
 async fn send_openai_chat_completion_stream<F>(
@@ -309,6 +337,7 @@ where
         messages: request.messages,
         temperature: request.temperature.unwrap_or(0.4),
         stream: Some(true),
+        max_tokens: None,
     };
 
     let mut builder = reqwest::Client::new()
@@ -342,6 +371,7 @@ where
         request.messages,
         request.temperature.unwrap_or(0.4),
         Some(true),
+        4096,
     );
     let builder = reqwest::Client::new()
         .post(endpoint)
@@ -508,6 +538,7 @@ fn build_anthropic_payload(
     messages: Vec<ChatMessage>,
     temperature: f32,
     stream: Option<bool>,
+    max_tokens: u32,
 ) -> AnthropicChatRequest {
     let mut system_parts = Vec::new();
     let mut anthropic_messages = Vec::new();
@@ -536,7 +567,7 @@ fn build_anthropic_payload(
             Some(system_parts.join("\n\n"))
         },
         messages: anthropic_messages,
-        max_tokens: 4096,
+        max_tokens,
         temperature,
         stream,
     }

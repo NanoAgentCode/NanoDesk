@@ -4,7 +4,7 @@ NanoAgent 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust�
 
 ## 核心能力
 
-- 本地笔记、提示词和长期记忆管理；长期记忆使用 SQLite 关系表、FTS5、sqlite-vec 嵌入式向量索引和轻量知识图谱进行混合召回，按稳定维度更新个性化偏好，并在设置页展示可追溯的用户画像。
+- 本地笔记、提示词和长期记忆管理；普通手工记忆使用 SQLite 关系表、FTS5、sqlite-vec 和轻量知识图谱混合召回。独立用户画像只收集持久化会话中的用户输入，在本地过滤后按字符、数量或时间异步批量提取，不阻塞聊天回复。
 - 持久化 AI 对话，支持归档、恢复、删除、项目作用域隔离和会话级模型选择。
 - OpenAI-compatible Chat/Embeddings、Anthropic Messages API，以及 Ollama/OpenRouter 等兼容服务。
 - 流式回复、reasoning/thinking 片段展示和长对话上下文压缩。
@@ -27,6 +27,7 @@ NanoAgent 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust�
 - [系统设计文档](docs/系统设计文档.md)：整体定位、模块边界、关键业务链路和系统约束。
 - [架构与模块设计](docs/架构与模块设计.md)：前端、Tauri command、Rust 后端模块分层。
 - [数据与存储设计](docs/数据与存储设计.md)：SQLite 数据库、核心表、索引、文件边界和附件存储。
+- [用户画像异步批处理设计](docs/用户画像异步批处理设计.md)：画像与手工记忆边界、低 Token 候选过滤、批调度、租约、预算和删除屏障。
 - [Agent、RAG、MCP 与 Skills](docs/智能体检索增强与扩展工具设计.md)：模型上下文、工具审批、RAG、OCR、MCP 和 Skills。
 - [PaddleOCR OCR 工具](docs/图片文字识别工具.md)：本地 OCR 依赖、图片附件、运行时兼容和资源限制。
 - [构建、配置与运维](docs/构建配置与运维.md)：开发、打包、数据位置、配置、安全和排查。
@@ -81,7 +82,7 @@ src-tauri\target\release\bundle\cli\NanoAgent-CLI_0.1.0_x64-setup.exe
 nano
 ```
 
-`nano` 默认以当前目录作为项目并在启动时更新代码/文档索引，项目会话自动保存。首次运行且没有聊天模型时，命令行会引导配置模型并隐藏 API Key 输入；启动信息、交互命令、状态和错误使用统一终端配色，并自动兼容 `NO_COLOR`。使用 `nano --sessions` 获取会话列表、`nano --show <会话ID>` 查看历史、`nano --continue` 恢复最近会话、`nano --files` 获取项目文件列表，或用 `nano --temp` 启动不绑定项目且不保存历史的普通临时对话。详见[构建、配置与运维](docs/构建配置与运维.md#2-nano-终端客户端)。
+`nano` 默认以当前目录作为项目并在启动时更新代码/文档索引，项目会话自动保存，并与桌面端共享异步用户画像；`nano --temp` 不保存历史，因此不收集画像。首次运行且没有聊天模型时，命令行会引导配置模型并隐藏 API Key 输入；启动信息、交互命令、状态和错误使用统一终端配色，并自动兼容 `NO_COLOR`。使用 `nano --sessions` 获取会话列表、`nano --show <会话ID>` 查看历史、`nano --continue` 恢复最近会话、`nano --files` 获取项目文件列表，或用 `nano --temp` 启动不绑定项目且不保存历史的普通临时对话。详见[构建、配置与运维](docs/构建配置与运维.md#2-nano-终端客户端)。
 
 类型检查和前端构建：
 
@@ -144,6 +145,8 @@ src-tauri/src/observability.rs 观测 sink/pipeline 与观测库
 src-tauri/src/logging.rs       按天写入并自动清理的系统操作日志
 src-tauri/src/llm.rs           Chat、streaming 和 embeddings 请求
 src-tauri/src/memory.rs        长期记忆 embedding 编排与混合召回入口
+src-tauri/src/profile.rs       用户画像候选过滤、异步 Worker、上下文注入与管理命令
+src-tauri/src/db/profile_store.rs 用户画像状态机、预算、租约、Reducer 与删除屏障
 src-tauri/src/mcp.rs           MCP client manager 与传输实现
 src-tauri/src/agent_runner.rs  XML tool_call 解析与运行时结果模型
 scripts/build-installer.ps1    Windows 打包脚本

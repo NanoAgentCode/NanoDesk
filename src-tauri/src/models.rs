@@ -227,6 +227,8 @@ pub struct ChatRequest {
     pub messages: Vec<ChatMessage>,
     pub temperature: Option<f32>,
     pub trace_id: Option<String>,
+    #[serde(default)]
+    pub max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,6 +243,8 @@ pub struct ChatStreamRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
     pub content: String,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -301,12 +305,15 @@ pub struct RagChunkMatch {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserProfileFact {
+    pub id: String,
     pub dimension: String,
     pub label: String,
     pub value: String,
     pub category: String,
     pub global: bool,
-    pub source_memory_id: String,
+    pub confidence: f64,
+    pub source_count: usize,
+    pub extractor_model_config_id: String,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -315,6 +322,110 @@ pub struct UserProfile {
     pub facts: Vec<UserProfileFact>,
     pub global_preference_count: usize,
     pub profile_fact_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileSettings {
+    pub enabled: bool,
+    pub model_config_id: Option<String>,
+    pub character_threshold: i64,
+    pub idle_seconds: i64,
+    pub max_wait_seconds: i64,
+    pub long_input_threshold: i64,
+    pub rolling_hour_attempt_limit: i64,
+    pub rolling_day_attempt_limit: i64,
+    pub rolling_day_candidate_character_limit: i64,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileSettingsDraft {
+    pub enabled: bool,
+    pub model_config_id: Option<String>,
+    pub character_threshold: i64,
+    pub idle_seconds: i64,
+    pub max_wait_seconds: i64,
+    pub long_input_threshold: i64,
+    pub rolling_hour_attempt_limit: i64,
+    pub rolling_day_attempt_limit: i64,
+    pub rolling_day_candidate_character_limit: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileProcessingStatus {
+    pub pending_observations: i64,
+    pub skipped_observations: i64,
+    pub pending_batches: i64,
+    pub failed_batches: i64,
+    pub blocked_batches: i64,
+    pub rolling_day_attempts: i64,
+    pub rolling_day_candidate_characters: i64,
+    pub rolling_day_estimated_input_tokens: i64,
+    pub rolling_day_actual_input_tokens: i64,
+    pub rolling_day_actual_output_tokens: i64,
+    pub last_completed_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ProfileObservationWork {
+    pub id: String,
+    pub content: String,
+    pub profile_generation: i64,
+    pub preprocess_lease_owner: String,
+    pub preprocess_lease_epoch: i64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PreparedProfileObservation {
+    pub id: String,
+    pub candidate_character_count: i64,
+    pub candidate_hash: String,
+    pub candidate_kind: String,
+    pub input_kind: String,
+    pub cleaner_version: String,
+    pub status: String,
+    pub skip_reason: Option<String>,
+    pub profile_generation: i64,
+    pub preprocess_lease_owner: String,
+    pub preprocess_lease_epoch: i64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ProfileBatchWork {
+    pub id: String,
+    pub model_config_id: String,
+    pub profile_generation: i64,
+    pub lease_owner: String,
+    pub lease_epoch: i64,
+    pub observations: Vec<ProfileBatchObservation>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ProfileBatchObservation {
+    pub index: i64,
+    pub observation_id: String,
+    pub source_message_id: String,
+    pub content: String,
+    pub candidate_hash: String,
+    pub observation_revision: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ProfileExtractionResponse {
+    #[serde(default)]
+    pub operations: Vec<ProfileOperation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ProfileOperation {
+    pub action: String,
+    pub dimension: String,
+    pub value: String,
+    #[serde(default)]
+    pub source_indexes: Vec<i64>,
+    #[serde(default)]
+    pub confidence: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

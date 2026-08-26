@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::error::{AppError, AppResult};
 use crate::llm::create_embeddings;
-use crate::models::{Memory, MemoryDraft, MemoryPatch, ModelConfig, UserProfile};
+use crate::models::{Memory, MemoryDraft, MemoryPatch, ModelConfig};
 use crate::AppState;
 
 const DEFAULT_MEMORY_LIMIT: i64 = 8;
@@ -16,11 +16,6 @@ pub async fn list_memories(state: State<'_, AppState>) -> AppResult<Vec<Memory>>
 #[tauri::command]
 pub async fn list_enabled_memories(state: State<'_, AppState>) -> AppResult<Vec<Memory>> {
     state.db.lock().await.list_enabled_memories()
-}
-
-#[tauri::command]
-pub async fn get_user_profile(state: State<'_, AppState>) -> AppResult<UserProfile> {
-    state.db.lock().await.get_user_profile()
 }
 
 #[tauri::command]
@@ -74,16 +69,6 @@ pub async fn search_memories(state: State<'_, AppState>, query: String) -> AppRe
 #[tauri::command]
 pub async fn create_memory(state: State<'_, AppState>, draft: MemoryDraft) -> AppResult<Memory> {
     let memory = state.db.lock().await.create_memory(draft)?;
-    index_memory_embedding(&state, &memory).await;
-    Ok(memory)
-}
-
-#[tauri::command]
-pub async fn upsert_personalization_memory(
-    state: State<'_, AppState>,
-    draft: MemoryDraft,
-) -> AppResult<Memory> {
-    let memory = state.db.lock().await.upsert_personalization_memory(draft)?;
     index_memory_embedding(&state, &memory).await;
     Ok(memory)
 }

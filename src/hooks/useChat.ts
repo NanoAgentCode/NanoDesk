@@ -9,11 +9,11 @@ import {
   deleteMessages,
   indexRagFile,
   listRelevantMemories,
+  getProfileContext,
   listMessages,
   listProjectFiles,
   listRagFiles,
-  readAbsoluteFile,
-  upsertPersonalizationMemory
+  readAbsoluteFile
 } from "../api";
 import { buildSystemMessage } from "../lib/chatSystemMessage";
 import { loadProjectRetrievalContext } from "../lib/projectRetrieval";
@@ -21,11 +21,10 @@ import { isSupportedRagFile, MAX_CONTEXT_TOKENS, estimateTokens } from "../lib/f
 import { isSupportedImageAttachmentFile } from "../lib/imageAttachments";
 import {
   extractMemoryDraft,
-  extractPersonalizationMemoryDraft,
+  isExplicitProfileInstruction,
   parseToolCall,
   type ParsedToolCall
 } from "../lib/messageHelpers";
-import { savePersonalizationMemory } from "../lib/chatMemory";
 import {
   safeApproveAgentToolCall,
   safeCreateAgentRun,
@@ -225,8 +224,8 @@ export function useChat({
   async function handleSendMessage() {
     const textContent = input.chatInput.trim();
     const content = buildMessageContentWithImageAttachments(textContent, attachments.pendingImageAttachments);
-    const memoryDraft = extractMemoryDraft(content);
-    const personalizationDraft = extractPersonalizationMemoryDraft(textContent);
+    const explicitProfileInstruction = isExplicitProfileInstruction(textContent);
+    const memoryDraft = explicitProfileInstruction ? null : extractMemoryDraft(content);
     const effectiveModelId = conv.resolveConversationModelId(conv.activeConversationId);
     const activeModelId = effectiveModelId;
 
@@ -268,9 +267,7 @@ export function useChat({
       setMessages(nextMessages);
 
       if (memoryDraft) {
-        const savedMemory = personalizationDraft
-          ? await upsertPersonalizationMemory(personalizationDraft)
-          : await createMemory(memoryDraft);
+        const savedMemory = await createMemory(memoryDraft);
         setNotice("已保存");
         if (agentRun) {
           void safeRecordAgentStep({
@@ -286,14 +283,17 @@ export function useChat({
         }
         return;
       }
-      if (personalizationDraft) {
-        void savePersonalizationMemory(personalizationDraft, agentRun?.id);
+      if (explicitProfileInstruction) {
+        setNotice("已加入画像分析，将在后台按预算异步处理");
       }
       if (attachments.pendingImageAttachments.length > 0) {
         attachments.clearPendingImageAttachments();
       }
 
-      const relevantMemories = await listRelevantMemories(content, 8);
+      const [relevantMemories, profileContext] = await Promise.all([
+        listRelevantMemories(content, 8),
+        getProfileContext()
+      ]);
       let projectFiles: import("../types").ProjectFileEntry[] = [];
       if (projectForRequest?.path) {
         try {
@@ -341,6 +341,7 @@ export function useChat({
       const modelMessages: ChatMessage[] = [
         buildSystemMessage(
           relevantMemories,
+          profileContext,
           projectForRequest,
           projectFiles,
           skills.skills,
@@ -450,13 +451,17 @@ export function useChat({
       catch (error) { console.error("Failed to list project files:", error); }
     }
     const retrievalQuery = [...currentMessages].reverse().find((message) => message.role === "user")?.content || "";
-    const relevantMemories = await listRelevantMemories(retrievalQuery, 8);
+    const [relevantMemories, profileContext] = await Promise.all([
+      listRelevantMemories(retrievalQuery, 8),
+      getProfileContext()
+    ]);
     const ragMatches = await rag.loadRagMatches(conversationId, retrievalQuery, modelConfigId);
     const projectRetrieval = await loadProjectRetrievalContext(projectForRequest?.path, retrievalQuery);
 
     const modelMessages: ChatMessage[] = [
       buildSystemMessage(
         relevantMemories,
+        profileContext,
         projectForRequest,
         projectFiles,
         skills.skills,

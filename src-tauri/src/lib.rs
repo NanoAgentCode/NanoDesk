@@ -12,6 +12,7 @@ mod memory;
 mod models;
 mod observability;
 mod plugins;
+mod profile;
 mod project_files;
 mod project_index;
 mod rag;
@@ -1102,6 +1103,7 @@ async fn ask_ops_ai(state: State<'_, AppState>, request: OpsAiRequest) -> AppRes
         model_config_id: config.id.clone(),
         temperature: Some(0.2),
         trace_id: Some(server.id.clone()),
+        max_tokens: None,
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),
@@ -1176,6 +1178,7 @@ async fn test_llm_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
         }],
         temperature: Some(0.1),
         trace_id: None,
+        max_tokens: None,
     };
 
     let _ = crate::llm::send_chat_completion(config, request).await?;
@@ -1388,11 +1391,34 @@ async fn chat(state: State<'_, AppState>, request: ChatRequest) -> AppResult<Cha
         trace_id,
     )
     .await;
-    let config_result = { state.db.lock().await.get_model_config(&model_config_id) };
+    let lease_owner = format!("chat-{}", uuid::Uuid::new_v4());
+    let config_result = {
+        let db = state.db.lock().await;
+        db.start_profile_foreground_lease(&lease_owner, 30)?;
+        db.get_model_config(&model_config_id)
+    };
     let result = match config_result {
-        Ok(config) => send_chat_completion(config, request).await,
+        Ok(config) => {
+            let future = send_chat_completion(config, request);
+            tokio::pin!(future);
+            loop {
+                match tokio::time::timeout(Duration::from_secs(10), &mut future).await {
+                    Ok(result) => break result,
+                    Err(_) => state
+                        .db
+                        .lock()
+                        .await
+                        .start_profile_foreground_lease(&lease_owner, 30)?,
+                }
+            }
+        }
         Err(err) => Err(err),
     };
+    state
+        .db
+        .lock()
+        .await
+        .finish_profile_foreground_lease(&lease_owner)?;
     let output = result
         .as_ref()
         .ok()
@@ -1423,11 +1449,34 @@ async fn chat_stream(
         Some(trace_id),
     )
     .await;
-    let config_result = { state.db.lock().await.get_model_config(&model_config_id) };
+    let lease_owner = format!("chat-stream-{}", request.request_id);
+    let config_result = {
+        let db = state.db.lock().await;
+        db.start_profile_foreground_lease(&lease_owner, 30)?;
+        db.get_model_config(&model_config_id)
+    };
     let result = match config_result {
-        Ok(config) => send_chat_completion_stream(app, config, request).await,
+        Ok(config) => {
+            let future = send_chat_completion_stream(app, config, request);
+            tokio::pin!(future);
+            loop {
+                match tokio::time::timeout(Duration::from_secs(10), &mut future).await {
+                    Ok(result) => break result,
+                    Err(_) => state
+                        .db
+                        .lock()
+                        .await
+                        .start_profile_foreground_lease(&lease_owner, 30)?,
+                }
+            }
+        }
         Err(err) => Err(err),
     };
+    state
+        .db
+        .lock()
+        .await
+        .finish_profile_foreground_lease(&lease_owner)?;
     finish_observation(&state, span, &result, None).await;
     result
 }
@@ -2860,6 +2909,7 @@ pub fn run() {
                 plugins,
                 ops_ssh_sessions: Mutex::new(HashMap::new()),
             });
+            profile::start_worker(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2912,11 +2962,18 @@ pub fn run() {
             project_index::search_project_index,
             memory::list_memories,
             memory::list_enabled_memories,
-            memory::get_user_profile,
+            profile::get_user_profile,
+            profile::get_profile_context,
+            profile::get_profile_settings,
+            profile::save_profile_settings,
+            profile::get_profile_processing_status,
+            profile::delete_profile_fact,
+            profile::clear_user_profile,
+            profile::retry_profile_failures,
+            profile::run_profile_worker_now,
             memory::list_relevant_memories,
             memory::search_memories,
             memory::create_memory,
-            memory::upsert_personalization_memory,
             memory::update_memory,
             memory::delete_memory,
             sync_anthropic_skills,

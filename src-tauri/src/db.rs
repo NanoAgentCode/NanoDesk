@@ -14,10 +14,10 @@ use crate::models::{
     CodeChunk, CodeEntity, CodeIndexRun, CodeIndexStats, CodeRelation, CodeSearchResult,
     Conversation, ConversationDraft, Item, ItemDraft, ItemPatch, McpServerConfig, McpServerDraft,
     Memory, MemoryDraft, MemoryPatch, Message, MessageDraft, MessageMetadata, ModelConfig,
-    ModelConfigDraft, OpsServer, OpsServerDraft, RagChunkMatch, RagFile, UserProfile,
-    UserProfileFact,
+    ModelConfigDraft, OpsServer, OpsServerDraft, RagChunkMatch, RagFile,
 };
 
+pub(crate) mod profile_store;
 mod project_index_store;
 
 pub struct Database {
@@ -391,6 +391,143 @@ impl Database {
                 FOREIGN KEY (evidence_memory_id) REFERENCES memories(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS profile_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                profile_generation INTEGER NOT NULL DEFAULT 1,
+                next_event_revision INTEGER NOT NULL DEFAULT 0,
+                skipped_observation_count INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS profile_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled INTEGER NOT NULL DEFAULT 0,
+                model_config_id TEXT,
+                character_threshold INTEGER NOT NULL DEFAULT 3000,
+                idle_seconds INTEGER NOT NULL DEFAULT 1800,
+                max_wait_seconds INTEGER NOT NULL DEFAULT 86400,
+                long_input_threshold INTEGER NOT NULL DEFAULT 8000,
+                rolling_hour_attempt_limit INTEGER NOT NULL DEFAULT 2,
+                rolling_day_attempt_limit INTEGER NOT NULL DEFAULT 8,
+                rolling_day_candidate_character_limit INTEGER NOT NULL DEFAULT 30000,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (model_config_id) REFERENCES model_configs(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS profile_observations (
+                id TEXT PRIMARY KEY,
+                source_message_id TEXT NOT NULL UNIQUE,
+                conversation_id TEXT NOT NULL,
+                raw_character_count INTEGER NOT NULL,
+                candidate_character_count INTEGER NOT NULL DEFAULT 0,
+                candidate_hash TEXT NOT NULL DEFAULT '',
+                candidate_kind TEXT NOT NULL DEFAULT 'implicit',
+                input_kind TEXT NOT NULL DEFAULT 'normal',
+                cleaner_version TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL,
+                skip_reason TEXT,
+                profile_generation INTEGER NOT NULL,
+                observation_revision INTEGER NOT NULL UNIQUE,
+                preprocess_lease_owner TEXT,
+                preprocess_lease_expires_at TEXT,
+                preprocess_lease_epoch INTEGER NOT NULL DEFAULT 0,
+                observed_at TEXT NOT NULL,
+                processed_at TEXT,
+                FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE CASCADE,
+                FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS profile_extraction_batches (
+                id TEXT PRIMARY KEY,
+                trigger_kind TEXT NOT NULL,
+                model_config_id TEXT,
+                model_provider_snapshot TEXT,
+                model_base_url_snapshot TEXT,
+                model_name_snapshot TEXT,
+                model_config_hash TEXT,
+                profile_generation INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                observation_count INTEGER NOT NULL,
+                input_character_count INTEGER NOT NULL,
+                estimated_input_tokens INTEGER NOT NULL DEFAULT 0,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                available_at TEXT NOT NULL,
+                lease_owner TEXT,
+                lease_expires_at TEXT,
+                lease_epoch INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at TEXT NOT NULL,
+                completed_at TEXT,
+                FOREIGN KEY (model_config_id) REFERENCES model_configs(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS profile_batch_observations (
+                batch_id TEXT NOT NULL,
+                observation_id TEXT NOT NULL,
+                batch_index INTEGER NOT NULL,
+                PRIMARY KEY (batch_id, observation_id),
+                FOREIGN KEY (batch_id) REFERENCES profile_extraction_batches(id) ON DELETE CASCADE,
+                FOREIGN KEY (observation_id) REFERENCES profile_observations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS user_profile_facts (
+                id TEXT PRIMARY KEY,
+                dimension TEXT NOT NULL,
+                normalized_value TEXT NOT NULL,
+                display_value TEXT NOT NULL,
+                category TEXT NOT NULL,
+                global INTEGER NOT NULL,
+                confidence REAL NOT NULL,
+                extractor_model_config_id TEXT NOT NULL,
+                last_observation_revision INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (dimension, normalized_value)
+            );
+
+            CREATE TABLE IF NOT EXISTS user_profile_fact_sources (
+                fact_id TEXT NOT NULL,
+                observation_id TEXT,
+                source_message_id TEXT,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (fact_id, observation_id),
+                FOREIGN KEY (fact_id) REFERENCES user_profile_facts(id) ON DELETE CASCADE,
+                FOREIGN KEY (observation_id) REFERENCES profile_observations(id) ON DELETE SET NULL,
+                FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS profile_fact_tombstones (
+                dimension TEXT NOT NULL,
+                normalized_value TEXT NOT NULL,
+                delete_revision INTEGER NOT NULL,
+                deleted_at TEXT NOT NULL,
+                PRIMARY KEY (dimension, normalized_value)
+            );
+
+            CREATE TABLE IF NOT EXISTS profile_batch_commits (
+                batch_id TEXT PRIMARY KEY,
+                lease_epoch INTEGER NOT NULL,
+                applied_at TEXT NOT NULL,
+                FOREIGN KEY (batch_id) REFERENCES profile_extraction_batches(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS profile_foreground_leases (
+                owner TEXT PRIMARY KEY,
+                expires_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS profile_usage_attempts (
+                id TEXT PRIMARY KEY,
+                batch_id TEXT,
+                started_at_utc TEXT NOT NULL,
+                candidate_character_count INTEGER NOT NULL,
+                estimated_input_tokens INTEGER NOT NULL,
+                actual_input_tokens INTEGER NOT NULL DEFAULT 0,
+                actual_output_tokens INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (batch_id) REFERENCES profile_extraction_batches(id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model
                 ON memory_embeddings(model, dimensions);
             CREATE INDEX IF NOT EXISTS idx_memory_entity_links_entity
@@ -399,12 +536,38 @@ impl Database {
                 ON memory_relations(source_entity_id, target_entity_id);
             CREATE INDEX IF NOT EXISTS idx_memory_relations_target
                 ON memory_relations(target_entity_id, source_entity_id);
+            CREATE INDEX IF NOT EXISTS idx_profile_observations_status_revision
+                ON profile_observations(status, profile_generation, observation_revision);
+            CREATE INDEX IF NOT EXISTS idx_profile_batches_status_available
+                ON profile_extraction_batches(status, available_at);
+            CREATE INDEX IF NOT EXISTS idx_profile_usage_started
+                ON profile_usage_attempts(started_at_utc);
+            CREATE INDEX IF NOT EXISTS idx_profile_fact_dimension
+                ON user_profile_facts(dimension, updated_at);
             ",
+        )?;
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO profile_state (id, profile_generation, next_event_revision, updated_at) VALUES (1, 1, 0, ?1)",
+            params![now],
+        )?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO profile_settings
+                (id, enabled, model_config_id, character_threshold, idle_seconds,
+                 max_wait_seconds, long_input_threshold, rolling_hour_attempt_limit,
+                 rolling_day_attempt_limit, rolling_day_candidate_character_limit, updated_at)
+             VALUES (1, 0, NULL, 3000, 1800, 86400, 8000, 2, 8, 30000, ?1)",
+            params![now],
         )?;
         self.ensure_column("conversations", "project_path", "TEXT")?;
         self.ensure_column("conversations", "archived", "INTEGER NOT NULL DEFAULT 0")?;
         self.ensure_column("conversations", "archived_at", "TEXT")?;
         self.ensure_column("messages", "metadata_json", "TEXT")?;
+        self.ensure_column(
+            "profile_state",
+            "skipped_observation_count",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         self.ensure_column(
             "model_configs",
             "embedding_provider",
@@ -1078,48 +1241,95 @@ impl Database {
             created_at: now,
         };
 
-        self.conn.execute(
-            "
-            INSERT INTO messages (id, conversation_id, role, content, metadata_json, created_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-            ",
-            params![
-                message.id,
-                message.conversation_id,
-                message.role,
-                message.content,
-                serialize_metadata(&message.metadata)?,
-                message.created_at.to_rfc3339()
-            ],
-        )?;
-
-        self.archive_conversation(&message.conversation_id, false)?;
-
-        let title = message
-            .content
-            .chars()
-            .take(30)
-            .collect::<String>()
-            .trim()
-            .to_string();
-        if message.role == "user" && !title.is_empty() {
+        self.with_savepoint("message_append", || {
             self.conn.execute(
                 "
-                UPDATE conversations
-                SET title = CASE WHEN title = 'New chat' THEN ?2 ELSE title END,
-                    updated_at = ?3
-                WHERE id = ?1
+                INSERT INTO messages (id, conversation_id, role, content, metadata_json, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                 ",
-                params![message.conversation_id, title, now.to_rfc3339()],
+                params![
+                    message.id,
+                    message.conversation_id,
+                    message.role,
+                    message.content,
+                    serialize_metadata(&message.metadata)?,
+                    message.created_at.to_rfc3339()
+                ],
             )?;
-        } else {
-            self.conn.execute(
-                "UPDATE conversations SET updated_at = ?2 WHERE id = ?1",
-                params![message.conversation_id, now.to_rfc3339()],
-            )?;
-        }
+
+            self.archive_conversation(&message.conversation_id, false)?;
+
+            let title = message
+                .content
+                .chars()
+                .take(30)
+                .collect::<String>()
+                .trim()
+                .to_string();
+            if message.role == "user" && !title.is_empty() {
+                self.conn.execute(
+                    "
+                    UPDATE conversations
+                    SET title = CASE WHEN title = 'New chat' THEN ?2 ELSE title END,
+                        updated_at = ?3
+                    WHERE id = ?1
+                    ",
+                    params![message.conversation_id, title, now.to_rfc3339()],
+                )?;
+            } else {
+                self.conn.execute(
+                    "UPDATE conversations SET updated_at = ?2 WHERE id = ?1",
+                    params![message.conversation_id, now.to_rfc3339()],
+                )?;
+            }
+
+            self.collect_profile_observation(&message)
+        })?;
 
         Ok(message)
+    }
+
+    fn collect_profile_observation(&self, message: &Message) -> AppResult<()> {
+        if message.role != "user" {
+            return Ok(());
+        }
+        let enabled = self.conn.query_row(
+            "SELECT enabled FROM profile_settings WHERE id = 1",
+            [],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !enabled {
+            return Ok(());
+        }
+
+        let now = message.created_at.to_rfc3339();
+        self.conn.execute(
+            "UPDATE profile_state
+             SET next_event_revision = next_event_revision + 1, updated_at = ?1
+             WHERE id = 1",
+            params![now],
+        )?;
+        let (generation, revision) = self.conn.query_row(
+            "SELECT profile_generation, next_event_revision FROM profile_state WHERE id = 1",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO profile_observations
+                (id, source_message_id, conversation_id, raw_character_count, status,
+                 profile_generation, observation_revision, observed_at)
+             VALUES (?1, ?2, ?3, ?4, 'pending_preprocess', ?5, ?6, ?7)",
+            params![
+                Uuid::new_v4().to_string(),
+                message.id,
+                message.conversation_id,
+                message.content.len() as i64,
+                generation,
+                revision,
+                now
+            ],
+        )?;
+        Ok(())
     }
 
     pub fn delete_messages(&self, ids: &[String]) -> AppResult<()> {
@@ -2272,143 +2482,6 @@ impl Database {
         Ok(memory)
     }
 
-    pub fn upsert_personalization_memory(&self, draft: MemoryDraft) -> AppResult<Memory> {
-        let personalization_key = draft
-            .tags
-            .iter()
-            .find(|tag| {
-                tag.starts_with("personalization:") && tag.as_str() != "personalization:always"
-            })
-            .cloned();
-        let normalized_content = normalize_memory_identity(&draft.content);
-        let existing = match personalization_key.as_ref() {
-            Some(key) => match self.find_memory_by_personalization_tag(key)? {
-                Some(memory) => Some(memory),
-                None => self
-                    .list_personalization_memories()?
-                    .into_iter()
-                    .find(|memory| {
-                        !memory.tags.iter().any(|tag| {
-                            tag.starts_with("personalization:")
-                                && tag.as_str() != "personalization:always"
-                        }) && infer_legacy_personalization_key(memory).as_deref() == Some(key)
-                    }),
-            },
-            None => self
-                .list_personalization_memories()?
-                .into_iter()
-                .find(|memory| normalize_memory_identity(&memory.content) == normalized_content),
-        };
-
-        if let Some(existing) = existing {
-            if normalize_memory_identity(&existing.content) == normalized_content
-                && existing.title == draft.title
-                && existing.tags == draft.tags
-                && existing.enabled == draft.enabled.unwrap_or(true)
-            {
-                return Ok(existing);
-            }
-            return self.update_memory(MemoryPatch {
-                id: existing.id,
-                title: Some(draft.title),
-                content: Some(draft.content),
-                tags: Some(draft.tags),
-                enabled: draft.enabled.or(Some(true)),
-            });
-        }
-
-        self.create_memory(draft)
-    }
-
-    pub fn get_user_profile(&self) -> AppResult<UserProfile> {
-        let mut facts = self
-            .list_personalization_memories()?
-            .into_iter()
-            .filter(|memory| memory.enabled)
-            .map(|memory| {
-                let category = if memory.tags.iter().any(|tag| tag == "preference") {
-                    "preference"
-                } else {
-                    "profile"
-                };
-                let dimension = memory
-                    .tags
-                    .iter()
-                    .find_map(|tag| {
-                        tag.strip_prefix("personalization:")
-                            .filter(|value| *value != "always")
-                            .or_else(|| tag.strip_prefix("profile-dimension:"))
-                    })
-                    .map(str::to_string)
-                    .or_else(|| {
-                        infer_legacy_personalization_key(&memory)
-                            .map(|key| key.trim_start_matches("personalization:").to_string())
-                    })
-                    .unwrap_or_else(|| format!("{category}-general"));
-                UserProfileFact {
-                    label: user_profile_dimension_label(&dimension).to_string(),
-                    dimension,
-                    value: memory.content.clone(),
-                    category: category.to_string(),
-                    global: memory
-                        .tags
-                        .iter()
-                        .any(|tag| tag == "personalization:always"),
-                    source_memory_id: memory.id.clone(),
-                    updated_at: memory.updated_at,
-                }
-            })
-            .collect::<Vec<_>>();
-        facts.sort_by(|left, right| {
-            right
-                .global
-                .cmp(&left.global)
-                .then_with(|| right.updated_at.cmp(&left.updated_at))
-        });
-        Ok(UserProfile {
-            global_preference_count: facts.iter().filter(|fact| fact.global).count(),
-            profile_fact_count: facts
-                .iter()
-                .filter(|fact| fact.category == "profile")
-                .count(),
-            facts,
-        })
-    }
-
-    fn find_memory_by_personalization_tag(&self, tag: &str) -> AppResult<Option<Memory>> {
-        self.conn
-            .query_row(
-                "
-                SELECT m.id, m.title, m.content, m.tags_json, m.enabled, m.created_at, m.updated_at
-                FROM memory_entities e
-                JOIN memory_entity_links l ON l.entity_id = e.id
-                JOIN memories m ON m.id = l.memory_id
-                WHERE e.kind = 'tag' AND e.normalized_name = ?1
-                ORDER BY m.updated_at DESC
-                LIMIT 1
-                ",
-                params![normalize_entity_name(tag)],
-                Self::row_to_memory,
-            )
-            .optional()
-            .map_err(AppError::from)
-    }
-
-    fn list_personalization_memories(&self) -> AppResult<Vec<Memory>> {
-        let mut stmt = self.conn.prepare(
-            "
-            SELECT id, title, content, tags_json, enabled, created_at, updated_at
-            FROM memories
-            WHERE tags_json LIKE '%\"personalization\"%'
-            ORDER BY updated_at DESC
-            ",
-        )?;
-        let rows = stmt
-            .query_map([], Self::row_to_memory)?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
-    }
-
     pub fn update_memory(&self, patch: MemoryPatch) -> AppResult<Memory> {
         let current = self
             .get_memory(&patch.id)?
@@ -2762,92 +2835,6 @@ fn normalize_entity_name(value: &str) -> String {
         .join(" ")
         .trim()
         .to_lowercase()
-}
-
-fn normalize_memory_identity(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
-}
-
-fn infer_legacy_personalization_key(memory: &Memory) -> Option<String> {
-    let value = format!("{} {}", memory.title, memory.content).to_lowercase();
-    let dimension = if contains_any(
-        &value,
-        &[
-            "中文",
-            "英文",
-            "英语",
-            "回答语言",
-            "回复语言",
-            "chinese",
-            "english",
-        ],
-    ) {
-        "response-language"
-    } else if contains_any(
-        &value,
-        &[
-            "简洁", "简短", "精简", "详细", "展开", "啰嗦", "concise", "brief", "verbose",
-        ],
-    ) {
-        "response-length"
-    } else if contains_any(
-        &value,
-        &[
-            "表格",
-            "列表",
-            "要点",
-            "分点",
-            "markdown",
-            "代码块",
-            "回答格式",
-            "回复格式",
-        ],
-    ) {
-        "response-format"
-    } else if contains_any(
-        &value,
-        &[
-            "语气",
-            "表达风格",
-            "回答风格",
-            "回复风格",
-            "正式",
-            "随意",
-            "tone",
-        ],
-    ) {
-        "response-tone"
-    } else if contains_any(&value, &["我叫", "我的名字", "my name is"]) {
-        "profile-name"
-    } else if contains_any(
-        &value,
-        &[
-            "我的工作",
-            "我的角色",
-            "我负责",
-            "工程师",
-            "开发",
-            "设计师",
-            "my role",
-        ],
-    ) {
-        "profile-role"
-    } else if contains_any(&value, &["工作目录", "项目目录", "workspace"]) {
-        "profile-workspace"
-    } else if contains_any(&value, &["操作系统", "windows", "macos", "linux"]) {
-        "profile-environment"
-    } else {
-        return None;
-    };
-    Some(format!("personalization:{dimension}"))
-}
-
-fn contains_any(value: &str, candidates: &[&str]) -> bool {
-    candidates.iter().any(|candidate| value.contains(candidate))
 }
 
 fn user_profile_dimension_label(dimension: &str) -> &str {
@@ -3373,41 +3360,6 @@ mod tests {
     }
 
     #[test]
-    fn personalization_with_same_dimension_replaces_and_migrates_stale_value() {
-        let db = Database::open(PathBuf::from(":memory:")).expect("database should open");
-        let initial = db
-            .upsert_personalization_memory(MemoryDraft {
-                title: "回答长度偏好".to_string(),
-                content: "我喜欢详细回答".to_string(),
-                tags: vec![
-                    "auto".to_string(),
-                    "personalization".to_string(),
-                    "preference".to_string(),
-                ],
-                enabled: Some(true),
-            })
-            .expect("initial preference should be saved");
-        let updated = db
-            .upsert_personalization_memory(MemoryDraft {
-                title: "回答长度偏好".to_string(),
-                content: "我喜欢简洁回答".to_string(),
-                tags: vec![
-                    "auto".to_string(),
-                    "personalization".to_string(),
-                    "preference".to_string(),
-                    "personalization:response-length".to_string(),
-                    "personalization:always".to_string(),
-                ],
-                enabled: Some(true),
-            })
-            .expect("new preference should replace the old value");
-
-        assert_eq!(updated.id, initial.id);
-        assert_eq!(updated.content, "我喜欢简洁回答");
-        assert_eq!(db.list_memories().expect("memories should load").len(), 1);
-    }
-
-    #[test]
     fn global_personalization_keeps_a_recall_slot_without_polluting_contextual_profile() {
         let db = Database::open(PathBuf::from(":memory:")).expect("database should open");
         let global = db
@@ -3455,44 +3407,25 @@ mod tests {
     }
 
     #[test]
-    fn user_profile_aggregates_labeled_facts_with_memory_sources() {
+    fn legacy_personalization_memories_do_not_populate_the_new_profile() {
         let db = Database::open(PathBuf::from(":memory:")).expect("database should open");
-        let language = db
-            .create_memory(MemoryDraft {
-                title: "回答语言".to_string(),
-                content: "默认使用中文回答".to_string(),
-                tags: vec![
-                    "personalization".to_string(),
-                    "preference".to_string(),
-                    "personalization:response-language".to_string(),
-                    "personalization:always".to_string(),
-                ],
-                enabled: Some(true),
-            })
-            .expect("language preference should be created");
-        let tooling = db
-            .create_memory(MemoryDraft {
-                title: "常用技术".to_string(),
-                content: "我主要使用 Rust 和 TypeScript".to_string(),
-                tags: vec![
-                    "personalization".to_string(),
-                    "profile".to_string(),
-                    "profile-dimension:tooling".to_string(),
-                ],
-                enabled: Some(true),
-            })
-            .expect("tooling profile should be created");
+        db.create_memory(MemoryDraft {
+            title: "回答语言".to_string(),
+            content: "默认使用中文回答".to_string(),
+            tags: vec![
+                "personalization".to_string(),
+                "preference".to_string(),
+                "personalization:response-language".to_string(),
+                "personalization:always".to_string(),
+            ],
+            enabled: Some(true),
+        })
+        .expect("language preference should be created");
 
         let profile = db.get_user_profile().expect("profile should load");
 
-        assert_eq!(profile.global_preference_count, 1);
-        assert_eq!(profile.profile_fact_count, 1);
-        assert_eq!(profile.facts.len(), 2);
-        assert_eq!(profile.facts[0].source_memory_id, language.id);
-        assert_eq!(profile.facts[0].label, "回答语言");
-        assert!(profile
-            .facts
-            .iter()
-            .any(|fact| fact.source_memory_id == tooling.id && fact.label == "常用技术"));
+        assert_eq!(profile.global_preference_count, 0);
+        assert_eq!(profile.profile_fact_count, 0);
+        assert!(profile.facts.is_empty());
     }
 }

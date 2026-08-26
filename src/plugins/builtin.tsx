@@ -30,8 +30,8 @@ const coreUiPlugin: FrontendPlugin = {
       label: "记忆库",
       icon: Brain,
       onActivate: ({ workspace }) => workspace.handleKindChange("memory"),
-      render: ({ workspace, memory, workspaceRef }) => (
-        <SettingsMemoryTab workspace={workspace} memory={memory} workspaceRef={workspaceRef as React.Ref<HTMLElement>} />
+      render: ({ workspace, memory, workspaceRef, model }) => (
+        <SettingsMemoryTab workspace={workspace} memory={memory} workspaceRef={workspaceRef as React.Ref<HTMLElement>} activeModelId={model.activeModelId} />
       )
     },
     {

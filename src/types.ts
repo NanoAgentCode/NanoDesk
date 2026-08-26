@@ -291,12 +291,15 @@ export interface RagChunkMatch {
 }
 
 export interface UserProfileFact {
+  id: string;
   dimension: string;
   label: string;
   value: string;
   category: "preference" | "profile";
   global: boolean;
-  source_memory_id: string;
+  confidence: number;
+  source_count: number;
+  extractor_model_config_id: string;
   updated_at: string;
 }
 
@@ -304,6 +307,36 @@ export interface UserProfile {
   facts: UserProfileFact[];
   global_preference_count: number;
   profile_fact_count: number;
+}
+
+export interface ProfileSettings {
+  enabled: boolean;
+  model_config_id?: string | null;
+  character_threshold: number;
+  idle_seconds: number;
+  max_wait_seconds: number;
+  long_input_threshold: number;
+  rolling_hour_attempt_limit: number;
+  rolling_day_attempt_limit: number;
+  rolling_day_candidate_character_limit: number;
+  updated_at: string;
+}
+
+export type ProfileSettingsDraft = Omit<ProfileSettings, "updated_at">;
+
+export interface ProfileProcessingStatus {
+  pending_observations: number;
+  skipped_observations: number;
+  pending_batches: number;
+  failed_batches: number;
+  blocked_batches: number;
+  rolling_day_attempts: number;
+  rolling_day_candidate_characters: number;
+  rolling_day_estimated_input_tokens: number;
+  rolling_day_actual_input_tokens: number;
+  rolling_day_actual_output_tokens: number;
+  last_completed_at?: string | null;
+  last_error?: string | null;
 }
 
 export interface CodeIndexRun {

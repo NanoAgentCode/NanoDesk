@@ -11,6 +11,9 @@ import type {
   MemoryPatch,
   MessageDraft,
   UserProfile,
+  ProfileSettings,
+  ProfileSettingsDraft,
+  ProfileProcessingStatus,
   McpServerConfig,
   McpServerDraft,
   McpServerView,
@@ -229,8 +232,36 @@ export function getUserProfile() {
   return invoke<UserProfile>("get_user_profile");
 }
 
-export function upsertPersonalizationMemory(draft: MemoryDraft) {
-  return invoke<Memory>("upsert_personalization_memory", { draft });
+export function getProfileContext() {
+  return invoke<string | null>("get_profile_context");
+}
+
+export function getProfileSettings() {
+  return invoke<ProfileSettings>("get_profile_settings");
+}
+
+export function saveProfileSettings(draft: ProfileSettingsDraft) {
+  return invoke<ProfileSettings>("save_profile_settings", { draft });
+}
+
+export function getProfileProcessingStatus() {
+  return invoke<ProfileProcessingStatus>("get_profile_processing_status");
+}
+
+export function deleteProfileFact(id: string) {
+  return invoke<void>("delete_profile_fact", { id });
+}
+
+export function clearUserProfile() {
+  return invoke<void>("clear_user_profile");
+}
+
+export function runProfileWorkerNow() {
+  return invoke<boolean>("run_profile_worker_now");
+}
+
+export function retryProfileFailures() {
+  return invoke<number>("retry_profile_failures");
 }
 
 export function updateMemory(patch: MemoryPatch) {
