@@ -7,7 +7,7 @@ NanoAgent 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust�
 - 本地笔记、提示词和长期记忆管理；普通手工记忆使用 SQLite 关系表、FTS5、sqlite-vec 和轻量知识图谱混合召回。独立用户画像只收集持久化会话中的用户输入，在本地过滤后按字符、数量或时间异步批量提取，不阻塞聊天回复。
 - 持久化 AI 对话，支持归档、恢复、删除、项目作用域隔离和会话级模型选择。
 - OpenAI-compatible Chat/Embeddings、Anthropic Messages API，以及 Ollama/OpenRouter 等兼容服务。
-- 流式回复、reasoning/thinking 片段展示和长对话上下文压缩。
+- 流式回复、reasoning/thinking 片段展示、长对话上下文压缩，以及 GFM/KaTeX 数学公式渲染。
 - 轻量 RAG：拖拽文件、抽取文本、分块、生成 embedding，并在对话时召回相关片段。
 - 项目索引中心：为项目构建可插拔索引，当前包含代码实体/关系索引和文档片段索引，代码、配置、说明、数据文件问答会优先召回项目级上下文。
 - 图片附件和 OCR：图片保存到 `.nano-agent/uploads/images/`，消息中渲染缩略图，点击可预览，并可通过 `ocr_image` 调用本机 PaddleOCR。
@@ -36,7 +36,7 @@ NanoAgent 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust�
 ## 技术栈
 
 - 桌面壳：Tauri v2
-- 前端：React 18、TypeScript、Vite、Mantine 8、lucide-react、react-markdown、remark-gfm
+- 前端：React 18、TypeScript、Vite、Mantine 8、lucide-react、react-markdown、remark-gfm、remark-math、rehype-katex
 - 后端：Rust、Tokio、rusqlite、reqwest、serde、thiserror
 - 数据库：SQLite + WAL + FTS5 + sqlite-vec
 - 模型：OpenAI-compatible Chat/Embeddings、Anthropic Messages API
@@ -137,7 +137,8 @@ src-tauri/src/cli.rs           nano 终端交互、模型选择和项目问答�
 src-tauri/src/bin/nano.rs      nano 命令行二进制入口
 src-tauri/src/core/plugin.rs   后端插件契约、清单与 Agent 工具扩展点
 src-tauri/src/plugins.rs       内置后端插件装配
-src-tauri/src/db.rs            主业务 SQLite 数据访问
+src-tauri/src/db.rs            主业务 SQLite schema、迁移与共享数据库入口
+src-tauri/src/db/              条目、配置、会话、RAG、记忆、画像和项目索引的领域存储
 src-tauri/src/code_index.rs    项目代码实体、关系和片段索引
 src-tauri/src/project_index.rs 项目文档片段索引与通用项目索引查询
 src-tauri/src/runtime.rs       Agent run/step/tool call 运行时存储
@@ -147,6 +148,7 @@ src-tauri/src/llm.rs           Chat、streaming 和 embeddings 请求
 src-tauri/src/memory.rs        长期记忆 embedding 编排与混合召回入口
 src-tauri/src/profile.rs       用户画像候选过滤、异步 Worker、上下文注入与管理命令
 src-tauri/src/db/profile_store.rs 用户画像状态机、预算、租约、Reducer 与删除屏障
+src-tauri/src/ops.rs           Ops SSH/SCP、交互终端与 AI 辅助命令
 src-tauri/src/mcp.rs           MCP client manager 与传输实现
 src-tauri/src/agent_runner.rs  XML tool_call 解析与运行时结果模型
 scripts/build-installer.ps1    Windows 打包脚本
