@@ -44,6 +44,8 @@ export default defineConfig({
           if (
             normalizedId.includes("react-markdown") ||
             normalizedId.includes("remark-") ||
+            normalizedId.includes("rehype-") ||
+            normalizedId.includes("katex") ||
             normalizedId.includes("micromark") ||
             normalizedId.includes("mdast") ||
             normalizedId.includes("hast") ||

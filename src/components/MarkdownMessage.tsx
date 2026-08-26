@@ -1,7 +1,10 @@
 import { useMemo } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import type { Plugin } from "unified";
+import "katex/dist/katex.min.css";
 import { openExternalUrl, openProjectFileLocation } from "../api";
 import type { ProjectFileEntry } from "../types";
 
@@ -250,11 +253,14 @@ function MarkdownMessage({ content, projectPath, projectFiles = [] }: MarkdownMe
   // in non-code blocks. This preserves natural line breaks during markdown rendering.
   const processedContent = useMemo(() => {
     if (!content) return "";
-    const parts = content.split(/(```[\s\S]*?```)/g);
+    const parts = content.split(/(```[\s\S]*?```|`[^`\n]*`|\$\$[\s\S]*?\$\$)/g);
     return parts
       .map((part) => {
-        if (part.startsWith("```") && part.endsWith("```")) {
+        if (part.startsWith("```") || (part.startsWith("`") && part.endsWith("`"))) {
           return part;
+        }
+        if (part.startsWith("$$") && part.endsWith("$$")) {
+          return `$$\n${part.slice(2, -2).trim()}\n$$`;
         }
         return part.replace(/(?<!\n)\n(?!\n)/g, "  \n");
       })
@@ -263,7 +269,8 @@ function MarkdownMessage({ content, projectPath, projectFiles = [] }: MarkdownMe
 
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, [remarkAutoLinkProjectPaths, fileNameIndex]]}
+      remarkPlugins={[remarkGfm, remarkMath, [remarkAutoLinkProjectPaths, fileNameIndex]]}
+      rehypePlugins={[rehypeKatex]}
       urlTransform={transformMarkdownUrl}
       components={{
         a({ href, children, ...props }) {
