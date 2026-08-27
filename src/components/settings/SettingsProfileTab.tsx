@@ -176,7 +176,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   return (
     <div className="settings-tab-content profile-tab-content">
       <h3>用户画像</h3>
-      <p className="description">用户画像由后台只读生成，可查看处理状态、逐条删除或全部清空。</p>
+      <p className="description">用户画像由后台只读生成。功能开启后可能会增加资源消耗。</p>
 
       <section className="profile-settings-card" aria-labelledby="profile-settings-title">
         <div className="profile-settings-title-row">
@@ -199,10 +199,6 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
             <label><span>每小时最多调用</span><input type="number" min={1} max={60} value={settings.rolling_hour_attempt_limit} onChange={(event) => setSettings({ ...settings, rolling_hour_attempt_limit: Number(event.currentTarget.value) })} /></label>
             <label><span>每天最多调用</span><input type="number" min={1} max={500} value={settings.rolling_day_attempt_limit} onChange={(event) => setSettings({ ...settings, rolling_day_attempt_limit: Number(event.currentTarget.value) })} /></label>
             <label><span>每天候选字符预算</span><input type="number" min={12000} max={2000000} value={settings.rolling_day_candidate_character_limit} onChange={(event) => setSettings({ ...settings, rolling_day_candidate_character_limit: Number(event.currentTarget.value) })} /></label>
-          </div>
-
-          <div className="profile-data-flow-notice" role="note">
-            已形成的有效画像会作为上下文进入后续正常聊天请求;提高调用或字符预算可能增加云端费用或本地模型资源消耗。
           </div>
           <div className="profile-settings-actions">
             {status && status.failed_batches + status.blocked_batches > 0 && <IconTooltipButton label="重试异常批次" onClick={() => void handleRetryFailures()} disabled={!savedEnabled}><RotateCcw size={16} /></IconTooltipButton>}
