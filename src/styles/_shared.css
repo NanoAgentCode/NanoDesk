@@ -1735,6 +1735,10 @@
   line-height: 1.55;
 }
 
+.profile-tab-content > .profile-settings-card {
+  flex: 0 0 auto;
+}
+
 .profile-settings-card {
   margin: 0 0 14px;
   padding: 15px;
@@ -1960,6 +1964,10 @@
 .user-profile-fact-meta button:hover {
   color: var(--accent-danger);
   border-color: var(--control-danger-border);
+}
+
+.profile-tab-content > .user-profile-card {
+  flex: 0 0 auto;
 }
 
 .user-profile-card {

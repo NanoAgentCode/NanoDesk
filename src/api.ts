@@ -96,6 +96,10 @@ export function testLlmConnectivity(draft: ModelConfigDraft) {
   return invoke<void>("test_llm_connectivity", { draft });
 }
 
+export function listAvailableModels(draft: ModelConfigDraft) {
+  return invoke<string[]>("list_available_models", { draft });
+}
+
 export function testEmbeddingConnectivity(draft: ModelConfigDraft) {
   return invoke<void>("test_embedding_connectivity", { draft });
 }

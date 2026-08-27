@@ -532,6 +532,11 @@ async fn test_llm_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
 }
 
 #[tauri::command]
+async fn list_available_models(draft: ModelConfigDraft) -> AppResult<Vec<String>> {
+    crate::llm::list_available_models(&draft).await
+}
+
+#[tauri::command]
 async fn test_embedding_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
     let config = ModelConfig {
         id: draft.id.unwrap_or_default(),
@@ -2305,6 +2310,7 @@ pub fn run() {
             ops::stop_ops_ssh_session,
             ops::ask_ops_ai,
             test_llm_connectivity,
+            list_available_models,
             test_embedding_connectivity,
             list_conversations,
             list_archived_conversations,

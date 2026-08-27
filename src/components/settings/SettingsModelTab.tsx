@@ -1,5 +1,5 @@
-import { Activity, Edit3, Loader2, Plus, Save, Trash2 } from "lucide-react";
-import { PasswordInput, Select, TextInput, UnstyledButton } from "@mantine/core";
+import { Activity, Edit3, Loader2, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { ActionIcon, Autocomplete, PasswordInput, Select, TextInput, Tooltip, UnstyledButton } from "@mantine/core";
 import IconTooltipButton from "../IconTooltipButton";
 import { normalizeModelDraft } from "../../hooks/useModel";
 import type { UseModelReturn } from "../../hooks/useModel";
@@ -76,7 +76,38 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
               allowDeselect={false}
             />
             <TextInput className="model-field--wide" label="接口地址" value={model.modelDraft.base_url} onChange={(event) => model.setModelDraft({ ...model.modelDraft, base_url: event.currentTarget.value })} placeholder="https://api.openai.com/v1" />
-            <TextInput className="model-field--wide" label="模型标识" value={model.modelDraft.model} onChange={(event) => model.setModelDraft({ ...model.modelDraft, model: event.currentTarget.value })} placeholder="gpt-4o-mini" />
+            <Autocomplete
+              className="model-field--wide"
+              label="模型标识"
+              description={
+                model.modelListStatus.status === "success"
+                  ? model.modelListStatus.message
+                  : model.modelListStatus.status === "error"
+                    ? "获取失败，仍可手动输入模型标识"
+                    : "可手动输入，或从服务商获取可用模型"
+              }
+              value={model.modelDraft.model}
+              data={model.availableModels}
+              onChange={(value) => model.setModelDraft({ ...model.modelDraft, model: value })}
+              placeholder="gpt-4o-mini"
+              maxDropdownHeight={240}
+              rightSectionPointerEvents="all"
+              rightSection={
+                <Tooltip label={model.modelListStatus.status === "loading" ? "正在获取模型" : "获取模型列表"} openDelay={350}>
+                  <ActionIcon
+                    aria-label="获取模型列表"
+                    variant="subtle"
+                    color="gray"
+                    onClick={() => void model.handleFetchAvailableModels()}
+                    disabled={model.modelListStatus.status === "loading" || !model.modelDraft.base_url.trim()}
+                  >
+                    {model.modelListStatus.status === "loading"
+                      ? <Loader2 size={16} className="svg-spin" />
+                      : <RefreshCw size={16} />}
+                  </ActionIcon>
+                </Tooltip>
+              }
+            />
             <PasswordInput className="model-field--wide" label="API Key" value={model.modelDraft.api_key} onChange={(event) => model.setModelDraft({ ...model.modelDraft, api_key: event.currentTarget.value })} placeholder="用于对话模型调用" />
           </div>
           <div className="modal-actions icon-actions icon-actions-bar">

@@ -1,8 +1,9 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import {
   listModelConfigs,
   saveModelConfig,
   deleteModelConfig,
+  listAvailableModels,
   testLlmConnectivity,
   testEmbeddingConnectivity,
   updateConversationModel
@@ -77,6 +78,8 @@ export interface UseModelReturn {
   setModelTestStatuses: React.Dispatch<React.SetStateAction<Record<string, { status: "idle" | "testing" | "success" | "error"; message?: string }>>>;
   embeddingTestStatus: { status: "idle" | "testing" | "success" | "error"; message?: string };
   setEmbeddingTestStatus: React.Dispatch<React.SetStateAction<{ status: "idle" | "testing" | "success" | "error"; message?: string }>>;
+  availableModels: string[];
+  modelListStatus: { status: "idle" | "loading" | "success" | "error"; message?: string };
   refreshModels: (selectId?: string) => Promise<void>;
   handleSaveModel: () => Promise<void>;
   handleEditModel: (id: string) => void;
@@ -88,6 +91,7 @@ export interface UseModelReturn {
   handleSaveEmbeddingModel: () => Promise<void>;
   handleOpenEmbeddingConfig: () => void;
   handleTestLlm: () => Promise<void>;
+  handleFetchAvailableModels: () => Promise<void>;
   handleTestEmbedding: () => Promise<void>;
   handleActiveModelChange: (modelId: string) => Promise<void>;
 }
@@ -102,6 +106,16 @@ export function useModel(
   const [modelDraft, setModelDraft] = useState<ModelConfigDraft>(emptyModelDraft);
   const [activeModelId, setActiveModelId] = useState("");
   const [embeddingDraft, setEmbeddingDraft] = useState<ModelConfigDraft>(emptyEmbeddingDraft);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [modelListStatus, setModelListStatus] = useState<{
+    status: "idle" | "loading" | "success" | "error";
+    message?: string;
+  }>({ status: "idle" });
+
+  useEffect(() => {
+    setAvailableModels([]);
+    setModelListStatus({ status: "idle" });
+  }, [modelDraft.provider, modelDraft.base_url, modelDraft.api_key]);
 
   const [llmTestStatus, setLlmTestStatus] = useState<{
     status: "idle" | "testing" | "success" | "error";
@@ -340,6 +354,23 @@ export function useModel(
     }
   }
 
+  async function handleFetchAvailableModels() {
+    setModelListStatus({ status: "loading" });
+    try {
+      const nextModels = await listAvailableModels(modelDraft);
+      setAvailableModels(nextModels);
+      setModelListStatus({
+        status: "success",
+        message: `已获取 ${nextModels.length} 个模型`
+      });
+    } catch (err) {
+      const message = String(err);
+      setAvailableModels([]);
+      setModelListStatus({ status: "error", message });
+      setNotice(`获取模型列表失败: ${message}`);
+    }
+  }
+
   async function handleTestEmbedding() {
     setEmbeddingTestStatus({ status: "testing" });
     try {
@@ -401,6 +432,8 @@ export function useModel(
     setModelTestStatuses,
     embeddingTestStatus,
     setEmbeddingTestStatus,
+    availableModels,
+    modelListStatus,
     refreshModels,
     handleSaveModel,
     handleEditModel,
@@ -412,6 +445,7 @@ export function useModel(
     handleSaveEmbeddingModel,
     handleOpenEmbeddingConfig,
     handleTestLlm,
+    handleFetchAvailableModels,
     handleTestEmbedding,
     handleActiveModelChange
   };

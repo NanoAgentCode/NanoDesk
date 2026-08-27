@@ -4,6 +4,7 @@ use tauri::{AppHandle, Emitter};
 use crate::error::{AppError, AppResult};
 use crate::models::{
     ChatMessage, ChatRequest, ChatResponse, ChatStreamEvent, ChatStreamRequest, ModelConfig,
+    ModelConfigDraft,
 };
 
 #[derive(Debug, Serialize)]
@@ -44,6 +45,16 @@ struct OpenAiEmbeddingResponse {
 struct OpenAiEmbeddingData {
     embedding: Vec<f32>,
     index: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelListResponse {
+    data: Vec<ModelListItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelListItem {
+    id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -221,6 +232,66 @@ pub async fn create_embeddings(
         .map(|item| item.embedding)
         .collect::<Vec<_>>();
     Ok(embeddings)
+}
+
+pub async fn list_available_models(draft: &ModelConfigDraft) -> AppResult<Vec<String>> {
+    let base_url = draft.base_url.trim();
+    if base_url.is_empty() {
+        return Err(AppError::Message("模型接口地址不能为空".to_string()));
+    }
+    if draft.api_key.trim().is_empty() && !base_url.contains("localhost") {
+        return Err(AppError::Message("请先填写 API Key".to_string()));
+    }
+
+    let endpoint = model_list_endpoint(&draft.provider, base_url);
+    let client = reqwest::Client::new();
+    let mut builder = client.get(endpoint).header("accept", "application/json");
+    if is_anthropic_provider(&draft.provider) {
+        if !draft.api_key.trim().is_empty() {
+            builder = builder.header("x-api-key", draft.api_key.trim());
+        }
+        builder = builder.header("anthropic-version", "2023-06-01");
+    } else if !draft.api_key.trim().is_empty() {
+        builder = builder.bearer_auth(draft.api_key.trim());
+    }
+
+    let response = builder.send().await?;
+    let status = response.status();
+    let text = response.text().await?;
+    if !status.is_success() {
+        return Err(AppError::Message(format!(
+            "获取模型列表失败 ({status}): {text}"
+        )));
+    }
+
+    parse_model_list(&text)
+}
+
+fn model_list_endpoint(provider: &str, base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    if is_anthropic_provider(provider) && !base.ends_with("/v1") {
+        format!("{base}/v1/models?limit=1000")
+    } else if is_anthropic_provider(provider) {
+        format!("{base}/models?limit=1000")
+    } else {
+        format!("{base}/models")
+    }
+}
+
+fn parse_model_list(body: &str) -> AppResult<Vec<String>> {
+    let parsed: ModelListResponse = serde_json::from_str(body)?;
+    let mut models = parsed
+        .data
+        .into_iter()
+        .map(|item| item.id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect::<Vec<_>>();
+    models.sort();
+    models.dedup();
+    if models.is_empty() {
+        return Err(AppError::Message("服务商未返回可用模型".to_string()));
+    }
+    Ok(models)
 }
 
 async fn send_openai_chat_completion(
@@ -592,6 +663,36 @@ fn ensure_api_key(config: &ModelConfig) -> AppResult<()> {
 fn is_anthropic_provider(provider: &str) -> bool {
     let provider = provider.trim().to_lowercase();
     provider == "anthropic" || provider == "claude"
+}
+
+#[cfg(test)]
+mod model_list_tests {
+    use super::{model_list_endpoint, parse_model_list};
+
+    #[test]
+    fn builds_provider_specific_model_list_endpoints() {
+        assert_eq!(
+            model_list_endpoint("openai-compatible", "https://api.openai.com/v1"),
+            "https://api.openai.com/v1/models"
+        );
+        assert_eq!(
+            model_list_endpoint("anthropic", "https://api.anthropic.com"),
+            "https://api.anthropic.com/v1/models?limit=1000"
+        );
+        assert_eq!(
+            model_list_endpoint("anthropic", "https://gateway.example/v1/"),
+            "https://gateway.example/v1/models?limit=1000"
+        );
+    }
+
+    #[test]
+    fn parses_sorts_and_deduplicates_model_ids() {
+        let body = r#"{"data":[{"id":"glm-4.5"},{"id":"glm-4-air"},{"id":"glm-4.5"},{"id":" "}]}"#;
+        assert_eq!(
+            parse_model_list(body).unwrap(),
+            vec!["glm-4-air".to_string(), "glm-4.5".to_string()]
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

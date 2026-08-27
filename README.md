@@ -5,7 +5,7 @@ NanoAgent 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust�
 ## 核心能力
 
 - 本地笔记、提示词和长期记忆管理；普通手工记忆使用 SQLite 关系表、FTS5、sqlite-vec 和轻量知识图谱混合召回。独立用户画像只收集持久化会话中的用户输入，在本地过滤后按字符、数量或时间异步批量提取，不阻塞聊天回复。
-- 持久化 AI 对话，支持归档、恢复、删除、项目作用域隔离和会话级模型选择。
+- 持久化 AI 对话，支持归档、恢复、删除、项目作用域隔离和按实际模型标识进行会话级选择；LLM 设置可从 OpenAI/Anthropic 兼容服务获取模型列表，也保留手动输入。
 - OpenAI-compatible Chat/Embeddings、Anthropic Messages API，以及 Ollama/OpenRouter 等兼容服务。
 - 流式回复、reasoning/thinking 片段展示、长对话上下文压缩，以及 GFM/KaTeX 数学公式渲染。
 - 轻量 RAG：拖拽文件、抽取文本、分块、生成 embedding，并在对话时召回相关片段。

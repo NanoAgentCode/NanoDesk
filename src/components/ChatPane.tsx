@@ -32,6 +32,7 @@ import type { ParsedToolCall } from "../lib/messageHelpers";
 import type { AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../types";
 import type { UseObservabilityReturn } from "../hooks/useObservability";
 import type { UseModelReturn } from "../hooks/useModel";
+import { buildChatModelOptions } from "../lib/modelOptions";
 
 interface ChatPaneProps {
   activeConversationId: string;
@@ -500,9 +501,7 @@ export default function ChatPane({
               aria-label="当前对话模型"
               placeholder="选择模型"
               value={model.activeModelId || null}
-              data={model.models
-                .filter((item) => item.id !== "embedding-config")
-                .map((item) => ({ value: item.id, label: item.name }))}
+              data={buildChatModelOptions(model.models)}
               onChange={(value) => void model.handleActiveModelChange(value || "")}
               allowDeselect={false}
               size="xs"

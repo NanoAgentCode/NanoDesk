@@ -96,7 +96,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   }
 
   return (
-    <div className="settings-tab-content">
+    <div className="settings-tab-content profile-tab-content">
       <h3>用户画像</h3>
       <p className="description">用户画像由后台只读生成，可查看处理状态、逐条删除或全部清空。</p>
 
