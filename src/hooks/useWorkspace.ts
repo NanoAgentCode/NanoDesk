@@ -8,6 +8,7 @@ import {
 } from "../api";
 import type { Item, ItemKind, WorkspaceView } from "../types";
 import { parseTags } from "../lib/messageHelpers";
+import { confirmAction } from "../lib/dialogs";
 import type { UseMemoryReturn } from "./useMemory";
 
 const kindLabels: Record<ItemKind, string> = {
@@ -156,6 +157,10 @@ export function useWorkspace(
       return;
     }
 
+    const kindLabel = kindLabels[selectedItem.kind as ItemKind] ?? selectedItem.kind;
+    if (!(await confirmAction(`确定要删除${kindLabel}「${selectedItem.title}」吗？`))) {
+      return;
+    }
     await deleteItem(selectedItem.id);
     setSelectedId("");
     await refreshItems(query, activeKind);

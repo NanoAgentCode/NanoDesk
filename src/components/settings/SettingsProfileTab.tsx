@@ -7,6 +7,7 @@ import {
   listFilteredProfileObservations, listModelConfigs, retryProfileFailures, runProfileWorkerNow,
   saveProfileSettings
 } from "../../api";
+import { confirmAction } from "../../lib/dialogs";
 import type { FilteredProfileObservation, ModelConfig, ProfileProcessingStatus, ProfileSettingsDraft, UserProfile } from "../../types";
 
 interface SettingsProfileTabProps {
@@ -94,13 +95,13 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   }
 
   async function handleDeleteFact(id: string) {
-    if (!window.confirm("删除这条画像事实？旧的后台任务不会把它恢复。")) return;
+    if (!(await confirmAction("删除这条画像事实？旧的后台任务不会把它恢复。"))) return;
     await deleteProfileFact(id);
     await loadProfile();
   }
 
   async function handleClearProfile() {
-    if (!window.confirm("清空全部用户画像及画像来源？普通手工记忆不会被删除。")) return;
+    if (!(await confirmAction("清空全部用户画像及画像来源？普通手工记忆不会被删除。"))) return;
     await clearUserProfile();
     await loadProfile();
   }
@@ -157,7 +158,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   }
 
   async function handleDiscardFilteredInput(id: string) {
-    if (!window.confirm("丢弃这条本地过滤输入？原聊天消息不会被删除。")) return;
+    if (!(await confirmAction("丢弃这条本地过滤输入？原聊天消息不会被删除。"))) return;
     setFilteredBusyId(id);
     setFilteredNotice("");
     setError("");

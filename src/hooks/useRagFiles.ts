@@ -7,6 +7,7 @@ import {
   searchRagContext
 } from "../api";
 import { isSupportedRagFile } from "../lib/formatters";
+import { confirmAction } from "../lib/dialogs";
 import type { RagChunkMatch, RagFile } from "../types";
 
 export interface UseRagFilesReturn {
@@ -53,6 +54,10 @@ export function useRagFiles(setNotice: (message: string) => void): UseRagFilesRe
   }
 
   async function handleDeleteRagFile(id: string, conversationId: string) {
+    const target = ragFiles.find((file) => file.id === id);
+    if (!(await confirmAction(`确定要移除「${target?.name || "该文件"}」的索引吗？原文件不会被删除。`))) {
+      return;
+    }
     try {
       await deleteRagFile(id);
       if (conversationId) {

@@ -8,6 +8,7 @@ import {
   testEmbeddingConnectivity,
   updateConversationModel
 } from "../api";
+import { confirmAction } from "../lib/dialogs";
 import type { ModelConfig, ModelConfigDraft, Conversation } from "../types";
 
 export const emptyModelDraft: ModelConfigDraft = {
@@ -255,6 +256,9 @@ export function useModel(
       return;
     }
 
+    if (!(await confirmAction(`确定要删除模型配置「${modelDraft.name}」吗？`))) {
+      return;
+    }
     try {
       await deleteModelConfig(modelDraft.id);
       const nextModels = await listModelConfigs();
