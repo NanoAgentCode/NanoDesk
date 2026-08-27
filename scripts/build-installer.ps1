@@ -73,11 +73,48 @@ try {
   $CliExe = Join-Path $ReleaseDir "nano.exe"
   $DesktopExe = Join-Path $ReleaseDir "nano-agent.exe"
   $BundleDir = Join-Path $ReleaseDir "bundle"
+  $NsisDir = Join-Path $BundleDir "nsis"
   $CliInstallerDir = Join-Path $BundleDir "cli"
   $Version = (Get-Content -LiteralPath (Join-Path $Root "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).version
   $CliInstaller = Join-Path $CliInstallerDir "NanoAgent-CLI_${Version}_x64-setup.exe"
   $NsisRoot = Join-Path $env:LOCALAPPDATA "tauri\NSIS"
   $MakeNsis = Join-Path $NsisRoot "makensis.exe"
+
+  $StandardNsis = Get-ChildItem -LiteralPath $NsisDir -Filter "*.exe" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notlike "*-offline-setup.exe" } |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+  if (-not $StandardNsis) {
+    throw "Standard NSIS installer was not found in: $NsisDir"
+  }
+
+  $OfflineNsisName = $StandardNsis.Name -replace '-setup\.exe$', '-offline-setup.exe'
+  if ($OfflineNsisName -eq $StandardNsis.Name) {
+    throw "Unexpected standard NSIS installer name: $($StandardNsis.Name)"
+  }
+  $OfflineNsisPath = Join-Path $NsisDir $OfflineNsisName
+  $StandardNsisBackup = [System.IO.Path]::GetTempFileName()
+  Copy-Item -LiteralPath $StandardNsis.FullName -Destination $StandardNsisBackup -Force
+  try {
+    Write-Host "==> Building offline NSIS installer with embedded WebView2 Runtime"
+    & cmd.exe /d /s /c 'npm.cmd run tauri bundle -- --bundles nsis --config src-tauri/tauri.offline.conf.json'
+    if ($LASTEXITCODE -ne 0) {
+      throw "Offline NSIS bundle failed. Exit code: $LASTEXITCODE"
+    }
+
+    if (-not (Test-Path -LiteralPath $StandardNsis.FullName)) {
+      throw "Offline NSIS installer was not found after bundling: $($StandardNsis.FullName)"
+    }
+    Copy-Item -LiteralPath $StandardNsis.FullName -Destination $OfflineNsisPath -Force
+  } finally {
+    Copy-Item -LiteralPath $StandardNsisBackup -Destination $StandardNsis.FullName -Force
+    Remove-Item -LiteralPath $StandardNsisBackup -Force -ErrorAction SilentlyContinue
+  }
+  $OfflineNsis = Get-Item -LiteralPath $OfflineNsisPath
+  $StandardNsis = Get-Item -LiteralPath $StandardNsis.FullName
+  if ($OfflineNsis.Length -le $StandardNsis.Length) {
+    throw "Offline NSIS installer does not appear to contain WebView2 Runtime: $OfflineNsisPath"
+  }
 
   if (-not (Test-Path -LiteralPath $CliExe)) {
     throw "CLI executable was not found: $CliExe"
@@ -94,7 +131,6 @@ try {
     throw "CLI installer build failed. Exit code: $LASTEXITCODE"
   }
 
-  $Nsis = Get-ChildItem -LiteralPath (Join-Path $BundleDir "nsis") -Filter "*.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
   $Msi = Get-ChildItem -LiteralPath (Join-Path $BundleDir "msi") -Filter "*.msi" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
   Write-Host ""
@@ -102,9 +138,8 @@ try {
   Write-Host "CLI : $CliExe"
   Write-Host "CLI installer: $CliInstaller"
   Write-Host "App : $DesktopExe"
-  if ($Nsis) {
-    Write-Host "NSIS: $($Nsis.FullName)"
-  }
+  Write-Host "NSIS: $($StandardNsis.FullName)"
+  Write-Host "NSIS offline: $($OfflineNsis.FullName)"
   if ($Msi) {
     Write-Host "MSI : $($Msi.FullName)"
   }

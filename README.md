@@ -103,7 +103,7 @@ Windows 打包：
 npm.cmd run package:win
 ```
 
-`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，然后构建 CLI、Tauri 桌面端及安装包。常见产物包括 `nano.exe`、独立 CLI 安装器、`nano-agent.exe`、桌面端 NSIS 安装包和 MSI 安装包。
+`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，然后构建 CLI、Tauri 桌面端及安装包。常见产物包括 `nano.exe`、独立 CLI 安装器、`nano-agent.exe`、桌面端标准 NSIS 安装包、内置 WebView2 Offline Installer 的离线 NSIS 安装包和 MSI 安装包。离线 NSIS 包以 `-offline-setup.exe` 结尾，最终用户安装时不需要联网下载 WebView2 Runtime，但文件通常会增加百余 MB，实际大小随微软提供的离线安装器版本变化。
 
 ## 数据位置
 
