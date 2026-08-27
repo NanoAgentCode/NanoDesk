@@ -1735,6 +1735,43 @@
   line-height: 1.55;
 }
 
+.memory-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.memory-title-row h3 {
+  margin-bottom: 0;
+}
+
+.memory-data-flow-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: help;
+  transition: color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.memory-data-flow-tip:hover,
+.memory-data-flow-tip:focus-visible {
+  color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+}
+
+.memory-data-flow-tip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 28%, transparent);
+}
+
 .profile-tab-content > .profile-settings-card {
   flex: 0 0 auto;
 }
