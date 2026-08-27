@@ -240,6 +240,14 @@ impl Database {
         if message.role != "user" {
             return Ok(());
         }
+        if message
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.exclude_from_profile)
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
         let enabled = self.conn.query_row(
             "SELECT enabled FROM profile_settings WHERE id = 1",
             [],

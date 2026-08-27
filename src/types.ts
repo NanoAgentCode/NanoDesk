@@ -250,6 +250,7 @@ export interface WebSearchResponse {
 
 export interface MessageMetadata {
   web_search?: MessageWebSearchMetadata | null;
+  exclude_from_profile?: boolean | null;
 }
 
 export interface MessageWebSearchMetadata {

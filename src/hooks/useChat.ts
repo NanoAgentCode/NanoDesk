@@ -20,8 +20,7 @@ import { loadProjectRetrievalContext } from "../lib/projectRetrieval";
 import { isSupportedRagFile, MAX_CONTEXT_TOKENS, estimateTokens } from "../lib/formatters";
 import { isSupportedImageAttachmentFile } from "../lib/imageAttachments";
 import {
-  extractMemoryDraft,
-  isExplicitProfileInstruction,
+  resolveUserMemoryRoute,
   parseToolCall,
   type ParsedToolCall
 } from "../lib/messageHelpers";
@@ -224,8 +223,9 @@ export function useChat({
   async function handleSendMessage() {
     const textContent = input.chatInput.trim();
     const content = buildMessageContentWithImageAttachments(textContent, attachments.pendingImageAttachments);
-    const explicitProfileInstruction = isExplicitProfileInstruction(textContent);
-    const memoryDraft = explicitProfileInstruction ? null : extractMemoryDraft(content);
+    const memoryRoute = resolveUserMemoryRoute(textContent, content);
+    const explicitProfileInstruction = memoryRoute.kind === "profile";
+    const memoryDraft = memoryRoute.memoryDraft;
     const effectiveModelId = conv.resolveConversationModelId(conv.activeConversationId);
     const activeModelId = effectiveModelId;
 
@@ -246,7 +246,8 @@ export function useChat({
       const userMessage = await appendMessage({
         conversation_id: conversationId,
         role: "user",
-        content
+        content,
+        metadata: memoryRoute.kind === "memory" ? { exclude_from_profile: true } : undefined
       });
       agentRun = await safeCreateAgentRun({
         conversation_id: conversationId,

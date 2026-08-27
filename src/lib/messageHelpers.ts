@@ -45,6 +45,22 @@ export function isExplicitProfileInstruction(content: string) {
   return explicit && profileSignal;
 }
 
+export type UserMemoryRoute =
+  | { kind: "profile"; memoryDraft: null }
+  | { kind: "memory"; memoryDraft: NonNullable<ReturnType<typeof extractMemoryDraft>> }
+  | { kind: "auto"; memoryDraft: null };
+
+export function resolveUserMemoryRoute(content: string, memoryContent = content): UserMemoryRoute {
+  if (isExplicitProfileInstruction(content)) {
+    return { kind: "profile", memoryDraft: null };
+  }
+
+  const memoryDraft = extractMemoryDraft(memoryContent);
+  return memoryDraft
+    ? { kind: "memory", memoryDraft }
+    : { kind: "auto", memoryDraft: null };
+}
+
 export interface ParsedToolCall {
   name: string;
   args: Record<string, string>;

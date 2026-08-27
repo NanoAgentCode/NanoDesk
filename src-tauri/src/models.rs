@@ -259,6 +259,8 @@ pub enum ChatStreamEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageMetadata {
     pub web_search: Option<MessageWebSearchMetadata>,
+    #[serde(default)]
+    pub exclude_from_profile: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
