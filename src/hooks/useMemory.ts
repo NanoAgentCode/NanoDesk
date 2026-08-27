@@ -26,8 +26,13 @@ export interface UseMemoryReturn {
   selectedMemory: Memory | null;
   loadVisibleMemories: (nextQuery?: string) => Promise<Memory[]>;
   refreshMemories: (query?: string) => Promise<Memory[]>;
+  handleMemoryCreated: (createdMemory: Memory) => void;
   handleSaveMemory: (query: string) => Promise<void>;
   handleDeleteMemory: (query: string) => Promise<void>;
+}
+
+export function mergeCreatedMemory(memoryItems: Memory[], createdMemory: Memory) {
+  return [createdMemory, ...memoryItems.filter((memory) => memory.id !== createdMemory.id)];
 }
 
 export function useMemory(setNotice: (message: string) => void): UseMemoryReturn {
@@ -87,6 +92,11 @@ export function useMemory(setNotice: (message: string) => void): UseMemoryReturn
     }
   }
 
+  function handleMemoryCreated(createdMemory: Memory) {
+    setMemoryItems((current) => mergeCreatedMemory(current, createdMemory));
+    setSelectedMemoryId(createdMemory.id);
+  }
+
   async function handleSaveMemory(query: string) {
     if (!selectedMemory) {
       return;
@@ -139,6 +149,7 @@ export function useMemory(setNotice: (message: string) => void): UseMemoryReturn
     selectedMemory,
     loadVisibleMemories,
     refreshMemories,
+    handleMemoryCreated,
     handleSaveMemory,
     handleDeleteMemory
   };

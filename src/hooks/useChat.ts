@@ -43,7 +43,7 @@ import {
   useChatAttachments
 } from "./useChatAttachments";
 import type {
-  AgentRun, AgentToolCall, ChatMessage, ChatStreamEvent,
+  AgentRun, AgentToolCall, ChatMessage, ChatStreamEvent, Memory,
   ChatImageAttachment, Conversation, Item, PersistedMessage, ProjectEntry, ProjectFileEntry
 } from "../types";
 import type { UseProjectsReturn } from "./useProjects";
@@ -126,6 +126,7 @@ export interface UseChatReturn {
 
 export interface UseChatArgs {
   setNotice: (message: string) => void;
+  onMemoryCreated: (memory: Memory) => void;
   projects: UseProjectsReturn;
   model: UseModelReturn;
   skills: UseSkillsReturn;
@@ -136,6 +137,7 @@ export interface UseChatArgs {
 
 export function useChat({
   setNotice,
+  onMemoryCreated,
   projects,
   model,
   skills,
@@ -269,6 +271,7 @@ export function useChat({
 
       if (memoryDraft) {
         const savedMemory = await createMemory(memoryDraft);
+        onMemoryCreated(savedMemory);
         setNotice("已保存");
         if (agentRun) {
           void safeRecordAgentStep({

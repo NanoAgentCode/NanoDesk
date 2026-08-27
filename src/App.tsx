@@ -96,6 +96,7 @@ function App() {
 
   const chat = useChat({
     setNotice,
+    onMemoryCreated: memory.handleMemoryCreated,
     projects,
     model,
     skills,
