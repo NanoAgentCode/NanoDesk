@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, Fingerprint, Loader2, Play, RefreshCw, RotateCcw, Save, Trash2 } from "lucide-react";
 import IconTooltipButton from "../IconTooltipButton";
 import {
@@ -28,11 +28,6 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-
-  const selectedModel = useMemo(
-    () => models.find((model) => model.id === settings.model_config_id),
-    [models, settings.model_config_id]
-  );
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -124,8 +119,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
           </div>
 
           <div className="profile-data-flow-notice" role="note">
-            {selectedModel ? <>启用后，仅把本地筛出的用户画像候选片段发送到 <strong>{selectedModel.name} / {selectedModel.model}</strong>（{selectedModel.base_url}）；不发送整条消息或当前画像。</> : <>启用前必须选择聊天模型。画像观察、批次、事实和来源关系保存在本机 SQLite。</>}
-            <br />已形成的有效画像会作为上下文进入后续正常聊天请求；提高调用或字符预算可能增加云端费用或本地模型资源消耗。
+            已形成的有效画像会作为上下文进入后续正常聊天请求；提高调用或字符预算可能增加云端费用或本地模型资源消耗。
           </div>
           <div className="profile-settings-actions">
             {status && status.failed_batches + status.blocked_batches > 0 && <IconTooltipButton label="重试异常批次" onClick={() => void handleRetryFailures()} disabled={!savedEnabled}><RotateCcw size={16} /></IconTooltipButton>}
