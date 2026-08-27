@@ -768,7 +768,7 @@ function App() {
                 onClick={env.handleAutoInstallMissing}
                 disabled={env.isInstallingEnv || env.isCheckingEnv}
               >
-                {env.isInstallingEnv ? "正在配置..." : "自动配置 (winget)"}
+                {env.isInstallingEnv ? "正在配置..." : "自动配置"}
               </Button>
             </Group>
           </Stack>
