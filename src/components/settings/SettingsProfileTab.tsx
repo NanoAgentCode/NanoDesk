@@ -19,7 +19,7 @@ const DEFAULT_DRAFT: ProfileSettingsDraft = {
   rolling_day_attempt_limit: 8, rolling_day_candidate_character_limit: 30000
 };
 
-const GENERATE_PROFILE_TIP = "根据已收集的候选信息立即生成用户画像";
+const GENERATE_PROFILE_TIP = "立即生成用户画像";
 
 export default function SettingsProfileTab({ activeModelId }: SettingsProfileTabProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -32,6 +32,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   const [generating, setGenerating] = useState(false);
   const [savedEnabled, setSavedEnabled] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
+  const [factsExpanded, setFactsExpanded] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [filteredNotice, setFilteredNotice] = useState("");
@@ -179,7 +180,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
       <section className="profile-settings-card" aria-labelledby="profile-settings-title">
         <div className="profile-settings-title-row">
           <div className="profile-settings-summary">
-            <IconTooltipButton className="profile-settings-expand" label={settingsExpanded ? "折叠用户画像配置" : "展开用户画像配置"} aria-expanded={settingsExpanded} aria-controls="profile-settings-content" onClick={() => setSettingsExpanded((expanded) => !expanded)}>
+            <IconTooltipButton className="profile-settings-expand" label={settingsExpanded ? "折叠配置" : "展开配置"} aria-expanded={settingsExpanded} aria-controls="profile-settings-content" onClick={() => setSettingsExpanded((expanded) => !expanded)}>
               <ChevronDown size={17} className={settingsExpanded ? "is-expanded" : undefined} aria-hidden="true" />
             </IconTooltipButton>
             <div><h4 id="profile-settings-title">异步画像提取</h4><p>本地先过滤稳定自述，再按字符、观察数或时间批量调用一次模型，不会阻塞聊天回复。</p></div>
@@ -200,12 +201,12 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
           </div>
 
           <div className="profile-data-flow-notice" role="note">
-            已形成的有效画像会作为上下文进入后续正常聊天请求；提高调用或字符预算可能增加云端费用或本地模型资源消耗。
+            已形成的有效画像会作为上下文进入后续正常聊天请求;提高调用或字符预算可能增加云端费用或本地模型资源消耗。
           </div>
           <div className="profile-settings-actions">
             {status && status.failed_batches + status.blocked_batches > 0 && <IconTooltipButton label="重试异常批次" onClick={() => void handleRetryFailures()} disabled={!savedEnabled}><RotateCcw size={16} /></IconTooltipButton>}
-            <IconTooltipButton label="立即检查：唤醒后台画像任务；模型调用仍受前台空闲和预算限制" onClick={() => void handleRunNow()} disabled={!savedEnabled || loading}><Play size={16} /></IconTooltipButton>
-            <IconTooltipButton label={saving ? "保存中" : "保存画像设置"} tone="success" onClick={() => void handleSaveSettings()} disabled={saving || (settings.enabled && !settings.model_config_id)}>{saving ? <Loader2 size={16} className="svg-spin" /> : <Save size={16} />}</IconTooltipButton>
+            <IconTooltipButton label="立即唤醒" onClick={() => void handleRunNow()} disabled={!savedEnabled || loading}><Play size={16} /></IconTooltipButton>
+            <IconTooltipButton label={saving ? "保存中" : "保存设置"} tone="success" onClick={() => void handleSaveSettings()} disabled={saving || (settings.enabled && !settings.model_config_id)}>{saving ? <Loader2 size={16} className="svg-spin" /> : <Save size={16} />}</IconTooltipButton>
           </div>
           {notice && <p className="profile-notice">{notice}</p>}
         </div>}
@@ -215,10 +216,10 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
       <section className="user-profile-card" aria-labelledby="user-profile-title">
         <header className="user-profile-header">
           <div className="user-profile-heading"><span className="user-profile-mark" aria-hidden="true"><Fingerprint size={20} /></span><div><h4 id="user-profile-title">用户画像</h4><p>后台差量归纳结果。事实不可编辑，可逐条删除或全部清空。</p></div></div>
-          <div className="profile-header-actions"><IconTooltipButton label={generating ? "正在生成用户画像" : generateTip} tooltipOpened={generateTipOpened ? true : undefined} onClick={() => void handleGenerateNow()} disabled={!savedEnabled || loading || generating}>{generating ? <Loader2 size={16} className="svg-spin" /> : <Play size={16} />}</IconTooltipButton><IconTooltipButton label={loading ? "刷新中" : "刷新画像"} onClick={() => void loadProfile()} disabled={loading}><RefreshCw size={16} className={loading ? "svg-spin" : undefined} /></IconTooltipButton><IconTooltipButton label="清空画像" tone="danger" onClick={() => void handleClearProfile()} disabled={!profile?.facts.length}><Trash2 size={16} /></IconTooltipButton></div>
+          <div className="profile-header-actions"><IconTooltipButton label={generating ? "正在生成用户画像" : generateTip} tooltipOpened={generateTipOpened ? true : undefined} onClick={() => void handleGenerateNow()} disabled={!savedEnabled || loading || generating}>{generating ? <Loader2 size={16} className="svg-spin" /> : <Play size={16} />}</IconTooltipButton><IconTooltipButton label={loading ? "刷新中" : "刷新画像"} onClick={() => void loadProfile()} disabled={loading}><RefreshCw size={16} className={loading ? "svg-spin" : undefined} /></IconTooltipButton><IconTooltipButton className="profile-settings-expand" label={factsExpanded ? "收起画像具体条目" : "展开画像具体条目"} aria-expanded={factsExpanded} aria-controls="user-profile-facts-content" onClick={() => setFactsExpanded((expanded) => !expanded)} disabled={!profile?.facts.length}><ChevronDown size={17} className={factsExpanded ? "is-expanded" : undefined} aria-hidden="true" /></IconTooltipButton><IconTooltipButton label="清空画像" tone="danger" onClick={() => void handleClearProfile()} disabled={!profile?.facts.length}><Trash2 size={16} /></IconTooltipButton></div>
         </header>
         {status && <div className="profile-processing-status"><span>待处理 {status.pending_observations + status.pending_batches}</span><span>本地过滤 {status.skipped_observations}</span><span>24h 调用 {status.rolling_day_attempts}</span><span>候选字符 {status.rolling_day_candidate_characters}</span><span>估算输入 Token {status.rolling_day_estimated_input_tokens}</span><span>实际 Token {status.rolling_day_attempts === 0 ? 0 : (status.rolling_day_actual_input_tokens + status.rolling_day_actual_output_tokens || "服务未返回")}</span>{(status.failed_batches > 0 || status.blocked_batches > 0) && <span className="status-error">异常 {status.failed_batches + status.blocked_batches}</span>}</div>}
-        {profile?.facts.length ? <><div className="user-profile-stats" aria-label="画像统计"><span><strong>{profile.global_preference_count}</strong> 项全局偏好</span><span><strong>{profile.profile_fact_count}</strong> 项身份与工作画像</span><span><strong>{profile.facts.length}</strong> 项有效事实</span></div><div className="user-profile-facts">{profile.facts.map((fact) => <article className={`user-profile-fact${fact.global ? " user-profile-fact--global" : ""}`} key={fact.id}><div className="user-profile-fact-meta"><span>{fact.label}</span><div>{fact.global && <em>全局生效</em>}<IconTooltipButton className="settings-icon-compact" label="删除画像事实" tone="danger" onClick={() => void handleDeleteFact(fact.id)}><Trash2 size={14} /></IconTooltipButton></div></div><p>{fact.value}</p><small>{fact.source_count} 条来源 · {new Date(fact.updated_at).toLocaleString()}</small></article>)}</div></> : <p className="user-profile-state">{loading ? "正在读取画像…" : "尚未形成画像。启用后可在对话中说明长期偏好、角色、常用技术或项目。"}</p>}
+        {profile?.facts.length ? <><div className="user-profile-stats" aria-label="画像统计"><span><strong>{profile.global_preference_count}</strong> 项全局偏好</span><span><strong>{profile.profile_fact_count}</strong> 项身份与工作画像</span><span><strong>{profile.facts.length}</strong> 项有效事实</span></div>{factsExpanded && <div className="user-profile-facts" id="user-profile-facts-content">{profile.facts.map((fact) => <article className={`user-profile-fact${fact.global ? " user-profile-fact--global" : ""}`} key={fact.id}><div className="user-profile-fact-meta"><span>{fact.label}</span><div>{fact.global && <em>全局生效</em>}<IconTooltipButton className="settings-icon-compact" label="删除画像事实" tone="danger" onClick={() => void handleDeleteFact(fact.id)}><Trash2 size={14} /></IconTooltipButton></div></div><p>{fact.value}</p><small>{fact.source_count} 条来源 · {new Date(fact.updated_at).toLocaleString()}</small></article>)}</div>}</> : <p className="user-profile-state">{loading ? "正在读取画像…" : "尚未形成画像。启用后可在对话中说明长期偏好、角色、常用技术或项目。"}</p>}
       </section>
 
       <section className="filtered-profile-card" aria-labelledby="filtered-profile-title">
