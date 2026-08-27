@@ -1,7 +1,9 @@
-import { Activity, Loader2, Save } from "lucide-react";
-import { PasswordInput, Select, TextInput } from "@mantine/core";
+import { Activity, CircleHelp, Loader2, Save } from "lucide-react";
+import { PasswordInput, Select, TextInput, Tooltip } from "@mantine/core";
 import IconTooltipButton from "../IconTooltipButton";
 import type { UseModelReturn } from "../../hooks/useModel";
+
+const EMBEDDING_DATA_FLOW_TIP = "长期记忆启用后，其标题、标签和正文以及检索问题会发送到此服务；生成的向量只保存在本机。";
 
 interface SettingsEmbeddingTabProps {
   model: UseModelReturn;
@@ -10,11 +12,17 @@ interface SettingsEmbeddingTabProps {
 export default function SettingsEmbeddingTab({ model }: SettingsEmbeddingTabProps) {
   return (
     <div className="settings-tab-content model-tab-content">
-      <div className="model-header-row"><h3>嵌入模型</h3></div>
-      <p className="description description--tight">配置全局唯一嵌入模型 API，用于轻量 RAG、项目索引和长期记忆的向量化与匹配。</p>
-      <div className="memory-data-flow-notice" role="note">
-        长期记忆启用后，其标题、标签和正文以及检索问题会发送到此服务；生成的向量只保存在本机。
+      <div className="model-header-row">
+        <div className="embedding-title-row">
+          <h3>嵌入模型</h3>
+          <Tooltip label={EMBEDDING_DATA_FLOW_TIP} multiline w={420} position="bottom-start" openDelay={250} withArrow>
+            <button type="button" className="memory-data-flow-tip" aria-label="查看长期记忆数据流说明">
+              <CircleHelp size={17} aria-hidden="true" />
+            </button>
+          </Tooltip>
+        </div>
       </div>
+      <p className="description description--tight">配置全局唯一嵌入模型 API，用于轻量 RAG、项目索引和长期记忆的向量化与匹配。</p>
       <div className="embedding-config-card">
         <div className="model-config-form embedding-config-form">
           <div className="model-form-card">
