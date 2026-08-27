@@ -14,6 +14,7 @@ import type {
   ProfileSettings,
   ProfileSettingsDraft,
   ProfileProcessingStatus,
+  FilteredProfileObservation,
   McpServerConfig,
   McpServerDraft,
   McpServerView,
@@ -250,6 +251,18 @@ export function saveProfileSettings(draft: ProfileSettingsDraft) {
 
 export function getProfileProcessingStatus() {
   return invoke<ProfileProcessingStatus>("get_profile_processing_status");
+}
+
+export function listFilteredProfileObservations() {
+  return invoke<FilteredProfileObservation[]>("list_filtered_profile_observations");
+}
+
+export function includeFilteredProfileObservation(id: string) {
+  return invoke<void>("include_filtered_profile_observation", { id });
+}
+
+export function discardFilteredProfileObservation(id: string) {
+  return invoke<void>("discard_filtered_profile_observation", { id });
 }
 
 export function deleteProfileFact(id: string) {

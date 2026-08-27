@@ -340,6 +340,12 @@ export interface ProfileProcessingStatus {
   last_error?: string | null;
 }
 
+export interface FilteredProfileObservation {
+  id: string;
+  content: string;
+  observed_at: string;
+}
+
 export interface CodeIndexRun {
   id: string;
   project_path: string;

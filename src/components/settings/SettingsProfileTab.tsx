@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, Fingerprint, Loader2, Play, RefreshCw, RotateCcw, Save, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Fingerprint, Loader2, Play, RefreshCw, RotateCcw, Save, Trash2 } from "lucide-react";
 import IconTooltipButton from "../IconTooltipButton";
 import {
-  clearUserProfile, deleteProfileFact, generateProfileNow, getProfileProcessingStatus, getProfileSettings,
-  getUserProfile, listModelConfigs, retryProfileFailures, runProfileWorkerNow, saveProfileSettings
+  clearUserProfile, deleteProfileFact, discardFilteredProfileObservation, generateProfileNow,
+  getProfileProcessingStatus, getProfileSettings, getUserProfile, includeFilteredProfileObservation,
+  listFilteredProfileObservations, listModelConfigs, retryProfileFailures, runProfileWorkerNow,
+  saveProfileSettings
 } from "../../api";
-import type { ModelConfig, ProfileProcessingStatus, ProfileSettingsDraft, UserProfile } from "../../types";
+import type { FilteredProfileObservation, ModelConfig, ProfileProcessingStatus, ProfileSettingsDraft, UserProfile } from "../../types";
 
 interface SettingsProfileTabProps {
   activeModelId?: string;
@@ -23,6 +25,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [settings, setSettings] = useState<ProfileSettingsDraft>(DEFAULT_DRAFT);
   const [status, setStatus] = useState<ProfileProcessingStatus | null>(null);
+  const [filteredInputs, setFilteredInputs] = useState<FilteredProfileObservation[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -31,6 +34,8 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [filteredNotice, setFilteredNotice] = useState("");
+  const [filteredBusyId, setFilteredBusyId] = useState<string | null>(null);
   const [generateTip, setGenerateTip] = useState(GENERATE_PROFILE_TIP);
   const [generateTipOpened, setGenerateTipOpened] = useState(false);
   const generateTipTimer = useRef<number | null>(null);
@@ -39,12 +44,14 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
     setLoading(true);
     setError("");
     try {
-      const [nextProfile, nextSettings, nextStatus, allModels] = await Promise.all([
-        getUserProfile(), getProfileSettings(), getProfileProcessingStatus(), listModelConfigs()
+      const [nextProfile, nextSettings, nextStatus, nextFilteredInputs, allModels] = await Promise.all([
+        getUserProfile(), getProfileSettings(), getProfileProcessingStatus(),
+        listFilteredProfileObservations(), listModelConfigs()
       ]);
       const chatModels = allModels.filter((model) => model.id !== "embedding-config");
       setProfile(nextProfile);
       setStatus(nextStatus);
+      setFilteredInputs(nextFilteredInputs);
       setSavedEnabled(nextSettings.enabled);
       setModels(chatModels);
       setSettings({ ...nextSettings, model_config_id: nextSettings.model_config_id || activeModelId || chatModels[0]?.id || null });
@@ -128,6 +135,42 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
     window.setTimeout(() => void loadProfile(), 1200);
   }
 
+  async function handleIncludeFilteredInput(id: string) {
+    setFilteredBusyId(id);
+    setFilteredNotice("");
+    setError("");
+    try {
+      await includeFilteredProfileObservation(id);
+      const result = await generateProfileNow();
+      setFilteredNotice(result === "generated"
+        ? "已交给画像模型提取并完成处理"
+        : result === "deferred"
+          ? "已加入画像候选，受前台会话或预算限制，将稍后处理"
+          : "已加入画像候选，当前没有可执行的生成批次");
+      await loadProfile();
+    } catch (includeError) {
+      setError(String(includeError));
+    } finally {
+      setFilteredBusyId(null);
+    }
+  }
+
+  async function handleDiscardFilteredInput(id: string) {
+    if (!window.confirm("丢弃这条本地过滤输入？原聊天消息不会被删除。")) return;
+    setFilteredBusyId(id);
+    setFilteredNotice("");
+    setError("");
+    try {
+      await discardFilteredProfileObservation(id);
+      setFilteredNotice("已丢弃本地过滤输入，原聊天消息仍保留");
+      await loadProfile();
+    } catch (discardError) {
+      setError(String(discardError));
+    } finally {
+      setFilteredBusyId(null);
+    }
+  }
+
   return (
     <div className="settings-tab-content profile-tab-content">
       <h3>用户画像</h3>
@@ -176,6 +219,15 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
         </header>
         {status && <div className="profile-processing-status"><span>待处理 {status.pending_observations + status.pending_batches}</span><span>本地过滤 {status.skipped_observations}</span><span>24h 调用 {status.rolling_day_attempts}</span><span>候选字符 {status.rolling_day_candidate_characters}</span><span>估算输入 Token {status.rolling_day_estimated_input_tokens}</span><span>实际 Token {status.rolling_day_attempts === 0 ? 0 : (status.rolling_day_actual_input_tokens + status.rolling_day_actual_output_tokens || "服务未返回")}</span>{(status.failed_batches > 0 || status.blocked_batches > 0) && <span className="status-error">异常 {status.failed_batches + status.blocked_batches}</span>}</div>}
         {profile?.facts.length ? <><div className="user-profile-stats" aria-label="画像统计"><span><strong>{profile.global_preference_count}</strong> 项全局偏好</span><span><strong>{profile.profile_fact_count}</strong> 项身份与工作画像</span><span><strong>{profile.facts.length}</strong> 项有效事实</span></div><div className="user-profile-facts">{profile.facts.map((fact) => <article className={`user-profile-fact${fact.global ? " user-profile-fact--global" : ""}`} key={fact.id}><div className="user-profile-fact-meta"><span>{fact.label}</span><div>{fact.global && <em>全局生效</em>}<IconTooltipButton className="settings-icon-compact" label="删除画像事实" tone="danger" onClick={() => void handleDeleteFact(fact.id)}><Trash2 size={14} /></IconTooltipButton></div></div><p>{fact.value}</p><small>{fact.source_count} 条来源 · {new Date(fact.updated_at).toLocaleString()}</small></article>)}</div></> : <p className="user-profile-state">{loading ? "正在读取画像…" : "尚未形成画像。启用后可在对话中说明长期偏好、角色、常用技术或项目。"}</p>}
+      </section>
+
+      <section className="filtered-profile-card" aria-labelledby="filtered-profile-title">
+        <header className="filtered-profile-header">
+          <div><h4 id="filtered-profile-title">本地过滤待确认</h4><p>以下输入未通过本地画像规则。选择“加入画像”后，该条输入会发送给当前画像模型进行结构化提取；选择“丢弃”只删除待确认记录，不删除聊天消息。</p></div>
+          <span>{filteredInputs.length} 条待确认</span>
+        </header>
+        {filteredInputs.length ? <div className="filtered-profile-list">{filteredInputs.map((item) => <article className="filtered-profile-item" key={item.id}><pre>{item.content}</pre><footer><small>{new Date(item.observed_at).toLocaleString()}</small><div><IconTooltipButton className="settings-icon-compact" label="加入画像" tone="success" onClick={() => void handleIncludeFilteredInput(item.id)} disabled={filteredBusyId !== null}>{filteredBusyId === item.id ? <Loader2 size={14} className="svg-spin" /> : <Check size={14} />}</IconTooltipButton><IconTooltipButton className="settings-icon-compact" label="丢弃" tone="danger" onClick={() => void handleDiscardFilteredInput(item.id)} disabled={filteredBusyId !== null}><Trash2 size={14} /></IconTooltipButton></div></footer></article>)}</div> : <p className="filtered-profile-empty">{loading ? "正在读取本地过滤输入…" : "暂无待确认输入。历史累计过滤数据已删除，无法在此恢复；这里只展示升级后新保留的记录。"}</p>}
+        {filteredNotice && <p className="filtered-profile-notice">{filteredNotice}</p>}
       </section>
     </div>
   );

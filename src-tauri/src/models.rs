@@ -369,6 +369,13 @@ pub struct ProfileProcessingStatus {
     pub last_error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilteredProfileObservation {
+    pub id: String,
+    pub content: String,
+    pub observed_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ProfileObservationWork {
     pub id: String,
@@ -410,6 +417,7 @@ pub(crate) struct ProfileBatchObservation {
     pub source_message_id: String,
     pub content: String,
     pub candidate_hash: String,
+    pub candidate_kind: String,
     pub observation_revision: i64,
 }
 

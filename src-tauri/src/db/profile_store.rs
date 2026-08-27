@@ -7,9 +7,9 @@ use uuid::Uuid;
 use super::{parse_time_for_row, user_profile_dimension_label, Database};
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    PreparedProfileObservation, ProfileBatchObservation, ProfileBatchWork, ProfileObservationWork,
-    ProfileOperation, ProfileProcessingStatus, ProfileSettings, ProfileSettingsDraft, UserProfile,
-    UserProfileFact,
+    FilteredProfileObservation, PreparedProfileObservation, ProfileBatchObservation,
+    ProfileBatchWork, ProfileObservationWork, ProfileOperation, ProfileProcessingStatus,
+    ProfileSettings, ProfileSettingsDraft, UserProfile, UserProfileFact,
 };
 
 const PROFILE_SETTINGS_ID: i64 = 1;
@@ -316,6 +316,87 @@ impl Database {
         })
     }
 
+    pub fn list_filtered_profile_observations(&self) -> AppResult<Vec<FilteredProfileObservation>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT o.id, m.content, o.observed_at
+             FROM profile_observations o
+             JOIN messages m ON m.id = o.source_message_id
+             JOIN profile_state s ON s.id = 1
+             WHERE o.status = 'skipped' AND o.profile_generation = s.profile_generation
+             ORDER BY o.observation_revision DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let observed_at: String = row.get(2)?;
+            Ok(FilteredProfileObservation {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                observed_at: parse_time_for_row(&observed_at)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    pub fn include_filtered_profile_observation(&self, id: &str) -> AppResult<()> {
+        let settings = self.get_profile_settings()?;
+        if !settings.enabled {
+            return Err(AppError::Message("请先启用用户画像".to_string()));
+        }
+        let content = self
+            .conn
+            .query_row(
+                "SELECT m.content
+                 FROM profile_observations o
+                 JOIN messages m ON m.id = o.source_message_id
+                 JOIN profile_state s ON s.id = 1
+                 WHERE o.id = ?1 AND o.status = 'skipped'
+                   AND o.profile_generation = s.profile_generation",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| AppError::Message("本地过滤输入不存在".to_string()))?;
+        let candidate = normalize_manual_profile_candidate(&content);
+        if candidate.is_empty() {
+            return Err(AppError::Message("该输入没有可加入画像的文本".to_string()));
+        }
+        let candidate_count = candidate.chars().count() as i64;
+        let status = if candidate_count > settings.long_input_threshold {
+            "ready_long"
+        } else {
+            "ready_normal"
+        };
+        let affected = self.conn.execute(
+            "UPDATE profile_observations SET
+                candidate_character_count = ?2,
+                candidate_hash = ?3,
+                candidate_kind = 'manual',
+                input_kind = 'manual',
+                cleaner_version = 'manual-review-v1',
+                status = ?4,
+                skip_reason = NULL
+             WHERE id = ?1 AND status = 'skipped'
+               AND profile_generation = (SELECT profile_generation FROM profile_state WHERE id = 1)",
+            params![id, candidate_count, stable_hash(&candidate), status],
+        )?;
+        if affected == 0 {
+            return Err(AppError::Message("本地过滤输入状态已变化".to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn discard_filtered_profile_observation(&self, id: &str) -> AppResult<()> {
+        let affected = self.conn.execute(
+            "DELETE FROM profile_observations
+             WHERE id = ?1 AND status = 'skipped'
+               AND profile_generation = (SELECT profile_generation FROM profile_state WHERE id = 1)",
+            params![id],
+        )?;
+        if affected == 0 {
+            return Err(AppError::Message("本地过滤输入不存在".to_string()));
+        }
+        Ok(())
+    }
+
     pub(crate) fn claim_profile_observation(
         &self,
         owner: &str,
@@ -421,10 +502,6 @@ impl Database {
                     "UPDATE profile_state SET skipped_observation_count = skipped_observation_count + 1,
                         updated_at = ?1 WHERE id = 1",
                     params![Utc::now().to_rfc3339()],
-                )?;
-                self.conn.execute(
-                    "DELETE FROM profile_observations WHERE id = ?1 AND status = 'skipped'",
-                    params![prepared.id],
                 )?;
             }
             Ok(affected > 0)
@@ -589,7 +666,11 @@ impl Database {
                        AND b.profile_generation = s.profile_generation
                        AND b.status IN ('pending', 'retry_wait', 'budget_wait')
                        AND b.available_at <= ?1
-                     ORDER BY CASE WHEN b.trigger_kind = 'explicit' THEN 0 ELSE 1 END,
+                     ORDER BY CASE b.trigger_kind
+                                  WHEN 'manual' THEN 0
+                                  WHEN 'explicit' THEN 1
+                                  ELSE 2
+                              END,
                               b.created_at ASC LIMIT 1",
                     params![now_text],
                     |row| row.get::<_, String>(0),
@@ -1051,7 +1132,7 @@ impl Database {
     ) -> AppResult<Vec<ProfileBatchObservation>> {
         let mut stmt = self.conn.prepare(
             "SELECT bo.batch_index, o.id, o.source_message_id, m.content,
-                    o.candidate_hash, o.observation_revision
+                    o.candidate_hash, o.candidate_kind, o.observation_revision
              FROM profile_batch_observations bo
              JOIN profile_observations o ON o.id = bo.observation_id
              JOIN messages m ON m.id = o.source_message_id
@@ -1065,7 +1146,8 @@ impl Database {
                 source_message_id: row.get(2)?,
                 content: row.get(3)?,
                 candidate_hash: row.get(4)?,
-                observation_revision: row.get(5)?,
+                candidate_kind: row.get(5)?,
+                observation_revision: row.get(6)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -1307,6 +1389,14 @@ fn select_profile_batch_members(
     ready: &[ReadyObservation],
     trigger: &str,
 ) -> Vec<ReadyObservation> {
+    if trigger == "manual" {
+        if let Some(item) = ready
+            .iter()
+            .find(|item| item.candidate_kind == "manual" && item.status == "ready_long")
+        {
+            return vec![item.clone()];
+        }
+    }
     if trigger == "long_input" || trigger == "manual" {
         if let Some(item) = ready.iter().find(|item| item.status == "ready_long") {
             return vec![item.clone()];
@@ -1333,14 +1423,10 @@ fn select_profile_batch_members(
         .filter(|item| item.status == "ready_normal")
         .cloned()
         .collect::<Vec<_>>();
-    if trigger == "explicit" {
+    if trigger == "explicit" || trigger == "manual" {
         ordered.sort_by_key(|item| {
             (
-                if item.candidate_kind == "explicit" {
-                    0
-                } else {
-                    1
-                },
+                if item.candidate_kind == trigger { 0 } else { 1 },
                 item.observation_revision,
             )
         });
@@ -1409,6 +1495,16 @@ pub(crate) fn stable_hash(value: &str) -> String {
         hash = hash.wrapping_mul(0x100000001b3);
     }
     format!("{hash:016x}")
+}
+
+pub(crate) fn normalize_manual_profile_candidate(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_control() || matches!(*character, '\n' | '\t'))
+        .take(PROFILE_BATCH_CHARACTER_LIMIT as usize)
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 fn estimate_tokens(characters: i64) -> i64 {
@@ -1621,6 +1717,97 @@ mod tests {
             )
             .expect("manual trigger should load");
         assert_eq!(trigger, "manual");
+    }
+
+    #[test]
+    fn skipped_observations_can_be_included_or_discarded_by_the_user() {
+        let db = enabled_database();
+        append_user_message(&db, "请记住我默认使用中文回答");
+        mark_ready(&db, "preprocessor", "explicit");
+        db.create_profile_batch()
+            .expect("explicit batch should be created")
+            .expect("explicit batch should exist");
+
+        append_user_message(&db, "帮我修复这个按钮");
+        let skipped = db
+            .claim_profile_observation("preprocessor")
+            .expect("observation claim should succeed")
+            .expect("observation should exist");
+        assert!(db
+            .finish_profile_preprocessing(&PreparedProfileObservation {
+                id: skipped.id.clone(),
+                candidate_character_count: 0,
+                candidate_hash: stable_hash(""),
+                candidate_kind: "normal".to_string(),
+                input_kind: "plain".to_string(),
+                cleaner_version: "test".to_string(),
+                status: "skipped".to_string(),
+                skip_reason: Some("no stable user-profile candidate".to_string()),
+                profile_generation: skipped.profile_generation,
+                preprocess_lease_owner: skipped.preprocess_lease_owner,
+                preprocess_lease_epoch: skipped.preprocess_lease_epoch,
+            })
+            .expect("skipped observation should be retained"));
+        let filtered = db
+            .list_filtered_profile_observations()
+            .expect("filtered observations should load");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].content, "帮我修复这个按钮");
+
+        db.include_filtered_profile_observation(&skipped.id)
+            .expect("filtered observation should be included");
+        assert!(db
+            .list_filtered_profile_observations()
+            .expect("filtered observations should reload")
+            .is_empty());
+        let batch_id = db
+            .create_profile_batch_now()
+            .expect("manual batch should be created")
+            .expect("included observation should be ready");
+        let work = db
+            .claim_profile_batch("worker")
+            .expect("manual batch should be claimed")
+            .expect("manual batch should be available");
+        assert_eq!(work.id, batch_id);
+        assert_eq!(work.observations[0].candidate_kind, "manual");
+
+        let discarded_db = enabled_database();
+        append_user_message(&discarded_db, "帮我整理一下代码");
+        let discarded = discarded_db
+            .claim_profile_observation("preprocessor")
+            .expect("observation claim should succeed")
+            .expect("observation should exist");
+        assert!(discarded_db
+            .finish_profile_preprocessing(&PreparedProfileObservation {
+                id: discarded.id.clone(),
+                candidate_character_count: 0,
+                candidate_hash: stable_hash(""),
+                candidate_kind: "normal".to_string(),
+                input_kind: "plain".to_string(),
+                cleaner_version: "test".to_string(),
+                status: "skipped".to_string(),
+                skip_reason: Some("no stable user-profile candidate".to_string()),
+                profile_generation: discarded.profile_generation,
+                preprocess_lease_owner: discarded.preprocess_lease_owner,
+                preprocess_lease_epoch: discarded.preprocess_lease_epoch,
+            })
+            .expect("skipped observation should be retained"));
+        discarded_db
+            .discard_filtered_profile_observation(&discarded.id)
+            .expect("filtered observation should be discarded");
+        assert!(discarded_db
+            .list_filtered_profile_observations()
+            .expect("discarded observation should disappear")
+            .is_empty());
+        let message_count: i64 = discarded_db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE content = ?1",
+                params!["帮我整理一下代码"],
+                |row| row.get(0),
+            )
+            .expect("source message count should load");
+        assert_eq!(message_count, 1);
     }
 
     #[test]

@@ -2154,6 +2154,109 @@
   text-align: right;
 }
 
+.profile-tab-content > .filtered-profile-card {
+  flex: 0 0 auto;
+}
+
+.filtered-profile-card {
+  margin: 0 0 14px;
+  padding: 15px;
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 30%, var(--border-color));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+}
+
+.filtered-profile-header,
+.filtered-profile-item footer,
+.filtered-profile-item footer > div {
+  display: flex;
+  align-items: center;
+}
+
+.filtered-profile-header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.filtered-profile-header h4,
+.filtered-profile-header p,
+.filtered-profile-empty,
+.filtered-profile-notice {
+  margin: 0;
+}
+
+.filtered-profile-header h4 {
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.filtered-profile-header p,
+.filtered-profile-empty,
+.filtered-profile-notice {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.filtered-profile-header > span {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--accent-warning);
+  background: var(--notification-warning-bg);
+  font-size: var(--font-size-2xs);
+}
+
+.filtered-profile-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.filtered-profile-item {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-pane) 68%, transparent);
+}
+
+.filtered-profile-item pre {
+  overflow: auto;
+  max-height: 120px;
+  margin: 0;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.filtered-profile-item footer {
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.filtered-profile-item footer small {
+  color: var(--text-secondary);
+  font-size: var(--font-size-2xs);
+}
+
+.filtered-profile-item footer > div {
+  gap: 6px;
+}
+
+.filtered-profile-empty {
+  padding-top: 12px;
+}
+
+.filtered-profile-notice {
+  color: var(--accent-emerald);
+}
+
 @media (max-width: 760px) {
   .profile-settings-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2161,6 +2264,11 @@
 
   .user-profile-facts {
     grid-template-columns: 1fr;
+  }
+
+  .filtered-profile-header,
+  .filtered-profile-item footer {
+    align-items: flex-start;
   }
 }
 

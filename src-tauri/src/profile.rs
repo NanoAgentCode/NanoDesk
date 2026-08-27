@@ -10,9 +10,9 @@ use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::llm::send_chat_completion;
 use crate::models::{
-    ChatMessage, ChatRequest, PreparedProfileObservation, ProfileBatchWork,
-    ProfileExtractionResponse, ProfileObservationWork, ProfileProcessingStatus, ProfileSettings,
-    ProfileSettingsDraft, UserProfile,
+    ChatMessage, ChatRequest, FilteredProfileObservation, PreparedProfileObservation,
+    ProfileBatchWork, ProfileExtractionResponse, ProfileObservationWork, ProfileProcessingStatus,
+    ProfileSettings, ProfileSettingsDraft, UserProfile,
 };
 use crate::AppState;
 
@@ -53,6 +53,37 @@ pub async fn get_profile_processing_status(
     state: State<'_, AppState>,
 ) -> AppResult<ProfileProcessingStatus> {
     state.db.lock().await.get_profile_processing_status()
+}
+
+#[tauri::command]
+pub async fn list_filtered_profile_observations(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<FilteredProfileObservation>> {
+    state.db.lock().await.list_filtered_profile_observations()
+}
+
+#[tauri::command]
+pub async fn include_filtered_profile_observation(
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<()> {
+    state
+        .db
+        .lock()
+        .await
+        .include_filtered_profile_observation(&id)
+}
+
+#[tauri::command]
+pub async fn discard_filtered_profile_observation(
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<()> {
+    state
+        .db
+        .lock()
+        .await
+        .discard_filtered_profile_observation(&id)
 }
 
 #[tauri::command]
@@ -362,17 +393,21 @@ fn build_extraction_request(work: &ProfileBatchWork) -> AppResult<ChatRequest> {
         if candidates.contains_key(&observation.index) {
             continue;
         }
-        let extracted = extract_candidates(&observation.content, 8_000);
-        if extracted.text.is_empty() {
+        let candidate = if observation.candidate_kind == "manual" {
+            crate::db::profile_store::normalize_manual_profile_candidate(&observation.content)
+        } else {
+            extract_candidates(&observation.content, 8_000).text
+        };
+        if candidate.is_empty() {
             continue;
         }
-        let hash = crate::db::profile_store::stable_hash(&extracted.text);
+        let hash = crate::db::profile_store::stable_hash(&candidate);
         if hash != observation.candidate_hash {
             return Err(AppError::Message(
                 "画像候选内容在组批后发生变化，已拒绝发送".to_string(),
             ));
         }
-        candidates.insert(observation.index, extracted.text);
+        candidates.insert(observation.index, candidate);
     }
     if candidates.is_empty() {
         return Err(AppError::Message("画像批次没有有效候选片段".to_string()));
@@ -633,6 +668,7 @@ pub(crate) fn load_profile_context(db: &Database) -> AppResult<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::ProfileBatchObservation;
 
     fn work(content: &str) -> ProfileObservationWork {
         ProfileObservationWork {
@@ -666,6 +702,30 @@ mod tests {
     fn ordinary_task_request_is_not_sent_to_the_profile_model() {
         let prepared = prepare_observation(&work("帮我修复这个按钮的边距问题"), 8_000);
         assert_eq!(prepared.status, "skipped");
+    }
+
+    #[test]
+    fn user_included_filtered_input_is_sent_as_a_manual_candidate() {
+        let content = "帮我修复这个按钮的边距问题";
+        let candidate = crate::db::profile_store::normalize_manual_profile_candidate(content);
+        let work = ProfileBatchWork {
+            id: "batch".to_string(),
+            model_config_id: "profile-model".to_string(),
+            profile_generation: 1,
+            lease_owner: "worker".to_string(),
+            lease_epoch: 1,
+            observations: vec![ProfileBatchObservation {
+                index: 1,
+                observation_id: "observation".to_string(),
+                source_message_id: "message".to_string(),
+                content: content.to_string(),
+                candidate_hash: crate::db::profile_store::stable_hash(&candidate),
+                candidate_kind: "manual".to_string(),
+                observation_revision: 1,
+            }],
+        };
+        let request = build_extraction_request(&work).expect("manual candidate should be accepted");
+        assert!(request.messages[1].content.contains(content));
     }
 
     #[test]
