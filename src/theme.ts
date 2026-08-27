@@ -49,6 +49,27 @@ export const nanoTheme = createTheme({
           blur: 2
         }
       }
+    },
+    Tooltip: {
+      defaultProps: {
+        radius: "md",
+        openDelay: 300,
+        closeDelay: 120,
+        withArrow: true
+      },
+      styles: {
+        tooltip: {
+          backgroundColor: "var(--tooltip-bg)",
+          color: "var(--tooltip-color)",
+          border: "1px solid var(--tooltip-border)",
+          boxShadow: "var(--tooltip-shadow)",
+          fontSize: "var(--tooltip-font-size)",
+          fontWeight: "var(--font-weight-medium)",
+          lineHeight: 1.55,
+          letterSpacing: "0.01em",
+          padding: "6px 11px"
+        }
+      }
     }
   }
 });

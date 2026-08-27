@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Tooltip } from "@mantine/core";
 import { CircleAlert, DownloadCloud, Loader2, Save, Power, Trash2, Plus, Pencil, X } from "lucide-react";
 import IconTooltipButton from "../IconTooltipButton";
 import { isBuiltInSkill } from "../../lib/skills";
@@ -55,15 +56,17 @@ export default function SettingsSkillsTab({ skills }: SettingsSkillsTabProps) {
                 key={source.id}
                 className={source.id === skills.selectedGitHubSourceId ? "skills-source-row active" : "skills-source-row"}
               >
-                <button
-                  className="skills-source-row-main"
-                  onClick={() => { setSourcePanelMode("preview"); skills.handlePreviewGitHubSourceSkills(source.id); }}
-                  type="button"
-                  title="查看该源包含的 Skills"
-                >
-                  <strong>{source.name}</strong>
-                  <span>{source.repo}{source.path ? `/${source.path}` : ""}</span>
-                </button>
+                <Tooltip label="查看该源包含的 Skills">
+                  <button
+                    className="skills-source-row-main"
+                    onClick={() => { setSourcePanelMode("preview"); skills.handlePreviewGitHubSourceSkills(source.id); }}
+                    type="button"
+                    aria-label="查看该源包含的 Skills"
+                  >
+                    <strong>{source.name}</strong>
+                    <span>{source.repo}{source.path ? `/${source.path}` : ""}</span>
+                  </button>
+                </Tooltip>
                 <IconTooltipButton
                   className="skills-source-info-btn"
                   onClick={() => { setSourcePanelMode("preview"); skills.handlePreviewGitHubSourceSkills(source.id); }}

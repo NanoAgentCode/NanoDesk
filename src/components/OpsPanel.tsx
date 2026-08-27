@@ -562,7 +562,7 @@ export default function OpsPanel({ setNotice }: OpsPanelProps) {
               <span>服务器列表</span>
               <small>{servers.length} 台</small>
             </div>
-            <Tooltip label="新增服务器" openDelay={450}>
+            <Tooltip label="新增服务器">
               <ActionIcon variant="light" color="nanoBlue" onClick={handleNewServer} aria-label="新增服务器">
                 <Plus size={15} />
               </ActionIcon>
@@ -616,7 +616,7 @@ export default function OpsPanel({ setNotice }: OpsPanelProps) {
                 <strong>SSH 交互</strong>
               </div>
               <div className="ops-actions">
-                <Tooltip label={terminalFullscreen ? "退出全屏" : "全屏"} openDelay={450}>
+                <Tooltip label={terminalFullscreen ? "退出全屏" : "全屏"}>
                   <ActionIcon
                   variant="subtle"
                   color="gray"

@@ -1,4 +1,4 @@
-import { CircleHelp } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { Tooltip } from "@mantine/core";
 import WorkspaceGrid from "../WorkspaceGrid";
 import type { UseWorkspaceReturn } from "../../hooks/useWorkspace";
@@ -17,9 +17,9 @@ export default function SettingsMemoryTab({ workspace, memory, workspaceRef }: S
     <div className="settings-tab-content">
       <div className="memory-title-row">
         <h3>记忆库</h3>
-        <Tooltip label={MEMORY_DATA_FLOW_TIP} multiline w={420} position="bottom-start" openDelay={250} withArrow>
+        <Tooltip label={MEMORY_DATA_FLOW_TIP} multiline w={420} position="bottom-start">
           <button type="button" className="memory-data-flow-tip" aria-label="查看记忆语义索引说明">
-            <CircleHelp size={17} aria-hidden="true" />
+            <CircleAlert size={17} aria-hidden="true" />
           </button>
         </Tooltip>
       </div>

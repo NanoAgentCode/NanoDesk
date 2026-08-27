@@ -13,7 +13,7 @@ export default function IconTooltipButton({ label, children, tone = "default", t
   const buttonClassName = ["icon-text-btn", "settings-icon-action", toneClass, className].filter(Boolean).join(" ");
 
   return (
-    <Tooltip label={label} openDelay={450} opened={tooltipOpened} withArrow>
+    <Tooltip label={label} opened={tooltipOpened}>
       <span className="icon-tooltip-target">
         <button type="button" {...props} className={buttonClassName} aria-label={label}>
           {children}

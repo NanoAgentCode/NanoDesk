@@ -1,4 +1,4 @@
-import { Activity, CircleHelp, Loader2, Save } from "lucide-react";
+import { Activity, CircleAlert, Loader2, Save } from "lucide-react";
 import { PasswordInput, Select, TextInput, Tooltip } from "@mantine/core";
 import IconTooltipButton from "../IconTooltipButton";
 import type { UseModelReturn } from "../../hooks/useModel";
@@ -15,9 +15,9 @@ export default function SettingsEmbeddingTab({ model }: SettingsEmbeddingTabProp
       <div className="model-header-row">
         <div className="embedding-title-row">
           <h3>嵌入模型</h3>
-          <Tooltip label={EMBEDDING_DATA_FLOW_TIP} multiline w={420} position="bottom-start" openDelay={250} withArrow>
+          <Tooltip label={EMBEDDING_DATA_FLOW_TIP} multiline w={420} position="bottom-start">
             <button type="button" className="memory-data-flow-tip" aria-label="查看长期记忆数据流说明">
-              <CircleHelp size={17} aria-hidden="true" />
+              <CircleAlert size={17} aria-hidden="true" />
             </button>
           </Tooltip>
         </div>

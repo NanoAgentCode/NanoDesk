@@ -26,37 +26,39 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
         <aside className="model-config-list">
           {llmModels.map((m) => {
             const statusInfo = model.modelTestStatuses[m.id] || { status: "idle" };
-            let dotColor = "#9ca3af";
-            let dotTitle = "未测试";
+            let statusTip = "未测试";
             if (statusInfo.status === "testing") {
-              dotColor = "#3b82f6";
-              dotTitle = "测试中...";
+              statusTip = "测试中...";
             } else if (statusInfo.status === "success") {
-              dotColor = "var(--accent-green, #10b981)";
-              dotTitle = "连通性正常";
+              statusTip = "连通性正常";
             } else if (statusInfo.status === "error") {
-              dotColor = "var(--accent-red, #ef4444)";
-              dotTitle = `连通性异常: ${statusInfo.message || ""}`;
+              statusTip = `连通性异常: ${statusInfo.message || ""}`;
             }
+            const toggleHint = m.id === model.activeModelId ? "当前使用中" : "切换到此模型";
             return (
-              <UnstyledButton
+              <Tooltip
                 key={m.id}
-                className={m.id === model.activeModelId ? "model-config-row active" : "model-config-row"}
-                onClick={() => {
-                  model.setModelDraft(normalizeModelDraft(m));
-                  void model.handleActiveModelChange(m.id);
-                }}
-                title={m.id === model.activeModelId ? "当前使用中" : "切换到此模型"}
+                label={`${toggleHint}\n连接状态：${statusTip}`}
+                position="right"
               >
-                <span className={`status-dot status-dot--${statusInfo.status}`} title={dotTitle} />
-                <div className="model-config-row-info">
-                  <div className="model-config-row-title">
-                    <strong>{m.name}</strong>
-                    {m.id === model.activeModelId && <span className="model-active-badge">使用中</span>}
+                <UnstyledButton
+                  className={m.id === model.activeModelId ? "model-config-row active" : "model-config-row"}
+                  onClick={() => {
+                    model.setModelDraft(normalizeModelDraft(m));
+                    void model.handleActiveModelChange(m.id);
+                  }}
+                  aria-label={`${toggleHint}，连接状态：${statusTip}`}
+                >
+                  <span className={`status-dot status-dot--${statusInfo.status}`} />
+                  <div className="model-config-row-info">
+                    <div className="model-config-row-title">
+                      <strong>{m.name}</strong>
+                      {m.id === model.activeModelId && <span className="model-active-badge">使用中</span>}
+                    </div>
+                    <span>{m.provider} / {m.model}</span>
                   </div>
-                  <span>{m.provider} / {m.model}</span>
-                </div>
-              </UnstyledButton>
+                </UnstyledButton>
+              </Tooltip>
             );
           })}
           {llmModels.length === 0 && <div className="empty">暂无大模型配置</div>}
@@ -93,7 +95,7 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
               maxDropdownHeight={240}
               rightSectionPointerEvents="all"
               rightSection={
-                <Tooltip label={model.modelListStatus.status === "loading" ? "正在获取模型" : "获取模型列表"} openDelay={350}>
+                <Tooltip label={model.modelListStatus.status === "loading" ? "正在获取模型" : "获取模型列表"}>
                   <ActionIcon
                     aria-label="获取模型列表"
                     variant="subtle"

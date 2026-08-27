@@ -224,7 +224,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
 
       <section className="filtered-profile-card" aria-labelledby="filtered-profile-title">
         <header className="filtered-profile-header">
-          <div><h4 id="filtered-profile-title">本地过滤待确认</h4><p>以下输入未通过本地画像规则。选择“加入画像”后，该条输入会发送给当前画像模型进行结构化提取；选择“丢弃”只删除待确认记录，不删除聊天消息。</p></div>
+          <div><h4 id="filtered-profile-title">本地过滤待确认</h4><p>选择“加入画像”后，该条输入会发送给当前画像模型进行结构化提取;选择“丢弃”只删除待确认记录，不删除聊天消息。</p></div>
           <span>{filteredInputs.length} 条待确认</span>
         </header>
         {filteredInputs.length ? <div className="filtered-profile-list">{filteredInputs.map((item) => <article className="filtered-profile-item" key={item.id}><pre>{item.content}</pre><footer><small>{new Date(item.observed_at).toLocaleString()}</small><div><IconTooltipButton className="settings-icon-compact" label="加入画像" tone="success" onClick={() => void handleIncludeFilteredInput(item.id)} disabled={filteredBusyId !== null}>{filteredBusyId === item.id ? <Loader2 size={14} className="svg-spin" /> : <Check size={14} />}</IconTooltipButton><IconTooltipButton className="settings-icon-compact" label="丢弃" tone="danger" onClick={() => void handleDiscardFilteredInput(item.id)} disabled={filteredBusyId !== null}><Trash2 size={14} /></IconTooltipButton></div></footer></article>)}</div> : <p className="filtered-profile-empty">{loading ? "正在读取本地过滤输入…" : "暂无待确认输入。历史累计过滤数据已删除，无法在此恢复；这里只展示升级后新保留的记录。"}</p>}

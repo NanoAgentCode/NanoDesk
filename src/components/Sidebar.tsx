@@ -44,7 +44,7 @@ export default function Sidebar({
           <span className="nano-brand-mark" aria-hidden="true"><i /></span>
           {!isCollapsed && <p className="sidebar-slogan">本地优先，智能协作</p>}
         </div>
-        <Tooltip label={isCollapsed ? "展开侧边栏" : "收起侧边栏"} position="right" openDelay={450}>
+        <Tooltip label={isCollapsed ? "展开侧边栏" : "收起侧边栏"} position="right">
           <ActionIcon
             className="sidebar-collapse-btn"
             onClick={onToggleCollapsed}
@@ -84,12 +84,16 @@ export default function Sidebar({
             {!isCollapsed && <span>项目区</span>}
           </button>
           {!isCollapsed && <div className="sidebar-section-actions">
-            <button className="new-chat-btn" onClick={() => projects.setShowNewProjectDialog(true)} title="新建项目" type="button">
-              <Plus size={16} />
-            </button>
-            <button className="new-chat-btn" onClick={() => void projects.handleOpenProject()} title="打开已有项目" type="button">
-              <Folder size={16} />
-            </button>
+            <Tooltip label="新建项目">
+              <button className="new-chat-btn" onClick={() => projects.setShowNewProjectDialog(true)} aria-label="新建项目" type="button">
+                <Plus size={16} />
+              </button>
+            </Tooltip>
+            <Tooltip label="打开已有项目">
+              <button className="new-chat-btn" onClick={() => void projects.handleOpenProject()} aria-label="打开已有项目" type="button">
+                <Folder size={16} />
+              </button>
+            </Tooltip>
           </div>}
         </div>
         {projects.projectsSectionExpanded && (
@@ -144,7 +148,6 @@ export default function Sidebar({
                     {!isCollapsed && <Tooltip
                       label={isIndexingProject ? "正在建立项目索引" : projectIndexTitle}
                       position="right"
-                      openDelay={450}
                     >
                       <button
                         className="project-add-chat-btn"
@@ -218,12 +221,14 @@ export default function Sidebar({
             <MessageSquare size={16} />
             {!isCollapsed && <span>对话区</span>}
           </button>
-          {!isCollapsed && <button className="new-chat-btn" onClick={() => {
-            onMainViewChange("chat");
-            void handleNewConversation();
-          }} title="新建对话" type="button">
-            <Plus size={16} />
-          </button>}
+          {!isCollapsed && <Tooltip label="新建对话">
+            <button className="new-chat-btn" onClick={() => {
+              onMainViewChange("chat");
+              void handleNewConversation();
+            }} aria-label="新建对话" type="button">
+              <Plus size={16} />
+            </button>
+          </Tooltip>}
         </div>
         {projects.chatsSectionExpanded && (
           <div className="sidebar-chat-list">

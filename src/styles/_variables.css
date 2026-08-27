@@ -124,8 +124,15 @@
   --notification-success-border: rgba(52, 211, 153, 0.26);
   --notification-success-text: var(--accent-emerald);
   --notification-error-bg: rgba(251, 113, 133, 0.08);
-  --notification-error-border: rgba(251, 113, 133, 0.26);
+  --notification-error-border: rgba(248, 113, 113, 0.26);
   --notification-error-text: var(--accent-danger);
+
+  /* Tooltip（--tooltip-bg/--tooltip-color 为 Mantine Tooltip 官方 API 变量，箭头随背景继承） */
+  --tooltip-bg: #101b2d;
+  --tooltip-color: var(--text-primary);
+  --tooltip-border: rgba(125, 211, 252, 0.22);
+  --tooltip-shadow: 0 10px 30px rgba(2, 6, 16, 0.5), 0 2px 8px rgba(2, 6, 16, 0.32);
+  --tooltip-font-size: var(--font-size-sm);
 
   /* Chat & Render colors */
   --chat-pane-bg: #0b1120;
@@ -236,6 +243,13 @@
   --notification-error-bg: rgba(225, 29, 72, 0.08);
   --notification-error-border: rgba(225, 29, 72, 0.24);
   --notification-error-text: var(--accent-danger);
+
+  /* Tooltip */
+  --tooltip-bg: #ffffff;
+  --tooltip-color: var(--text-primary);
+  --tooltip-border: rgba(37, 99, 235, 0.18);
+  --tooltip-shadow: 0 12px 30px rgba(44, 64, 96, 0.16), 0 3px 10px rgba(44, 64, 96, 0.1);
+  --tooltip-font-size: var(--font-size-sm);
 
   /* Chat & Render colors */
   --chat-pane-bg: #eef5fb;
