@@ -5,14 +5,15 @@ interface IconTooltipButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
   label: string;
   children: ReactNode;
   tone?: "default" | "success" | "danger";
+  tooltipOpened?: boolean;
 }
 
-export default function IconTooltipButton({ label, children, tone = "default", className = "", ...props }: IconTooltipButtonProps) {
+export default function IconTooltipButton({ label, children, tone = "default", tooltipOpened, className = "", ...props }: IconTooltipButtonProps) {
   const toneClass = tone === "success" ? "success-btn" : tone === "danger" ? "danger-btn" : "";
   const buttonClassName = ["icon-text-btn", "settings-icon-action", toneClass, className].filter(Boolean).join(" ");
 
   return (
-    <Tooltip label={label} openDelay={450} withArrow>
+    <Tooltip label={label} openDelay={450} opened={tooltipOpened} withArrow>
       <span className="icon-tooltip-target">
         <button type="button" {...props} className={buttonClassName} aria-label={label}>
           {children}

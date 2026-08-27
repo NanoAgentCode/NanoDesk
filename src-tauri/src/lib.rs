@@ -2343,6 +2343,7 @@ pub fn run() {
             profile::clear_user_profile,
             profile::retry_profile_failures,
             profile::run_profile_worker_now,
+            profile::generate_profile_now,
             memory::list_relevant_memories,
             memory::search_memories,
             memory::create_memory,

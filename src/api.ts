@@ -264,6 +264,12 @@ export function runProfileWorkerNow() {
   return invoke<boolean>("run_profile_worker_now");
 }
 
+export type GenerateProfileNowResult = "generated" | "deferred" | "no_candidates";
+
+export function generateProfileNow() {
+  return invoke<GenerateProfileNowResult>("generate_profile_now");
+}
+
 export function retryProfileFailures() {
   return invoke<number>("retry_profile_failures");
 }

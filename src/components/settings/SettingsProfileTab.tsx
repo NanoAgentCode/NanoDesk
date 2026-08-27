@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, Fingerprint, Loader2, Play, RefreshCw, RotateCcw, Save, Trash2 } from "lucide-react";
 import IconTooltipButton from "../IconTooltipButton";
 import {
-  clearUserProfile, deleteProfileFact, getProfileProcessingStatus, getProfileSettings,
+  clearUserProfile, deleteProfileFact, generateProfileNow, getProfileProcessingStatus, getProfileSettings,
   getUserProfile, listModelConfigs, retryProfileFailures, runProfileWorkerNow, saveProfileSettings
 } from "../../api";
 import type { ModelConfig, ProfileProcessingStatus, ProfileSettingsDraft, UserProfile } from "../../types";
@@ -17,6 +17,8 @@ const DEFAULT_DRAFT: ProfileSettingsDraft = {
   rolling_day_attempt_limit: 8, rolling_day_candidate_character_limit: 30000
 };
 
+const GENERATE_PROFILE_TIP = "根据已收集的候选信息立即生成用户画像";
+
 export default function SettingsProfileTab({ activeModelId }: SettingsProfileTabProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [settings, setSettings] = useState<ProfileSettingsDraft>(DEFAULT_DRAFT);
@@ -24,10 +26,14 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [savedEnabled, setSavedEnabled] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [generateTip, setGenerateTip] = useState(GENERATE_PROFILE_TIP);
+  const [generateTipOpened, setGenerateTipOpened] = useState(false);
+  const generateTipTimer = useRef<number | null>(null);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -50,6 +56,20 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
   }, [activeModelId]);
 
   useEffect(() => { void loadProfile(); }, [loadProfile]);
+  useEffect(() => () => {
+    if (generateTipTimer.current !== null) window.clearTimeout(generateTipTimer.current);
+  }, []);
+
+  function showGenerateTip(message: string) {
+    if (generateTipTimer.current !== null) window.clearTimeout(generateTipTimer.current);
+    setGenerateTip(message);
+    setGenerateTipOpened(true);
+    generateTipTimer.current = window.setTimeout(() => {
+      setGenerateTipOpened(false);
+      setGenerateTip(GENERATE_PROFILE_TIP);
+      generateTipTimer.current = null;
+    }, 3200);
+  }
 
   async function handleSaveSettings() {
     setSaving(true); setError(""); setNotice("");
@@ -79,8 +99,26 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
 
   async function handleRunNow() {
     await runProfileWorkerNow();
-    setNotice("已唤醒后台画像任务；模型调用仍受前台空闲和预算限制");
     window.setTimeout(() => void loadProfile(), 1200);
+  }
+
+  async function handleGenerateNow() {
+    setGenerating(true);
+    setError("");
+    try {
+      const result = await generateProfileNow();
+      await loadProfile();
+      showGenerateTip(result === "generated"
+        ? "用户画像生成完成"
+        : result === "deferred"
+          ? "候选已组批；当前受前台会话或预算限制，将稍后处理"
+          : "没有可用于生成画像的候选信息");
+    } catch (generateError) {
+      setError(String(generateError));
+      showGenerateTip("用户画像生成失败，请查看错误提示");
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function handleRetryFailures() {
@@ -123,7 +161,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
           </div>
           <div className="profile-settings-actions">
             {status && status.failed_batches + status.blocked_batches > 0 && <IconTooltipButton label="重试异常批次" onClick={() => void handleRetryFailures()} disabled={!savedEnabled}><RotateCcw size={16} /></IconTooltipButton>}
-            <IconTooltipButton label="立即检查" onClick={() => void handleRunNow()} disabled={!savedEnabled || loading}><Play size={16} /></IconTooltipButton>
+            <IconTooltipButton label="立即检查：唤醒后台画像任务；模型调用仍受前台空闲和预算限制" onClick={() => void handleRunNow()} disabled={!savedEnabled || loading}><Play size={16} /></IconTooltipButton>
             <IconTooltipButton label={saving ? "保存中" : "保存画像设置"} tone="success" onClick={() => void handleSaveSettings()} disabled={saving || (settings.enabled && !settings.model_config_id)}>{saving ? <Loader2 size={16} className="svg-spin" /> : <Save size={16} />}</IconTooltipButton>
           </div>
           {notice && <p className="profile-notice">{notice}</p>}
@@ -134,7 +172,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
       <section className="user-profile-card" aria-labelledby="user-profile-title">
         <header className="user-profile-header">
           <div className="user-profile-heading"><span className="user-profile-mark" aria-hidden="true"><Fingerprint size={20} /></span><div><h4 id="user-profile-title">用户画像</h4><p>后台差量归纳结果。事实不可编辑，可逐条删除或全部清空。</p></div></div>
-          <div className="profile-header-actions"><IconTooltipButton label={loading ? "刷新中" : "刷新画像"} onClick={() => void loadProfile()} disabled={loading}><RefreshCw size={16} className={loading ? "svg-spin" : undefined} /></IconTooltipButton><IconTooltipButton label="清空画像" tone="danger" onClick={() => void handleClearProfile()} disabled={!profile?.facts.length}><Trash2 size={16} /></IconTooltipButton></div>
+          <div className="profile-header-actions"><IconTooltipButton label={generating ? "正在生成用户画像" : generateTip} tooltipOpened={generateTipOpened ? true : undefined} onClick={() => void handleGenerateNow()} disabled={!savedEnabled || loading || generating}>{generating ? <Loader2 size={16} className="svg-spin" /> : <Play size={16} />}</IconTooltipButton><IconTooltipButton label={loading ? "刷新中" : "刷新画像"} onClick={() => void loadProfile()} disabled={loading}><RefreshCw size={16} className={loading ? "svg-spin" : undefined} /></IconTooltipButton><IconTooltipButton label="清空画像" tone="danger" onClick={() => void handleClearProfile()} disabled={!profile?.facts.length}><Trash2 size={16} /></IconTooltipButton></div>
         </header>
         {status && <div className="profile-processing-status"><span>待处理 {status.pending_observations + status.pending_batches}</span><span>本地过滤 {status.skipped_observations}</span><span>24h 调用 {status.rolling_day_attempts}</span><span>候选字符 {status.rolling_day_candidate_characters}</span><span>估算输入 Token {status.rolling_day_estimated_input_tokens}</span><span>实际 Token {status.rolling_day_attempts === 0 ? 0 : (status.rolling_day_actual_input_tokens + status.rolling_day_actual_output_tokens || "服务未返回")}</span>{(status.failed_batches > 0 || status.blocked_batches > 0) && <span className="status-error">异常 {status.failed_batches + status.blocked_batches}</span>}</div>}
         {profile?.facts.length ? <><div className="user-profile-stats" aria-label="画像统计"><span><strong>{profile.global_preference_count}</strong> 项全局偏好</span><span><strong>{profile.profile_fact_count}</strong> 项身份与工作画像</span><span><strong>{profile.facts.length}</strong> 项有效事实</span></div><div className="user-profile-facts">{profile.facts.map((fact) => <article className={`user-profile-fact${fact.global ? " user-profile-fact--global" : ""}`} key={fact.id}><div className="user-profile-fact-meta"><span>{fact.label}</span><div>{fact.global && <em>全局生效</em>}<IconTooltipButton className="settings-icon-compact" label="删除画像事实" tone="danger" onClick={() => void handleDeleteFact(fact.id)}><Trash2 size={14} /></IconTooltipButton></div></div><p>{fact.value}</p><small>{fact.source_count} 条来源 · {new Date(fact.updated_at).toLocaleString()}</small></article>)}</div></> : <p className="user-profile-state">{loading ? "正在读取画像…" : "尚未形成画像。启用后可在对话中说明长期偏好、角色、常用技术或项目。"}</p>}

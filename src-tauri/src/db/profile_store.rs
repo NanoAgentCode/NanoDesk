@@ -432,6 +432,14 @@ impl Database {
     }
 
     pub(crate) fn create_profile_batch(&self) -> AppResult<Option<String>> {
+        self.create_profile_batch_internal(false)
+    }
+
+    pub(crate) fn create_profile_batch_now(&self) -> AppResult<Option<String>> {
+        self.create_profile_batch_internal(true)
+    }
+
+    fn create_profile_batch_internal(&self, force: bool) -> AppResult<Option<String>> {
         let settings = self.get_profile_settings()?;
         if !settings.enabled {
             return Ok(None);
@@ -462,7 +470,9 @@ impl Database {
             .map(|item| item.observed_at)
             .max()
             .unwrap_or(now);
-        let trigger = if ready.iter().any(|item| item.candidate_kind == "explicit") {
+        let trigger = if force {
+            Some("manual")
+        } else if ready.iter().any(|item| item.candidate_kind == "explicit") {
             Some("explicit")
         } else if ready.iter().any(|item| item.status == "ready_long") {
             Some("long_input")
@@ -1297,6 +1307,11 @@ fn select_profile_batch_members(
     ready: &[ReadyObservation],
     trigger: &str,
 ) -> Vec<ReadyObservation> {
+    if trigger == "long_input" || trigger == "manual" {
+        if let Some(item) = ready.iter().find(|item| item.status == "ready_long") {
+            return vec![item.clone()];
+        }
+    }
     if trigger == "long_input" {
         return ready
             .iter()
@@ -1551,6 +1566,32 @@ mod tests {
             })
             .expect("stale finish should be handled");
         assert!(!stale_result);
+    }
+
+    #[test]
+    fn manual_generation_batches_ready_candidates_below_normal_thresholds() {
+        let db = enabled_database();
+        append_user_message(&db, "我主要使用 Rust");
+        mark_ready(&db, "preprocessor", "normal");
+
+        assert!(db
+            .create_profile_batch()
+            .expect("normal batch check should succeed")
+            .is_none());
+
+        let batch_id = db
+            .create_profile_batch_now()
+            .expect("manual batch creation should succeed")
+            .expect("manual generation should bypass batch thresholds");
+        let trigger: String = db
+            .conn
+            .query_row(
+                "SELECT trigger_kind FROM profile_extraction_batches WHERE id = ?1",
+                params![batch_id],
+                |row| row.get(0),
+            )
+            .expect("manual trigger should load");
+        assert_eq!(trigger, "manual");
     }
 
     #[test]

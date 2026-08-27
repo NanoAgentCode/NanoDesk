@@ -28,6 +28,13 @@ struct CandidateExtraction {
     input_kind: String,
 }
 
+#[derive(Debug, Default)]
+struct WorkerCycleOutcome {
+    progressed: bool,
+    batch_created: bool,
+    generated: bool,
+}
+
 #[tauri::command]
 pub async fn get_profile_settings(state: State<'_, AppState>) -> AppResult<ProfileSettings> {
     state.db.lock().await.get_profile_settings()
@@ -88,6 +95,27 @@ pub async fn run_profile_worker_now(app: AppHandle) -> AppResult<bool> {
     Ok(true)
 }
 
+#[tauri::command]
+pub async fn generate_profile_now(app: AppHandle) -> AppResult<String> {
+    let outcome = run_worker_cycle_internal(&app, true).await?;
+    let has_pending_batch = app
+        .state::<AppState>()
+        .db
+        .lock()
+        .await
+        .get_profile_processing_status()?
+        .pending_batches
+        > 0;
+    Ok(if outcome.generated {
+        "generated"
+    } else if outcome.batch_created || has_pending_batch {
+        "deferred"
+    } else {
+        "no_candidates"
+    }
+    .to_string())
+}
+
 pub(crate) fn start_worker(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut ticker = interval(Duration::from_secs(WORKER_IDLE_SECONDS));
@@ -106,9 +134,16 @@ pub(crate) fn start_worker(app: AppHandle) {
 }
 
 pub(crate) async fn run_worker_cycle(app: &AppHandle) -> AppResult<bool> {
+    Ok(run_worker_cycle_internal(app, false).await?.progressed)
+}
+
+async fn run_worker_cycle_internal(
+    app: &AppHandle,
+    force_batch: bool,
+) -> AppResult<WorkerCycleOutcome> {
     let state = app.state::<AppState>();
     let owner = format!("profile-worker-{}", Uuid::new_v4());
-    let mut progressed = false;
+    let mut outcome = WorkerCycleOutcome::default();
     state.db.lock().await.cleanup_profile_history()?;
 
     for _ in 0..16 {
@@ -116,7 +151,7 @@ pub(crate) async fn run_worker_cycle(app: &AppHandle) -> AppResult<bool> {
             let db = state.db.lock().await;
             let settings = db.get_profile_settings()?;
             if !settings.enabled {
-                return Ok(progressed);
+                return Ok(outcome);
             }
             db.claim_profile_observation(&owner)?
                 .map(|work| (work, settings.long_input_threshold))
@@ -130,12 +165,16 @@ pub(crate) async fn run_worker_cycle(app: &AppHandle) -> AppResult<bool> {
             .lock()
             .await
             .finish_profile_preprocessing(&prepared)?;
-        progressed = true;
+        outcome.progressed = true;
     }
 
     let claimed_batch = {
         let db = state.db.lock().await;
-        db.create_profile_batch()?;
+        outcome.batch_created = if force_batch {
+            db.create_profile_batch_now()?.is_some()
+        } else {
+            db.create_profile_batch()?.is_some()
+        };
         let work = db.claim_profile_batch(&owner)?;
         match work {
             Some(work) => {
@@ -146,9 +185,9 @@ pub(crate) async fn run_worker_cycle(app: &AppHandle) -> AppResult<bool> {
         }
     };
     let Some((work, model)) = claimed_batch else {
-        return Ok(progressed);
+        return Ok(outcome);
     };
-    progressed = true;
+    outcome.progressed = true;
     let request = match build_extraction_request(&work) {
         Ok(request) => request,
         Err(error) => {
@@ -157,7 +196,10 @@ pub(crate) async fn run_worker_cycle(app: &AppHandle) -> AppResult<bool> {
                 .lock()
                 .await
                 .fail_profile_batch(&work, &error.to_string())?;
-            return Ok(progressed);
+            if force_batch {
+                return Err(error);
+            }
+            return Ok(outcome);
         }
     };
 
@@ -180,6 +222,7 @@ pub(crate) async fn run_worker_cycle(app: &AppHandle) -> AppResult<bool> {
                 .lock()
                 .await
                 .apply_profile_operations(&work, &extracted.operations)?;
+            outcome.generated = true;
         }
         Err(error) => {
             state
@@ -187,9 +230,12 @@ pub(crate) async fn run_worker_cycle(app: &AppHandle) -> AppResult<bool> {
                 .lock()
                 .await
                 .fail_profile_batch(&work, &error.to_string())?;
+            if force_batch {
+                return Err(error);
+            }
         }
     }
-    Ok(progressed)
+    Ok(outcome)
 }
 
 pub(crate) async fn run_database_worker_cycle(db: &Database) -> AppResult<bool> {
