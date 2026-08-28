@@ -1840,7 +1840,7 @@
 
 .profile-settings-expand svg {
   flex: 0 0 auto;
-  color: var(--text-secondary);
+  color: currentColor;
   transition: transform 160ms ease;
 }
 
@@ -2231,7 +2231,7 @@
   line-height: 1.5;
 }
 
-.filtered-profile-header > span {
+.filtered-profile-header .profile-header-actions > span {
   flex: none;
   padding: 4px 8px;
   border-radius: 999px;
@@ -2242,28 +2242,31 @@
 
 .filtered-profile-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
 
 .filtered-profile-item {
   min-width: 0;
-  padding: 10px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--bg-pane) 68%, transparent);
+  padding: 9px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--accent-blue) 48%, var(--border-color));
+  border-radius: 3px 8px 8px 3px;
+  background: color-mix(in srgb, var(--bg-pane) 70%, transparent);
 }
 
 .filtered-profile-item pre {
-  overflow: auto;
-  max-height: 120px;
+  display: -webkit-box;
+  overflow: hidden;
   margin: 0;
   color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-sm);
-  line-height: 1.5;
+  line-height: 1.45;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .filtered-profile-item footer {
@@ -2294,7 +2297,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .user-profile-facts {
+  .user-profile-facts,
+  .filtered-profile-list {
     grid-template-columns: 1fr;
   }
 
