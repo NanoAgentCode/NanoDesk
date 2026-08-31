@@ -39,6 +39,7 @@ import { useSkills } from "./hooks/useSkills";
 import { useObservability } from "./hooks/useObservability";
 import { useProjects } from "./hooks/useProjects";
 import { useThemeMode } from "./hooks/useThemeMode";
+import { useAccessMode } from "./hooks/useAccessMode";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { useChat } from "./hooks/useChat";
 import Sidebar from "./components/Sidebar";
@@ -50,10 +51,6 @@ import { nanoTheme } from "./theme";
 import { appPlugins } from "./plugins/builtin";
 import { confirmAction } from "./lib/dialogs";
 import {
-  ACCESS_MODE_STORAGE_KEY,
-  parseAccessMode
-} from "./lib/accessMode";
-import {
   getStoredCloseAction,
   getStoredClosePreferences,
   getStoredCloseSkipPrompt,
@@ -62,7 +59,6 @@ import {
   type CloseAction
 } from "./lib/closeBehavior";
 import type {
-  AgentAccessMode,
   Conversation,
   ProjectEntry,
   SettingsTab
@@ -82,9 +78,6 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
   });
-  const [accessMode, setAccessMode] = useState<AgentAccessMode>(() =>
-    parseAccessMode(localStorage.getItem(ACCESS_MODE_STORAGE_KEY))
-  );
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
 
@@ -101,6 +94,7 @@ function App() {
     projects.setProjectConversations
   );
   const skills = useSkills(setNotice);
+  const { accessMode, setAccessMode: handleAccessModeChange } = useAccessMode();
 
   const chat = useChat({
     setNotice,
@@ -173,11 +167,6 @@ function App() {
   const closePromptOpenRef = useRef(false);
   const activePluginView = appPlugins.findMainView(activeMainView);
   const ActivePluginView = activePluginView?.component;
-
-  const handleAccessModeChange = useCallback((mode: AgentAccessMode) => {
-    setAccessMode(mode);
-    localStorage.setItem(ACCESS_MODE_STORAGE_KEY, mode);
-  }, []);
 
   const performCloseAction = useCallback(async (action: CloseAction) => {
     try {

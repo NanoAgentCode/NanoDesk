@@ -130,6 +130,8 @@ src/theme.ts                   Mantine 主题与组件默认配置
 src/core/plugins.tsx           前端插件契约与微内核注册表
 src/plugins/builtin.tsx        内置 UI 插件装配
 src/hooks/                     对话、模型、项目、RAG、MCP、Skills、Ops 等状态逻辑
+src/hooks/useAccessMode.ts     三种应用模式状态与本地持久化
+src/hooks/useAgentToolRuntime.ts Agent 工具审批、执行和结果续写
 src/components/                聊天区、侧栏、设置页、观测面板、Ops 工作台等 UI
 src/lib/                       系统提示、工具解析、格式化和安全封装
 src-tauri/src/lib.rs           Tauri command 注册、应用状态和启动流程
@@ -142,6 +144,7 @@ src-tauri/src/db/              条目、配置、会话、RAG、记忆、画像�
 src-tauri/src/code_index.rs    项目代码实体、关系和片段索引
 src-tauri/src/project_index.rs 项目文档片段索引与通用项目索引查询
 src-tauri/src/runtime.rs       Agent run/step/tool call 运行时存储
+src-tauri/src/agent_commands.rs Agent 运行时生命周期与审批 command
 src-tauri/src/observability.rs 观测 sink/pipeline 与观测库
 src-tauri/src/logging.rs       按天写入并自动清理的系统操作日志
 src-tauri/src/llm.rs           Chat、streaming 和 embeddings 请求
