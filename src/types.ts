@@ -1,4 +1,5 @@
 export type ItemKind = "note" | "prompt";
+export type AgentAccessMode = "ask" | "auto" | "full";
 
 export interface Item {
   id: string;
@@ -562,6 +563,20 @@ export interface AgentToolExecutionRequest {
   tool_call_id: string;
   project_path: string;
   allow_command: boolean;
+}
+
+export interface AgentToolApprovalRequest {
+  tool_call_id: string;
+  project_path: string;
+  allow_command: boolean;
+  access_mode: AgentAccessMode;
+}
+
+export interface AgentToolApprovalResolution {
+  tool_call: AgentToolCall;
+  risk: string;
+  reason: string;
+  requires_user_approval: boolean;
 }
 
 export interface AgentToolExecution {

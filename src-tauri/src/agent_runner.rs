@@ -26,6 +26,22 @@ pub struct AgentToolExecutionRequest {
     pub allow_command: bool,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentToolApprovalRequest {
+    pub tool_call_id: String,
+    pub project_path: String,
+    pub allow_command: bool,
+    pub access_mode: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentToolApprovalResolution {
+    pub tool_call: crate::runtime::AgentToolCall,
+    pub risk: String,
+    pub reason: String,
+    pub requires_user_approval: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct ParsedToolCall {
     pub name: String,

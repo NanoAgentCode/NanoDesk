@@ -5,6 +5,7 @@ import {
   resolveAgentModelOutput,
   executeAgentToolCall,
   approveAgentToolCall,
+  resolveAgentToolApproval,
   rejectAgentToolCall,
   createAgentToolCall,
   updateAgentToolCall
@@ -15,7 +16,9 @@ import type {
   AgentStepDraft,
   AgentToolCall,
   AgentToolCallDraft,
-  AgentToolExecutionRequest
+  AgentToolExecutionRequest,
+  AgentToolApprovalRequest,
+  AgentToolApprovalResolution
 } from "../types";
 import { formatErrorMessage } from "./formatters";
 
@@ -79,6 +82,17 @@ export async function safeApproveAgentToolCall(id: string): Promise<AgentToolCal
     return await approveAgentToolCall(id);
   } catch (error) {
     console.error("Failed to approve agent tool call:", error);
+    return null;
+  }
+}
+
+export async function safeResolveAgentToolApproval(
+  request: AgentToolApprovalRequest
+): Promise<AgentToolApprovalResolution | null> {
+  try {
+    return await resolveAgentToolApproval(request);
+  } catch (error) {
+    console.error("Failed to resolve agent tool approval:", error);
     return null;
   }
 }

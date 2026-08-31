@@ -39,6 +39,17 @@ pub struct PolicyDecision {
     pub normalized_args: BTreeMap<String, String>,
 }
 
+pub fn requires_user_approval(access_mode: &str, risk: &str) -> AppResult<bool> {
+    match access_mode {
+        "ask" => Ok(true),
+        "auto" => Ok(matches!(risk, "high" | "external_high")),
+        "full" => Ok(false),
+        _ => Err(AppError::Message(format!(
+            "unknown agent access mode: {access_mode}"
+        ))),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct McpToolScope {
     pub server_id: String,
@@ -472,6 +483,17 @@ mod tests {
             .iter()
             .map(|(key, value)| (key.to_string(), value.to_string()))
             .collect()
+    }
+
+    #[test]
+    fn access_modes_map_risk_to_user_approval() {
+        assert!(requires_user_approval("ask", "low").unwrap());
+        assert!(!requires_user_approval("auto", "low").unwrap());
+        assert!(!requires_user_approval("auto", "medium").unwrap());
+        assert!(requires_user_approval("auto", "high").unwrap());
+        assert!(requires_user_approval("auto", "external_high").unwrap());
+        assert!(!requires_user_approval("full", "external_high").unwrap());
+        assert!(requires_user_approval("unsupported", "low").is_err());
     }
 
     fn test_project() -> PathBuf {

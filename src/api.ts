@@ -43,6 +43,8 @@ import type {
   AgentToolDefinition,
   BackendPluginManifest,
   AgentModelOutputResolution,
+  AgentToolApprovalRequest,
+  AgentToolApprovalResolution,
   AgentToolExecution,
   AgentToolExecutionRequest,
   AgentEventLog,
@@ -563,6 +565,10 @@ export function updateAgentToolCall(
 
 export function approveAgentToolCall(id: string) {
   return invoke<AgentToolCall>("approve_agent_tool_call", { id });
+}
+
+export function resolveAgentToolApproval(request: AgentToolApprovalRequest) {
+  return invoke<AgentToolApprovalResolution>("resolve_agent_tool_approval", { request });
 }
 
 export function rejectAgentToolCall(id: string, reason?: string | null) {

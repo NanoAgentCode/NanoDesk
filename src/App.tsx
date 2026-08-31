@@ -50,6 +50,10 @@ import { nanoTheme } from "./theme";
 import { appPlugins } from "./plugins/builtin";
 import { confirmAction } from "./lib/dialogs";
 import {
+  ACCESS_MODE_STORAGE_KEY,
+  parseAccessMode
+} from "./lib/accessMode";
+import {
   getStoredCloseAction,
   getStoredClosePreferences,
   getStoredCloseSkipPrompt,
@@ -58,6 +62,7 @@ import {
   type CloseAction
 } from "./lib/closeBehavior";
 import type {
+  AgentAccessMode,
   Conversation,
   ProjectEntry,
   SettingsTab
@@ -77,6 +82,9 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
   });
+  const [accessMode, setAccessMode] = useState<AgentAccessMode>(() =>
+    parseAccessMode(localStorage.getItem(ACCESS_MODE_STORAGE_KEY))
+  );
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
 
@@ -102,7 +110,8 @@ function App() {
     skills,
     mcp,
     showModelConfig,
-    activeSettingsTab
+    activeSettingsTab,
+    accessMode
   });
   chatRef.current = chat;
   const {
@@ -164,6 +173,11 @@ function App() {
   const closePromptOpenRef = useRef(false);
   const activePluginView = appPlugins.findMainView(activeMainView);
   const ActivePluginView = activePluginView?.component;
+
+  const handleAccessModeChange = useCallback((mode: AgentAccessMode) => {
+    setAccessMode(mode);
+    localStorage.setItem(ACCESS_MODE_STORAGE_KEY, mode);
+  }, []);
 
   const performCloseAction = useCallback(async (action: CloseAction) => {
     try {
@@ -672,6 +686,8 @@ function App() {
           projectFiles={projectFiles}
           obs={obs}
           model={model}
+          accessMode={accessMode}
+          onAccessModeChange={handleAccessModeChange}
           handleSendMessage={handleSendMessage}
           handleNewConversation={handleNewConversation}
           handleCloseConversation={handleCloseConversation}

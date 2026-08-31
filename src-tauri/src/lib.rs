@@ -948,6 +948,68 @@ async fn approve_agent_tool_call(
 }
 
 #[tauri::command]
+async fn resolve_agent_tool_approval(
+    state: State<'_, AppState>,
+    request: agent_runner::AgentToolApprovalRequest,
+) -> AppResult<agent_runner::AgentToolApprovalResolution> {
+    let tool_call = state
+        .runtime
+        .lock()
+        .await
+        .get_tool_call(&request.tool_call_id)?;
+    let args = agent_runner::parse_args_json(&tool_call.args_json)?;
+    state
+        .plugins
+        .validate_agent_tool_args(&tool_call.name, &args)?;
+    let allowed_mcp_tools = if tool_call.name.starts_with("mcp__") {
+        state.mcp.lock().await.allowed_tool_scopes()
+    } else {
+        Default::default()
+    };
+    let decision = tool_policy::evaluate_tool_call(
+        &tool_call.name,
+        &args,
+        &tool_policy::ToolPolicyContext::new(
+            request.project_path,
+            request.allow_command,
+            allowed_mcp_tools,
+        ),
+    )?;
+    let requires_user_approval =
+        tool_policy::requires_user_approval(&request.access_mode, &decision.risk)?;
+
+    let tool_call = if requires_user_approval || tool_call.status != "pending_approval" {
+        tool_call
+    } else {
+        let runtime = state.runtime.lock().await;
+        let approved = runtime.approve_tool_call(&tool_call.id)?;
+        runtime.record_step(AgentStepDraft {
+            run_id: approved.run_id.clone(),
+            kind: "approval".to_string(),
+            status: "approved".to_string(),
+            input_summary: Some(approved.name.clone()),
+            output_summary: Some(format!("policy_auto_approved:{}", request.access_mode)),
+            metadata_json: Some(
+                serde_json::json!({
+                    "tool_call_id": approved.id,
+                    "access_mode": request.access_mode,
+                    "risk": decision.risk.clone(),
+                })
+                .to_string(),
+            ),
+        })?;
+        approved
+    };
+
+    Ok(agent_runner::AgentToolApprovalResolution {
+        tool_call,
+        risk: decision.risk,
+        reason: decision.reason,
+        requires_user_approval,
+    })
+}
+
+#[tauri::command]
 async fn reject_agent_tool_call(
     state: State<'_, AppState>,
     id: String,
@@ -2368,6 +2430,7 @@ pub fn run() {
             create_agent_tool_call,
             update_agent_tool_call,
             approve_agent_tool_call,
+            resolve_agent_tool_approval,
             reject_agent_tool_call,
             list_agent_tool_definitions,
             list_plugins,

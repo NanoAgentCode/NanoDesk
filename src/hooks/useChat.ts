@@ -33,6 +33,7 @@ import {
   safeRejectAgentToolCall,
   safeRecordAgentStep,
   safeResolveAgentModelOutput,
+  safeResolveAgentToolApproval,
   safeUpdateAgentToolCall
 } from "../lib/agentSafe";
 import { useConversations } from "./useConversations";
@@ -43,7 +44,7 @@ import {
   useChatAttachments
 } from "./useChatAttachments";
 import type {
-  AgentRun, AgentToolCall, ChatMessage, ChatStreamEvent, Memory,
+  AgentAccessMode, AgentRun, AgentToolCall, ChatMessage, ChatStreamEvent, Memory,
   ChatImageAttachment, Conversation, Item, PersistedMessage, ProjectEntry, ProjectFileEntry
 } from "../types";
 import type { UseProjectsReturn } from "./useProjects";
@@ -133,6 +134,7 @@ export interface UseChatArgs {
   mcp: UseMcpReturn;
   showModelConfig: boolean;
   activeSettingsTab: string;
+  accessMode: AgentAccessMode;
 }
 
 export function useChat({
@@ -143,7 +145,8 @@ export function useChat({
   skills,
   mcp,
   showModelConfig,
-  activeSettingsTab
+  activeSettingsTab,
+  accessMode
 }: UseChatArgs): UseChatReturn {
   const messageLoadRequestRef = useRef(0);
   const activeConversationIdRef = useRef("");
@@ -165,6 +168,26 @@ export function useChat({
   const [executingToolMessageId, setExecutingToolMessageId] = useState<string | null>(null);
   const [messageToolCalls, setMessageToolCalls] = useState<Record<string, AgentToolCall>>({});
   const [conversationRunIds, setConversationRunIds] = useState<Record<string, string>>({});
+  const autoExecutionIdsRef = useRef(new Set<string>());
+
+  async function prepareResolvedToolCall(
+    toolCall: AgentToolCall,
+    projectPath: string
+  ): Promise<AgentToolCall> {
+    if (accessMode === "ask") return toolCall;
+    const isBashEnabled = skills.skills.find((skill) => skill.id === "bash_tool")?.enabled === true;
+    const resolution = await safeResolveAgentToolApproval({
+      tool_call_id: toolCall.id,
+      project_path: projectPath,
+      allow_command: isBashEnabled,
+      access_mode: accessMode
+    });
+    if (!resolution) {
+      setNotice("无法自动判断工具风险，已回退为手动批准。");
+      return toolCall;
+    }
+    return resolution.tool_call;
+  }
 
   // ── Sync activeConversationId ref ──
   useEffect(() => {
@@ -409,7 +432,11 @@ export function useChat({
       if (agentRun) {
         const resolution = await safeResolveAgentModelOutput(agentRun.id, assistantMessage.id, streamedContent, "model", `messages=${modelMessages.length}`);
         if (resolution?.tool_call) {
-          setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: resolution.tool_call as AgentToolCall }));
+          const prepared = await prepareResolvedToolCall(
+            resolution.tool_call as AgentToolCall,
+            projectForRequest?.path || skills.tempDir
+          );
+          setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: prepared }));
         } else if (resolution?.status === "completed") {
           setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
         }
@@ -534,7 +561,11 @@ export function useChat({
       if (runId && assistantMessage) {
         const resolution = await safeResolveAgentModelOutput(runId, assistantMessage.id, streamedContent, "model_continue", `messages=${modelMessages.length}`);
         if (resolution?.tool_call) {
-          setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: resolution.tool_call as AgentToolCall }));
+          const prepared = await prepareResolvedToolCall(
+            resolution.tool_call as AgentToolCall,
+            projectForRequest?.path || skills.tempDir
+          );
+          setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: prepared }));
         } else if (resolution?.status === "completed") {
           setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
         }
@@ -586,10 +617,14 @@ export function useChat({
         setConversationRunIds((current) => ({ ...current, [conversationId]: activeRunId as string }));
       }
       if (!activeToolCall) throw new Error("工具调用记录创建失败");
-      const approvedToolCall = await safeApproveAgentToolCall(activeToolCall.id);
-      if (!approvedToolCall) throw new Error("工具审批失败");
-      activeToolCall = approvedToolCall;
-      setMessageToolCalls((current) => ({ ...current, [messageId]: approvedToolCall }));
+      if (activeToolCall.status === "pending_approval") {
+        const approvedToolCall = await safeApproveAgentToolCall(activeToolCall.id);
+        if (!approvedToolCall) throw new Error("工具审批失败");
+        activeToolCall = approvedToolCall;
+        setMessageToolCalls((current) => ({ ...current, [messageId]: approvedToolCall }));
+      } else if (activeToolCall.status !== "approved") {
+        throw new Error(`工具当前状态不可执行: ${activeToolCall.status}`);
+      }
 
       const isBashEnabled = skills.skills.find((s) => s.id === "bash_tool")?.enabled === true;
       const execution = await safeExecuteAgentToolCall({
@@ -681,6 +716,22 @@ export function useChat({
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (busy || executingToolMessageId) return;
+    const candidate = Object.entries(messageToolCalls).find(([, toolCall]) =>
+      toolCall.status === "approved" && !autoExecutionIdsRef.current.has(toolCall.id)
+    );
+    if (!candidate) return;
+
+    const [messageId, toolCall] = candidate;
+    const message = messages.find((item) => item.id === messageId);
+    const parsed = message?.role === "assistant" ? parseToolCall(message.content) : null;
+    if (!parsed) return;
+
+    autoExecutionIdsRef.current.add(toolCall.id);
+    void handleExecuteTool(messageId, parsed);
+  }, [busy, executingToolMessageId, messageToolCalls, messages]);
 
   // ── Close conversation ──
   function handleCloseConversation() {

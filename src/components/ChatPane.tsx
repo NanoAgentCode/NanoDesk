@@ -26,10 +26,11 @@ import {
 } from "lucide-react";
 import MarkdownMessage from "./MarkdownMessage";
 import AgentRuntimePanel from "./AgentRuntimePanel";
+import AccessModeSelector from "./AccessModeSelector";
 import { formatWebSearchBadge, renderMessageContent } from "../lib/appHelpers";
 import { parseToolCall, parseToolResult } from "../lib/messageHelpers";
 import type { ParsedToolCall } from "../lib/messageHelpers";
-import type { AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../types";
+import type { AgentAccessMode, AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../types";
 import type { UseObservabilityReturn } from "../hooks/useObservability";
 import type { UseModelReturn } from "../hooks/useModel";
 import { buildChatModelOptions } from "../lib/modelOptions";
@@ -55,6 +56,8 @@ interface ChatPaneProps {
   projectFiles: ProjectFileEntry[];
   obs: UseObservabilityReturn;
   model: UseModelReturn;
+  accessMode: AgentAccessMode;
+  onAccessModeChange: (mode: AgentAccessMode) => void;
   handleSendMessage: () => Promise<void>;
   handleNewConversation: () => Promise<void>;
   handleCloseConversation: () => void;
@@ -139,6 +142,8 @@ export default function ChatPane({
   projectFiles,
   obs,
   model,
+  accessMode,
+  onAccessModeChange,
   handleSendMessage,
   handleNewConversation,
   handleCloseConversation,
@@ -496,6 +501,7 @@ export default function ChatPane({
         />
         <div className="chat-input-footer">
           <div className="chat-input-left">
+            <AccessModeSelector value={accessMode} onChange={onAccessModeChange} disabled={busy} />
             <Select
               className="chat-model-select"
               aria-label="当前对话模型"
