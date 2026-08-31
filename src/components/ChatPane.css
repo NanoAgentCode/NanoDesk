@@ -907,7 +907,7 @@
 }
 
 .access-mode-menu {
-  padding: 6px !important;
+  padding: 4px !important;
   border: 1px solid var(--border-color) !important;
   background: color-mix(in srgb, var(--bg-pane) 96%, transparent) !important;
   backdrop-filter: blur(18px);
@@ -916,9 +916,9 @@
 }
 
 .access-mode-option {
-  min-height: 68px;
-  padding: 9px 12px !important;
-  border-radius: 12px !important;
+  min-height: 56px;
+  padding: 6px 10px !important;
+  border-radius: 10px !important;
   color: var(--text-primary) !important;
   font-family: inherit;
   font-weight: inherit;

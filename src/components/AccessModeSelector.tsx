@@ -21,7 +21,7 @@ export default function AccessModeSelector({ value, onChange, disabled = false }
 
   return (
     <Menu
-      width={390}
+      width={350}
       position="top-start"
       offset={10}
       shadow="xl"
