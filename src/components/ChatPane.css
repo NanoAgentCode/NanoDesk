@@ -873,8 +873,9 @@
   border: 1px solid var(--border-color);
   border-radius: 9px;
   background: color-mix(in srgb, var(--bg-pane) 88%, var(--bg-editor));
+  font-family: var(--font-sans);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: var(--font-weight-regular);
   transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
 }
 
@@ -889,7 +890,7 @@
   cursor: not-allowed;
 }
 
-.access-mode-trigger.danger {
+.access-mode-trigger.risk-high {
   color: #ee6a32;
   border-color: color-mix(in srgb, #ee6a32 42%, var(--border-color));
 }
@@ -910,6 +911,8 @@
   border: 1px solid var(--border-color) !important;
   background: color-mix(in srgb, var(--bg-pane) 96%, transparent) !important;
   backdrop-filter: blur(18px);
+  font-family: var(--font-sans);
+  font-weight: var(--font-weight-regular);
 }
 
 .access-mode-option {
@@ -917,14 +920,16 @@
   padding: 9px 12px !important;
   border-radius: 12px !important;
   color: var(--text-primary) !important;
+  font-family: inherit;
+  font-weight: inherit;
 }
 
 .access-mode-option:hover {
   background: var(--control-bg-subtle) !important;
 }
 
-.access-mode-option.danger,
-.access-mode-option.danger .access-mode-option-copy small {
+.access-mode-option.risk-high,
+.access-mode-option.risk-high .access-mode-option-copy small {
   color: #f36d31 !important;
 }
 
@@ -937,12 +942,13 @@
 
 .access-mode-option-copy strong {
   font-size: 15px;
-  font-weight: 680;
+  font-weight: inherit;
 }
 
 .access-mode-option-copy small {
   color: var(--text-secondary);
   font-size: 12px;
+  font-weight: inherit;
   white-space: normal;
 }
 

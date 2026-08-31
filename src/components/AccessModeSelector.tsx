@@ -31,7 +31,7 @@ export default function AccessModeSelector({ value, onChange, disabled = false }
     >
       <Menu.Target>
         <UnstyledButton
-          className={`access-mode-trigger ${value === "full" ? "danger" : ""}`}
+          className={`access-mode-trigger ${value === "full" ? "risk-high" : ""}`}
           aria-label={`应用模式：${activeOption.label}`}
           disabled={disabled}
         >
@@ -48,7 +48,7 @@ export default function AccessModeSelector({ value, onChange, disabled = false }
           return (
             <Menu.Item
               key={option.value}
-              className={`access-mode-option ${option.value === "full" ? "danger" : ""}`}
+              className={`access-mode-option ${option.value === "full" ? "risk-high" : ""}`}
               leftSection={<Icon size={22} strokeWidth={1.8} />}
               rightSection={selected ? <Check size={20} strokeWidth={2.2} /> : null}
               onClick={() => onChange(option.value)}
