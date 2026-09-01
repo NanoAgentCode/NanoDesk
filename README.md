@@ -5,9 +5,9 @@ NanoAgent 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust�
 ## 核心能力
 
 - 本地笔记、提示词和长期记忆管理；普通手工记忆使用 SQLite 关系表、FTS5、sqlite-vec 和轻量知识图谱混合召回。独立用户画像只收集持久化会话中的用户输入，在本地过滤后按字符、数量或时间异步批量提取，也可从设置页将当前候选立即组批生成；未通过本地规则的输入保留为本机待确认项，由用户选择交给画像模型或丢弃，不阻塞聊天回复。
-- 持久化 AI 对话，支持归档、恢复、删除、项目作用域隔离和按实际模型标识进行会话级选择；LLM 设置可从 OpenAI/Anthropic 兼容服务获取模型列表，也保留手动输入，并可按模型配置 Temperature、最大输出 Token、Top P 和推理强度。
+- 持久化 AI 对话，支持归档、恢复、删除、项目作用域隔离和按实际模型标识进行会话级选择；LLM 设置可从 OpenAI/Anthropic 兼容服务获取模型列表，也保留手动输入，并可按模型配置上下文窗口、Temperature、最大输出 Token、Top P 和推理强度。
 - OpenAI-compatible Chat/Embeddings、Anthropic Messages API，以及 Ollama/OpenRouter 等兼容服务。
-- 流式回复、reasoning/thinking 片段展示、长对话上下文压缩，以及 GFM/KaTeX 数学公式渲染。
+- 流式回复、reasoning/thinking 片段展示、动态 Token 预算和保留原始消息的结构化滚动摘要，以及 GFM/KaTeX 数学公式渲染。
 - 轻量 RAG：拖拽文件、抽取文本、分块、生成 embedding，并在对话时召回相关片段。
 - 项目索引中心：为项目构建可插拔索引，当前包含代码实体/关系索引和文档片段索引，代码、配置、说明、数据文件问答会优先召回项目级上下文。
 - 图片附件和 OCR：图片保存到 `.nano-agent/uploads/images/`，消息中渲染缩略图，点击可预览，并可通过 `ocr_image` 调用本机 PaddleOCR。
@@ -133,7 +133,7 @@ src/hooks/                     对话、模型、项目、RAG、MCP、Skills、O
 src/hooks/useAccessMode.ts     三种应用模式状态与本地持久化
 src/hooks/useAgentToolRuntime.ts Agent 工具审批、执行和结果续写
 src/components/                聊天区、侧栏、设置页、观测面板、Ops 工作台等 UI
-src/lib/                       系统提示、工具解析、格式化和安全封装
+src/lib/                       系统提示、上下文预算与摘要编排、工具解析、格式化和安全封装
 src-tauri/src/lib.rs           Tauri command 注册、应用状态和启动流程
 src-tauri/src/cli.rs           nano 终端交互、模型选择和项目问答上下文
 src-tauri/src/bin/nano.rs      nano 命令行二进制入口
