@@ -670,6 +670,8 @@ pub(crate) async fn ask_ops_ai(
         temperature: Some(0.2),
         trace_id: Some(server.id.clone()),
         max_tokens: None,
+        top_p: None,
+        reasoning_effort: None,
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),

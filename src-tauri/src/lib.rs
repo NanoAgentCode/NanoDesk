@@ -505,6 +505,10 @@ async fn test_llm_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
         base_url: draft.base_url,
         model: draft.model,
         api_key: draft.api_key,
+        temperature: draft.temperature,
+        max_tokens: draft.max_tokens,
+        top_p: draft.top_p,
+        reasoning_effort: draft.reasoning_effort,
         embedding_provider: draft.embedding_provider,
         embedding_base_url: draft.embedding_base_url,
         embedding_model: draft.embedding_model,
@@ -522,6 +526,8 @@ async fn test_llm_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
         temperature: Some(0.1),
         trace_id: None,
         max_tokens: None,
+        top_p: None,
+        reasoning_effort: None,
     };
 
     let _ = crate::llm::send_chat_completion(config, request).await?;
@@ -542,6 +548,10 @@ async fn test_embedding_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
         base_url: draft.base_url,
         model: draft.model,
         api_key: draft.api_key,
+        temperature: draft.temperature,
+        max_tokens: draft.max_tokens,
+        top_p: draft.top_p,
+        reasoning_effort: draft.reasoning_effort,
         embedding_provider: draft.embedding_provider,
         embedding_base_url: draft.embedding_base_url,
         embedding_model: draft.embedding_model,

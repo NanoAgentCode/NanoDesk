@@ -17,6 +17,10 @@ export const emptyModelDraft: ModelConfigDraft = {
   base_url: "https://api.openai.com/v1",
   model: "gpt-4o-mini",
   api_key: "",
+  temperature: 0.4,
+  max_tokens: null,
+  top_p: null,
+  reasoning_effort: "",
   embedding_provider: "openai-compatible",
   embedding_base_url: "https://api.openai.com/v1",
   embedding_model: "text-embedding-3-small",
@@ -30,6 +34,10 @@ export const emptyEmbeddingDraft: ModelConfigDraft = {
   base_url: "https://api.openai.com/v1",
   model: "text-embedding-3-small",
   api_key: "",
+  temperature: 0.4,
+  max_tokens: null,
+  top_p: null,
+  reasoning_effort: "",
   embedding_provider: "openai-compatible",
   embedding_base_url: "https://api.openai.com/v1",
   embedding_model: "text-embedding-3-small",
@@ -57,6 +65,10 @@ export const embeddingProviderDefaults: Record<string, Pick<ModelConfigDraft, "e
 export function normalizeModelDraft(model: ModelConfig | ModelConfigDraft): ModelConfigDraft {
   return {
     ...model,
+    temperature: model.temperature ?? 0.4,
+    max_tokens: model.max_tokens ?? null,
+    top_p: model.top_p ?? null,
+    reasoning_effort: model.reasoning_effort || "",
     embedding_provider: model.embedding_provider || "openai-compatible",
     embedding_base_url: model.embedding_base_url || "https://api.openai.com/v1",
     embedding_model: model.embedding_model || "text-embedding-3-small",
@@ -136,12 +148,20 @@ export function useModel(
          modelDraft.provider !== savedModel.provider ||
          modelDraft.base_url !== savedModel.base_url ||
          modelDraft.model !== savedModel.model ||
-         modelDraft.api_key !== savedModel.api_key)
+         modelDraft.api_key !== savedModel.api_key ||
+         modelDraft.temperature !== savedModel.temperature ||
+         modelDraft.max_tokens !== savedModel.max_tokens ||
+         modelDraft.top_p !== savedModel.top_p ||
+         modelDraft.reasoning_effort !== savedModel.reasoning_effort)
       : (modelDraft.name !== emptyModelDraft.name ||
          modelDraft.provider !== emptyModelDraft.provider ||
          modelDraft.base_url !== emptyModelDraft.base_url ||
          modelDraft.model !== emptyModelDraft.model ||
-         modelDraft.api_key !== emptyModelDraft.api_key);
+         modelDraft.api_key !== emptyModelDraft.api_key ||
+         modelDraft.temperature !== emptyModelDraft.temperature ||
+         modelDraft.max_tokens !== emptyModelDraft.max_tokens ||
+         modelDraft.top_p !== emptyModelDraft.top_p ||
+         modelDraft.reasoning_effort !== emptyModelDraft.reasoning_effort);
 
     if (isDirty) {
       const currentStatus = modelTestStatuses[modelId]?.status || "idle";
@@ -159,6 +179,10 @@ export function useModel(
     modelDraft.base_url,
     modelDraft.model,
     modelDraft.api_key,
+    modelDraft.temperature,
+    modelDraft.max_tokens,
+    modelDraft.top_p,
+    modelDraft.reasoning_effort,
     models,
     modelTestStatuses
   ]);

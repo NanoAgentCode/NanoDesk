@@ -36,6 +36,10 @@ export interface ModelConfig {
   base_url: string;
   model: string;
   api_key: string;
+  temperature: number;
+  max_tokens: number | null;
+  top_p: number | null;
+  reasoning_effort: string;
   embedding_provider: string;
   embedding_base_url: string;
   embedding_model: string;
@@ -51,6 +55,10 @@ export interface ModelConfigDraft {
   base_url: string;
   model: string;
   api_key: string;
+  temperature: number;
+  max_tokens: number | null;
+  top_p: number | null;
+  reasoning_effort: string;
   embedding_provider: string;
   embedding_base_url: string;
   embedding_model: string;

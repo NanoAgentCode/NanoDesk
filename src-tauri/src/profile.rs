@@ -432,6 +432,8 @@ fn build_extraction_request(work: &ProfileBatchWork) -> AppResult<ChatRequest> {
         temperature: Some(0.0),
         trace_id: None,
         max_tokens: Some(800),
+        top_p: None,
+        reasoning_effort: None,
     })
 }
 

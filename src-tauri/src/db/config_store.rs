@@ -17,6 +17,7 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "
             SELECT id, name, provider, base_url, model, api_key,
+                   temperature, max_tokens, top_p, reasoning_effort,
                    embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                    created_at, updated_at
             FROM model_configs
@@ -37,6 +38,7 @@ impl Database {
             .query_row(
                 "
                 SELECT id, name, provider, base_url, model, api_key,
+                       temperature, max_tokens, top_p, reasoning_effort,
                        embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                        created_at, updated_at
                 FROM model_configs WHERE id = ?1
@@ -70,6 +72,10 @@ impl Database {
             base_url: clean_or_default(draft.base_url, "https://api.openai.com/v1"),
             model: clean_or_default(draft.model, "gpt-4o-mini"),
             api_key: draft.api_key,
+            temperature: validate_temperature(draft.temperature)?,
+            max_tokens: validate_max_tokens(draft.max_tokens)?,
+            top_p: validate_top_p(draft.top_p)?,
+            reasoning_effort: validate_reasoning_effort(draft.reasoning_effort)?,
             embedding_provider: clean_or_default(draft.embedding_provider, "openai-compatible"),
             embedding_base_url: clean_optional_string(draft.embedding_base_url),
             embedding_model: clean_or_default(draft.embedding_model, "text-embedding-3-small"),
@@ -82,15 +88,20 @@ impl Database {
             "
             INSERT INTO model_configs
                 (id, name, provider, base_url, model, api_key,
+                 temperature, max_tokens, top_p, reasoning_effort,
                  embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                  created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 provider = excluded.provider,
                 base_url = excluded.base_url,
                 model = excluded.model,
                 api_key = excluded.api_key,
+                temperature = excluded.temperature,
+                max_tokens = excluded.max_tokens,
+                top_p = excluded.top_p,
+                reasoning_effort = excluded.reasoning_effort,
                 embedding_provider = excluded.embedding_provider,
                 embedding_base_url = excluded.embedding_base_url,
                 embedding_model = excluded.embedding_model,
@@ -104,6 +115,10 @@ impl Database {
                 config.base_url,
                 config.model,
                 config.api_key,
+                config.temperature,
+                config.max_tokens,
+                config.top_p,
+                config.reasoning_effort,
                 config.embedding_provider,
                 config.embedding_base_url,
                 config.embedding_model,
@@ -355,5 +370,42 @@ impl Database {
             .execute("DELETE FROM ops_servers WHERE id = ?1", params![id])?;
         ensure_affected(affected, "server not found")?;
         Ok(())
+    }
+}
+
+fn validate_temperature(value: f32) -> AppResult<f32> {
+    if value.is_finite() && (0.0..=2.0).contains(&value) {
+        Ok(value)
+    } else {
+        Err(AppError::Message(
+            "Temperature 必须在 0 到 2 之间".to_string(),
+        ))
+    }
+}
+
+fn validate_max_tokens(value: Option<u32>) -> AppResult<Option<u32>> {
+    match value {
+        Some(0) => Err(AppError::Message("最大输出 Token 必须大于 0".to_string())),
+        _ => Ok(value),
+    }
+}
+
+fn validate_top_p(value: Option<f32>) -> AppResult<Option<f32>> {
+    match value {
+        Some(value) if !value.is_finite() || !(0.0..=1.0).contains(&value) => {
+            Err(AppError::Message("Top P 必须在 0 到 1 之间".to_string()))
+        }
+        _ => Ok(value),
+    }
+}
+
+fn validate_reasoning_effort(value: String) -> AppResult<String> {
+    let value = value.trim().to_lowercase();
+    if matches!(value.as_str(), "" | "low" | "medium" | "high") {
+        Ok(value)
+    } else {
+        Err(AppError::Message(
+            "Reasoning Effort 必须为空、low、medium 或 high".to_string(),
+        ))
     }
 }

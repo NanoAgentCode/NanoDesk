@@ -16,6 +16,10 @@ struct OpenAiChatRequest {
     stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,6 +91,8 @@ struct AnthropicChatRequest {
     messages: Vec<AnthropicMessage>,
     max_tokens: u32,
     temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
 }
@@ -300,12 +306,21 @@ async fn send_openai_chat_completion(
 ) -> AppResult<ChatResponse> {
     ensure_api_key(&config)?;
     let endpoint = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+    let generation = resolve_generation_params(
+        &config,
+        request.temperature,
+        request.max_tokens,
+        request.top_p,
+        request.reasoning_effort,
+    );
     let payload = OpenAiChatRequest {
         model: config.model,
         messages: request.messages,
-        temperature: request.temperature.unwrap_or(0.4),
+        temperature: generation.temperature,
         stream: None,
-        max_tokens: request.max_tokens,
+        max_tokens: generation.max_tokens,
+        top_p: generation.top_p,
+        reasoning_effort: generation.reasoning_effort,
     };
 
     let client = reqwest::Client::new();
@@ -349,12 +364,20 @@ async fn send_anthropic_chat_completion(
 ) -> AppResult<ChatResponse> {
     ensure_api_key(&config)?;
     let endpoint = anthropic_messages_endpoint(&config.base_url);
+    let generation = resolve_generation_params(
+        &config,
+        request.temperature,
+        request.max_tokens,
+        request.top_p,
+        request.reasoning_effort,
+    );
     let payload = build_anthropic_payload(
         config.model,
         request.messages,
-        request.temperature.unwrap_or(0.4),
+        generation.temperature,
         None,
-        request.max_tokens.unwrap_or(4096),
+        generation.max_tokens.unwrap_or(4096),
+        generation.top_p,
     );
 
     let response = reqwest::Client::new()
@@ -403,12 +426,21 @@ where
     }
 
     let endpoint = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+    let generation = resolve_generation_params(
+        &config,
+        request.temperature,
+        request.max_tokens,
+        request.top_p,
+        request.reasoning_effort,
+    );
     let payload = OpenAiChatRequest {
         model: config.model,
         messages: request.messages,
-        temperature: request.temperature.unwrap_or(0.4),
+        temperature: generation.temperature,
         stream: Some(true),
-        max_tokens: None,
+        max_tokens: generation.max_tokens,
+        top_p: generation.top_p,
+        reasoning_effort: generation.reasoning_effort,
     };
 
     let mut builder = reqwest::Client::new()
@@ -437,12 +469,20 @@ where
     }
 
     let endpoint = anthropic_messages_endpoint(&config.base_url);
+    let generation = resolve_generation_params(
+        &config,
+        request.temperature,
+        request.max_tokens,
+        request.top_p,
+        request.reasoning_effort,
+    );
     let payload = build_anthropic_payload(
         config.model,
         request.messages,
-        request.temperature.unwrap_or(0.4),
+        generation.temperature,
         Some(true),
-        4096,
+        generation.max_tokens.unwrap_or(4096),
+        generation.top_p,
     );
     let builder = reqwest::Client::new()
         .post(endpoint)
@@ -610,6 +650,7 @@ fn build_anthropic_payload(
     temperature: f32,
     stream: Option<bool>,
     max_tokens: u32,
+    top_p: Option<f32>,
 ) -> AnthropicChatRequest {
     let mut system_parts = Vec::new();
     let mut anthropic_messages = Vec::new();
@@ -640,7 +681,38 @@ fn build_anthropic_payload(
         messages: anthropic_messages,
         max_tokens,
         temperature,
+        top_p,
         stream,
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct GenerationParams {
+    temperature: f32,
+    max_tokens: Option<u32>,
+    top_p: Option<f32>,
+    reasoning_effort: Option<String>,
+}
+
+fn resolve_generation_params(
+    config: &ModelConfig,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    top_p: Option<f32>,
+    reasoning_effort: Option<String>,
+) -> GenerationParams {
+    let reasoning_effort = reasoning_effort
+        .or_else(|| {
+            let configured = config.reasoning_effort.trim();
+            (!configured.is_empty()).then(|| configured.to_string())
+        })
+        .filter(|value| !value.trim().is_empty());
+
+    GenerationParams {
+        temperature: temperature.unwrap_or(config.temperature),
+        max_tokens: max_tokens.or(config.max_tokens),
+        top_p: top_p.or(config.top_p),
+        reasoning_effort,
     }
 }
 
@@ -667,7 +739,32 @@ fn is_anthropic_provider(provider: &str) -> bool {
 
 #[cfg(test)]
 mod model_list_tests {
-    use super::{model_list_endpoint, parse_model_list};
+    use super::{
+        model_list_endpoint, parse_model_list, resolve_generation_params, GenerationParams,
+    };
+    use crate::models::ModelConfig;
+
+    fn model_config() -> ModelConfig {
+        let now = chrono::Utc::now();
+        ModelConfig {
+            id: "config-1".to_string(),
+            name: "Test".to_string(),
+            provider: "openai-compatible".to_string(),
+            base_url: "http://localhost:11434/v1".to_string(),
+            model: "test-model".to_string(),
+            api_key: String::new(),
+            temperature: 0.7,
+            max_tokens: Some(2048),
+            top_p: Some(0.85),
+            reasoning_effort: "medium".to_string(),
+            embedding_provider: String::new(),
+            embedding_base_url: String::new(),
+            embedding_model: String::new(),
+            embedding_api_key: String::new(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
 
     #[test]
     fn builds_provider_specific_model_list_endpoints() {
@@ -691,6 +788,35 @@ mod model_list_tests {
         assert_eq!(
             parse_model_list(body).unwrap(),
             vec!["glm-4-air".to_string(), "glm-4.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn resolves_saved_generation_parameters_and_request_overrides() {
+        let config = model_config();
+        assert_eq!(
+            resolve_generation_params(&config, None, None, None, None),
+            GenerationParams {
+                temperature: 0.7,
+                max_tokens: Some(2048),
+                top_p: Some(0.85),
+                reasoning_effort: Some("medium".to_string()),
+            }
+        );
+        assert_eq!(
+            resolve_generation_params(
+                &config,
+                Some(0.1),
+                Some(256),
+                Some(0.5),
+                Some("low".to_string()),
+            ),
+            GenerationParams {
+                temperature: 0.1,
+                max_tokens: Some(256),
+                top_p: Some(0.5),
+                reasoning_effort: Some("low".to_string()),
+            }
         );
     }
 }

@@ -335,14 +335,16 @@ export function saveTavilyApiKey(apiKey: string) {
 export function chat(
   modelConfigId: string,
   messages: ChatMessage[],
-  temperature = 0.4,
   traceId?: string
 ) {
   return invoke<{ content: string }>("chat", {
     request: {
       model_config_id: modelConfigId,
       messages,
-      temperature,
+      temperature: null,
+      max_tokens: null,
+      top_p: null,
+      reasoning_effort: null,
       trace_id: traceId || null
     }
   });
@@ -352,7 +354,6 @@ export function chatStream(
   requestId: string,
   modelConfigId: string,
   messages: ChatMessage[],
-  temperature = 0.4,
   traceId?: string
 ) {
   return invoke<void>("chat_stream", {
@@ -360,7 +361,10 @@ export function chatStream(
       request_id: requestId,
       model_config_id: modelConfigId,
       messages,
-      temperature,
+      temperature: null,
+      max_tokens: null,
+      top_p: null,
+      reasoning_effort: null,
       trace_id: traceId || null
     }
   });

@@ -336,7 +336,7 @@ export function useChat({
           if (messagesToCompress.length >= 2) {
             const summaryPrompt = "请简明扼要地对以下对话历史进行上下文摘要（限 150 字内），保留关键事实、用户偏好和核心讨论点，以便作为后续对话的背景。请直接输出摘要，不要有任何多余的解释：\n\n" +
               messagesToCompress.map(m => `${m.role === 'user' ? '用户' : '助手'}: ${m.content}`).join("\n");
-            const summaryResponse = await chat(activeModelId, [{ role: "user", content: summaryPrompt }], 0.4, conversationId);
+            const summaryResponse = await chat(activeModelId, [{ role: "user", content: summaryPrompt }], conversationId);
             const summaryText = summaryResponse.content.trim();
             if (summaryText) {
               const idsToDelete = messagesToCompress.map(m => m.id);
@@ -403,7 +403,7 @@ export function useChat({
           metadata_json: JSON.stringify({ model_config_id: activeModelId })
         });
       }
-      await chatStream(requestId, activeModelId, modelMessages, 0.4, conversationId);
+      await chatStream(requestId, activeModelId, modelMessages, conversationId);
       unlisten();
 
       if (!streamedContent.trim()) {
@@ -530,7 +530,7 @@ export function useChat({
           metadata_json: JSON.stringify({ conversation_id: conversationId })
         });
       }
-      await chatStream(requestId, modelConfigId, modelMessages, 0.4, conversationId);
+      await chatStream(requestId, modelConfigId, modelMessages, conversationId);
     } catch (err) {
       streamFailed = true;
       console.error("Continue streaming failed:", err);

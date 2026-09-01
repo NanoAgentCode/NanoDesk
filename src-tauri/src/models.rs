@@ -40,6 +40,10 @@ pub struct ModelConfig {
     pub base_url: String,
     pub model: String,
     pub api_key: String,
+    pub temperature: f32,
+    pub max_tokens: Option<u32>,
+    pub top_p: Option<f32>,
+    pub reasoning_effort: String,
     pub embedding_provider: String,
     pub embedding_base_url: String,
     pub embedding_model: String,
@@ -56,6 +60,14 @@ pub struct ModelConfigDraft {
     pub base_url: String,
     pub model: String,
     pub api_key: String,
+    #[serde(default = "default_model_temperature")]
+    pub temperature: f32,
+    #[serde(default)]
+    pub max_tokens: Option<u32>,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub reasoning_effort: String,
     #[serde(default)]
     pub embedding_provider: String,
     #[serde(default)]
@@ -229,6 +241,10 @@ pub struct ChatRequest {
     pub trace_id: Option<String>,
     #[serde(default)]
     pub max_tokens: Option<u32>,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,6 +254,16 @@ pub struct ChatStreamRequest {
     pub messages: Vec<ChatMessage>,
     pub temperature: Option<f32>,
     pub trace_id: Option<String>,
+    #[serde(default)]
+    pub max_tokens: Option<u32>,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+}
+
+fn default_model_temperature() -> f32 {
+    0.4
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

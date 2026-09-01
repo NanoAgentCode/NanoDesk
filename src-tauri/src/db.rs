@@ -81,6 +81,10 @@ impl Database {
                 base_url TEXT NOT NULL,
                 model TEXT NOT NULL,
                 api_key TEXT NOT NULL,
+                temperature REAL NOT NULL DEFAULT 0.4,
+                max_tokens INTEGER,
+                top_p REAL,
+                reasoning_effort TEXT NOT NULL DEFAULT '',
                 embedding_provider TEXT NOT NULL DEFAULT 'openai-compatible',
                 embedding_base_url TEXT NOT NULL DEFAULT '',
                 embedding_model TEXT NOT NULL DEFAULT '',
@@ -592,6 +596,14 @@ impl Database {
             "embedding_api_key",
             "TEXT NOT NULL DEFAULT ''",
         )?;
+        self.ensure_column("model_configs", "temperature", "REAL NOT NULL DEFAULT 0.4")?;
+        self.ensure_column("model_configs", "max_tokens", "INTEGER")?;
+        self.ensure_column("model_configs", "top_p", "REAL")?;
+        self.ensure_column(
+            "model_configs",
+            "reasoning_effort",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
         self.ensure_column("mcp_servers", "transport", "TEXT NOT NULL DEFAULT 'stdio'")?;
         self.ensure_column("mcp_servers", "args_json", "TEXT NOT NULL DEFAULT '[]'")?;
         self.ensure_column("mcp_servers", "env_json", "TEXT NOT NULL DEFAULT '{}'")?;
@@ -766,8 +778,8 @@ impl Database {
     }
 
     fn row_to_model_config(row: &rusqlite::Row<'_>) -> rusqlite::Result<ModelConfig> {
-        let created_at: String = row.get(10)?;
-        let updated_at: String = row.get(11)?;
+        let created_at: String = row.get(14)?;
+        let updated_at: String = row.get(15)?;
 
         Ok(ModelConfig {
             id: row.get(0)?,
@@ -776,10 +788,14 @@ impl Database {
             base_url: row.get(3)?,
             model: row.get(4)?,
             api_key: row.get(5)?,
-            embedding_provider: row.get(6)?,
-            embedding_base_url: row.get(7)?,
-            embedding_model: row.get(8)?,
-            embedding_api_key: row.get(9)?,
+            temperature: row.get(6)?,
+            max_tokens: row.get(7)?,
+            top_p: row.get(8)?,
+            reasoning_effort: row.get(9)?,
+            embedding_provider: row.get(10)?,
+            embedding_base_url: row.get(11)?,
+            embedding_model: row.get(12)?,
+            embedding_api_key: row.get(13)?,
             created_at: parse_time_for_row(&created_at)?,
             updated_at: parse_time_for_row(&updated_at)?,
         })
@@ -1329,7 +1345,83 @@ fn ensure_affected(affected: usize, message: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{MemoryDraft, MemoryPatch};
+    use crate::models::{MemoryDraft, MemoryPatch, ModelConfigDraft};
+
+    #[test]
+    fn model_generation_parameters_are_persisted() {
+        let db = Database::open(PathBuf::from(":memory:")).expect("database should open");
+        let saved = db
+            .save_model_config(ModelConfigDraft {
+                id: Some("configured-model".to_string()),
+                name: "Configured model".to_string(),
+                provider: "openai-compatible".to_string(),
+                base_url: "http://localhost:11434/v1".to_string(),
+                model: "local-model".to_string(),
+                api_key: String::new(),
+                temperature: 0.65,
+                max_tokens: Some(3072),
+                top_p: Some(0.9),
+                reasoning_effort: "high".to_string(),
+                embedding_provider: String::new(),
+                embedding_base_url: String::new(),
+                embedding_model: String::new(),
+                embedding_api_key: String::new(),
+            })
+            .expect("model should save");
+        let loaded = db.get_model_config(&saved.id).expect("model should load");
+
+        assert_eq!(loaded.temperature, 0.65);
+        assert_eq!(loaded.max_tokens, Some(3072));
+        assert_eq!(loaded.top_p, Some(0.9));
+        assert_eq!(loaded.reasoning_effort, "high");
+    }
+
+    #[test]
+    fn legacy_model_configs_receive_generation_parameter_defaults() {
+        let path = std::env::temp_dir().join(format!(
+            "nano-model-config-migration-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        {
+            let conn = Connection::open(&path).expect("legacy database should open");
+            conn.execute_batch(
+                "
+                CREATE TABLE model_configs (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    base_url TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    api_key TEXT NOT NULL,
+                    embedding_provider TEXT NOT NULL DEFAULT 'openai-compatible',
+                    embedding_base_url TEXT NOT NULL DEFAULT '',
+                    embedding_model TEXT NOT NULL DEFAULT '',
+                    embedding_api_key TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                INSERT INTO model_configs
+                    (id, name, provider, base_url, model, api_key, created_at, updated_at)
+                VALUES
+                    ('legacy', 'Legacy', 'openai-compatible', 'http://localhost:11434/v1',
+                     'legacy-model', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                ",
+            )
+            .expect("legacy schema should be created");
+        }
+
+        let db = Database::open(path.clone()).expect("database migration should succeed");
+        let loaded = db
+            .get_model_config("legacy")
+            .expect("legacy model should remain readable");
+        assert_eq!(loaded.temperature, 0.4);
+        assert_eq!(loaded.max_tokens, None);
+        assert_eq!(loaded.top_p, None);
+        assert_eq!(loaded.reasoning_effort, "");
+
+        drop(db);
+        std::fs::remove_file(path).expect("temporary database should be removed");
+    }
 
     #[test]
     fn fts_prefix_query_handles_punctuation_heavy_input() {
