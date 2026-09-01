@@ -1,5 +1,6 @@
-import { Activity, Edit3, Loader2, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Activity, ChevronDown, Edit3, Loader2, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { ActionIcon, Autocomplete, NumberInput, PasswordInput, Select, TextInput, Tooltip, UnstyledButton } from "@mantine/core";
+import { useState } from "react";
 import IconTooltipButton from "../IconTooltipButton";
 import { normalizeModelDraft } from "../../hooks/useModel";
 import type { UseModelReturn } from "../../hooks/useModel";
@@ -10,6 +11,7 @@ interface SettingsModelTabProps {
 }
 
 export default function SettingsModelTab({ model, setShowModelConfig }: SettingsModelTabProps) {
+  const [generationParametersExpanded, setGenerationParametersExpanded] = useState(false);
   const llmModels = model.models.filter((m) => m.id !== "embedding-config");
   const isEditingModel = Boolean(model.modelDraft.id && model.modelDraft.id !== "embedding-config");
 
@@ -112,64 +114,79 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
             />
             <PasswordInput className="model-field--wide" label="API Key" value={model.modelDraft.api_key} onChange={(event) => model.setModelDraft({ ...model.modelDraft, api_key: event.currentTarget.value })} placeholder="用于对话模型调用" />
             <div className="model-parameters-heading model-field--wide">
-              <strong>生成参数</strong>
-              <span>这些参数随当前模型保存；留空项使用服务商默认值。</span>
+              <div className="model-parameters-summary">
+                <strong>参数配置</strong>
+                <span>Temperature、输出上限、采样范围和推理强度</span>
+              </div>
+              <IconTooltipButton
+                className="profile-settings-expand"
+                label={generationParametersExpanded ? "收起参数配置" : "展开参数配置"}
+                aria-expanded={generationParametersExpanded}
+                aria-controls="model-generation-parameters"
+                onClick={() => setGenerationParametersExpanded((expanded) => !expanded)}
+              >
+                <ChevronDown size={17} className={generationParametersExpanded ? "is-expanded" : undefined} aria-hidden="true" />
+              </IconTooltipButton>
             </div>
-            <NumberInput
-              label="Temperature"
-              description="越低越稳定，越高越发散"
-              value={model.modelDraft.temperature}
-              min={0}
-              max={2}
-              step={0.1}
-              decimalScale={2}
-              onChange={(value) => model.setModelDraft({
-                ...model.modelDraft,
-                temperature: typeof value === "number" ? value : 0.4
-              })}
-            />
-            <NumberInput
-              label="最大输出 Token"
-              description="留空时由服务商决定"
-              placeholder="服务商默认"
-              value={model.modelDraft.max_tokens ?? ""}
-              min={1}
-              step={256}
-              allowDecimal={false}
-              thousandSeparator=","
-              onChange={(value) => model.setModelDraft({
-                ...model.modelDraft,
-                max_tokens: typeof value === "number" ? value : null
-              })}
-            />
-            <NumberInput
-              label="Top P"
-              description="可选的概率采样范围"
-              placeholder="服务商默认"
-              value={model.modelDraft.top_p ?? ""}
-              min={0}
-              max={1}
-              step={0.05}
-              decimalScale={2}
-              onChange={(value) => model.setModelDraft({
-                ...model.modelDraft,
-                top_p: typeof value === "number" ? value : null
-              })}
-            />
-            {model.modelDraft.provider === "openai-compatible" && (
-              <Select
-                label="Reasoning Effort"
-                description="仅支持该参数的推理模型生效"
-                value={model.modelDraft.reasoning_effort || null}
-                placeholder="服务商默认"
-                clearable
-                data={[
-                  { value: "low", label: "Low · 更快" },
-                  { value: "medium", label: "Medium · 平衡" },
-                  { value: "high", label: "High · 更深入" }
-                ]}
-                onChange={(value) => model.setModelDraft({ ...model.modelDraft, reasoning_effort: value || "" })}
-              />
+            {generationParametersExpanded && (
+              <div id="model-generation-parameters" className="model-parameters-grid model-field--wide">
+                <NumberInput
+                  label="Temperature"
+                  description="越低越稳定，越高越发散"
+                  value={model.modelDraft.temperature}
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  decimalScale={2}
+                  onChange={(value) => model.setModelDraft({
+                    ...model.modelDraft,
+                    temperature: typeof value === "number" ? value : 0.4
+                  })}
+                />
+                <NumberInput
+                  label="最大输出 Token"
+                  description="留空时由服务商决定"
+                  placeholder="服务商默认"
+                  value={model.modelDraft.max_tokens ?? ""}
+                  min={1}
+                  step={256}
+                  allowDecimal={false}
+                  thousandSeparator=","
+                  onChange={(value) => model.setModelDraft({
+                    ...model.modelDraft,
+                    max_tokens: typeof value === "number" ? value : null
+                  })}
+                />
+                <NumberInput
+                  label="Top P"
+                  description="可选的概率采样范围"
+                  placeholder="服务商默认"
+                  value={model.modelDraft.top_p ?? ""}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  decimalScale={2}
+                  onChange={(value) => model.setModelDraft({
+                    ...model.modelDraft,
+                    top_p: typeof value === "number" ? value : null
+                  })}
+                />
+                {model.modelDraft.provider === "openai-compatible" && (
+                  <Select
+                    label="Reasoning Effort"
+                    description="仅支持该参数的推理模型生效"
+                    value={model.modelDraft.reasoning_effort || null}
+                    placeholder="服务商默认"
+                    clearable
+                    data={[
+                      { value: "low", label: "Low · 更快" },
+                      { value: "medium", label: "Medium · 平衡" },
+                      { value: "high", label: "High · 更深入" }
+                    ]}
+                    onChange={(value) => model.setModelDraft({ ...model.modelDraft, reasoning_effort: value || "" })}
+                  />
+                )}
+              </div>
             )}
           </div>
           <div className="modal-actions icon-actions icon-actions-bar">

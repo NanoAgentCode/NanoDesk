@@ -1031,11 +1031,18 @@
 
 .model-parameters-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
   margin-top: 2px;
   padding-top: 15px;
   border-top: 1px solid var(--border-color);
+}
+
+.model-parameters-summary {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
 }
 
 .model-parameters-heading strong {
@@ -1047,6 +1054,12 @@
 .model-parameters-heading span {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
+}
+
+.model-parameters-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
 }
 
 .llm-config-grid .model-config-form .modal-actions {
@@ -1190,10 +1203,8 @@
     flex-wrap: wrap;
   }
 
-  .model-parameters-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 3px;
+  .model-parameters-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .model-action-btn {
