@@ -6,7 +6,6 @@ import {
   chat,
   chatStream,
   createMemory,
-  deleteMessages,
   indexRagFile,
   listRelevantMemories,
   getProfileContext,
@@ -17,7 +16,17 @@ import {
 } from "../api";
 import { buildSystemMessage } from "../lib/chatSystemMessage";
 import { loadProjectRetrievalContext } from "../lib/projectRetrieval";
-import { isSupportedRagFile, MAX_CONTEXT_TOKENS, estimateTokens } from "../lib/formatters";
+import { isSupportedRagFile } from "../lib/formatters";
+import {
+  buildContextSelection,
+  buildSummaryPrompt,
+  estimateMessageTokens,
+  fitContextToBudget,
+  fitSystemMessageToBudget,
+  resolveTokenBudget,
+  splitSummaryBatches,
+  SUMMARY_OUTPUT_TOKENS
+} from "../lib/contextBudget";
 import { isSupportedImageAttachmentFile } from "../lib/imageAttachments";
 import {
   resolveUserMemoryRoute,
@@ -237,6 +246,99 @@ export function useChat({
     }
   }
 
+  async function prepareBudgetedContext(
+    history: PersistedMessage[],
+    systemMessage: ChatMessage,
+    modelConfigId: string,
+    conversationId: string,
+    latestUserContent: string
+  ) {
+    const configuredModel = model.models.find((item) => item.id === modelConfigId);
+    let budget = resolveTokenBudget(
+      configuredModel ?? { context_window: 32_768, max_tokens: null },
+      systemMessage.content,
+      latestUserContent
+    );
+    const latestUserTokens = estimateMessageTokens({ role: "user", content: latestUserContent });
+    if (latestUserTokens >= budget.inputBudget - 128) {
+      throw new Error(
+        `当前消息约 ${latestUserTokens} Token，超过模型可用输入预算 ${budget.inputBudget} Token；请缩短消息或增大上下文窗口。`
+      );
+    }
+    const fittedSystem = fitSystemMessageToBudget(
+      systemMessage,
+      budget.inputBudget - latestUserTokens
+    );
+    const budgetedSystemMessage = fittedSystem.message;
+    if (fittedSystem.trimmed) {
+      budget = resolveTokenBudget(
+        configuredModel ?? { context_window: 32_768, max_tokens: null },
+        budgetedSystemMessage.content,
+        latestUserContent
+      );
+      setNotice("动态系统上下文超过预算，已保留核心规则和最新检索结果并裁剪中间部分。");
+    }
+    const selection = buildContextSelection(history, budget.conversationBudget);
+    let contextMessages = selection.messages;
+    let summaryMessage: PersistedMessage | null = null;
+
+    if (selection.summaryPlan) {
+      try {
+        const maxBatchTokens = Math.max(
+          256,
+          budget.contextWindow - budget.safetyReserve - SUMMARY_OUTPUT_TOKENS * 2 - 512
+        );
+        const batches = splitSummaryBatches(selection.summaryPlan.sourceMessages, maxBatchTokens);
+        let rollingSummary: PersistedMessage | null = null;
+
+        for (const batch of batches) {
+          const summarySource = rollingSummary ? [rollingSummary, ...batch] : batch;
+          const summaryResponse = await chat(
+            modelConfigId,
+            [{ role: "user", content: buildSummaryPrompt(summarySource) }],
+            conversationId,
+            SUMMARY_OUTPUT_TOKENS
+          );
+          const summaryText = summaryResponse.content.trim();
+          if (!summaryText) throw new Error("模型返回了空摘要");
+          rollingSummary = {
+            id: `rolling-summary-${crypto.randomUUID()}`,
+            conversation_id: conversationId,
+            role: "system",
+            content: summaryText,
+            created_at: new Date().toISOString()
+          };
+        }
+
+        if (!rollingSummary) throw new Error("没有可摘要的历史消息");
+        summaryMessage = await appendMessage({
+          conversation_id: conversationId,
+          role: "system",
+          content: `【结构化上下文摘要 v${selection.summaryPlan.version}】\n${rollingSummary.content}`,
+          metadata: {
+            context_summary: {
+              version: selection.summaryPlan.version,
+              covered_through_message_id: selection.summaryPlan.coveredThroughMessageId,
+              covered_message_count: selection.summaryPlan.coveredMessageCount
+            }
+          }
+        });
+        contextMessages = [summaryMessage, ...selection.summaryPlan.recentMessages];
+        setNotice("上下文预算已更新：保留完整历史，并优先使用结构化摘要。");
+      } catch (error) {
+        console.error("Context summary failed:", error);
+        setNotice("上下文摘要失败，本次将按预算使用最近历史，原始消息仍完整保留。");
+      }
+    }
+
+    return {
+      contextMessages: fitContextToBudget(contextMessages, budget.conversationBudget),
+      summaryMessage,
+      systemMessage: budgetedSystemMessage,
+      outputReserve: budget.outputReserve
+    };
+  }
+
   // ── Send message ──
   async function handleSendMessage() {
     const textContent = input.chatInput.trim();
@@ -324,54 +426,34 @@ export function useChat({
         }
       }
 
-      let currentMessages = [...nextMessages];
-      const KEEP_RECENT_COUNT = 6;
-      const COMPRESSION_THRESHOLD = 0.8 * MAX_CONTEXT_TOKENS;
-      const totalTokens = currentMessages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
-
-      if (totalTokens >= COMPRESSION_THRESHOLD && currentMessages.length > KEEP_RECENT_COUNT) {
-        try {
-          const messagesToCompress = currentMessages.slice(0, currentMessages.length - KEEP_RECENT_COUNT);
-          const recentMessages = currentMessages.slice(currentMessages.length - KEEP_RECENT_COUNT);
-          if (messagesToCompress.length >= 2) {
-            const summaryPrompt = "请简明扼要地对以下对话历史进行上下文摘要（限 150 字内），保留关键事实、用户偏好和核心讨论点，以便作为后续对话的背景。请直接输出摘要，不要有任何多余的解释：\n\n" +
-              messagesToCompress.map(m => `${m.role === 'user' ? '用户' : '助手'}: ${m.content}`).join("\n");
-            const summaryResponse = await chat(activeModelId, [{ role: "user", content: summaryPrompt }], conversationId);
-            const summaryText = summaryResponse.content.trim();
-            if (summaryText) {
-              const idsToDelete = messagesToCompress.map(m => m.id);
-              await deleteMessages(idsToDelete);
-              const summaryMsg = await appendMessage({
-                conversation_id: conversationId, role: "system",
-                content: `【系统上下文摘要（已自动压缩更早的对话历史）】：\n${summaryText}`
-              });
-              currentMessages = [summaryMsg, ...recentMessages];
-              setMessages(currentMessages);
-              setNotice("上下文达到 80% 限制，已自动进行历史压缩。");
-            }
-          }
-        } catch (err) {
-          console.error("Context compression failed:", err);
-          setNotice("上下文压缩失败，将继续发送完整上下文。");
-        }
-      }
-
       const ragMatches = await rag.loadRagMatches(conversationId, content, activeModelId);
       const projectRetrieval = await loadProjectRetrievalContext(projectForRequest?.path, content);
+      const requestSystemMessage = buildSystemMessage(
+        relevantMemories,
+        profileContext,
+        projectForRequest,
+        projectFiles,
+        skills.skills,
+        mcp.mcpServers,
+        ragMatches,
+        projectRetrieval.codeMatches,
+        projectRetrieval.projectIndexMatches,
+        skills.tempDir
+      );
+      const preparedContext = await prepareBudgetedContext(
+        nextMessages,
+        requestSystemMessage,
+        activeModelId,
+        conversationId,
+        content
+      );
+      const displayMessages = preparedContext.summaryMessage
+        ? [...nextMessages, preparedContext.summaryMessage]
+        : nextMessages;
+      if (preparedContext.summaryMessage) setMessages(displayMessages);
       const modelMessages: ChatMessage[] = [
-        buildSystemMessage(
-          relevantMemories,
-          profileContext,
-          projectForRequest,
-          projectFiles,
-          skills.skills,
-          mcp.mcpServers,
-          ragMatches,
-          projectRetrieval.codeMatches,
-          projectRetrieval.projectIndexMatches,
-          skills.tempDir
-        ),
-        ...currentMessages.map((message) => ({ role: message.role, content: message.content }))
+        preparedContext.systemMessage,
+        ...preparedContext.contextMessages.map((message) => ({ role: message.role, content: message.content }))
       ];
 
       const requestId = crypto.randomUUID();
@@ -380,7 +462,7 @@ export function useChat({
       const temporaryAssistantMessage: PersistedMessage = {
         id: requestId, conversation_id: conversationId, role: "assistant", content: "", created_at: new Date().toISOString()
       };
-      setMessages([...currentMessages, temporaryAssistantMessage]);
+      setMessages([...displayMessages, temporaryAssistantMessage]);
 
       const unlisten = await listen<ChatStreamEvent>("chat-stream", (event) => {
         if (event.payload.request_id !== requestId) return;
@@ -403,7 +485,13 @@ export function useChat({
           metadata_json: JSON.stringify({ model_config_id: activeModelId })
         });
       }
-      await chatStream(requestId, activeModelId, modelMessages, conversationId);
+      await chatStream(
+        requestId,
+        activeModelId,
+        modelMessages,
+        conversationId,
+        preparedContext.outputReserve
+      );
       unlisten();
 
       if (!streamedContent.trim()) {
@@ -414,7 +502,7 @@ export function useChat({
           });
           void safeFinishAgentRun(agentRun.id, "failed", "empty_response");
         }
-        setMessages(currentMessages);
+        setMessages(displayMessages);
         setMessageReasoning((current) => { const { [requestId]: _, ...rest } = current; return rest; });
         return;
       }
@@ -436,7 +524,7 @@ export function useChat({
       }
 
       if (activeConversationIdRef.current === conversationId) {
-        setMessages([...currentMessages, assistantMessage]);
+        setMessages([...displayMessages, assistantMessage]);
       }
       if (streamedReasoning.trim() && activeConversationIdRef.current === conversationId) {
         setMessageReasoning((current) => {
@@ -481,21 +569,31 @@ export function useChat({
     ]);
     const ragMatches = await rag.loadRagMatches(conversationId, retrievalQuery, modelConfigId);
     const projectRetrieval = await loadProjectRetrievalContext(projectForRequest?.path, retrievalQuery);
-
+    const requestSystemMessage = buildSystemMessage(
+      relevantMemories,
+      profileContext,
+      projectForRequest,
+      projectFiles,
+      skills.skills,
+      mcp.mcpServers,
+      ragMatches,
+      projectRetrieval.codeMatches,
+      projectRetrieval.projectIndexMatches,
+      skills.tempDir
+    );
+    const preparedContext = await prepareBudgetedContext(
+      currentMessages,
+      requestSystemMessage,
+      modelConfigId,
+      conversationId,
+      retrievalQuery
+    );
+    const displayMessages = preparedContext.summaryMessage
+      ? [...currentMessages, preparedContext.summaryMessage]
+      : currentMessages;
     const modelMessages: ChatMessage[] = [
-      buildSystemMessage(
-        relevantMemories,
-        profileContext,
-        projectForRequest,
-        projectFiles,
-        skills.skills,
-        mcp.mcpServers,
-        ragMatches,
-        projectRetrieval.codeMatches,
-        projectRetrieval.projectIndexMatches,
-        skills.tempDir
-      ),
-      ...currentMessages.map((message) => ({ role: message.role, content: message.content }))
+      preparedContext.systemMessage,
+      ...preparedContext.contextMessages.map((message) => ({ role: message.role, content: message.content }))
     ];
 
     const requestId = crypto.randomUUID();
@@ -505,7 +603,7 @@ export function useChat({
     const temporaryAssistantMessage: PersistedMessage = {
       id: requestId, conversation_id: conversationId, role: "assistant", content: "", created_at: new Date().toISOString()
     };
-    setMessages([...currentMessages, temporaryAssistantMessage]);
+    setMessages([...displayMessages, temporaryAssistantMessage]);
 
     const unlisten = await listen<ChatStreamEvent>("chat-stream", (event) => {
       if (event.payload.request_id !== requestId) return;
@@ -530,7 +628,13 @@ export function useChat({
           metadata_json: JSON.stringify({ conversation_id: conversationId })
         });
       }
-      await chatStream(requestId, modelConfigId, modelMessages, conversationId);
+      await chatStream(
+        requestId,
+        modelConfigId,
+        modelMessages,
+        conversationId,
+        preparedContext.outputReserve
+      );
     } catch (err) {
       streamFailed = true;
       console.error("Continue streaming failed:", err);

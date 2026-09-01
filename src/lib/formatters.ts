@@ -70,8 +70,6 @@ export function buildRuntimeContext() {
   ].join("\n");
 }
 
-export const MAX_CONTEXT_TOKENS = 4000;
-
 export function estimateTokens(content: string): number {
   const chineseChars = content.match(/[\u4e00-\u9fa5]/g) || [];
   const englishWords = content.replace(/[\u4e00-\u9fa5]/g, ' ').split(/\s+/).filter(Boolean);

@@ -38,6 +38,7 @@ export interface ModelConfig {
   api_key: string;
   temperature: number;
   max_tokens: number | null;
+  context_window: number;
   top_p: number | null;
   reasoning_effort: string;
   embedding_provider: string;
@@ -57,6 +58,7 @@ export interface ModelConfigDraft {
   api_key: string;
   temperature: number;
   max_tokens: number | null;
+  context_window: number;
   top_p: number | null;
   reasoning_effort: string;
   embedding_provider: string;
@@ -260,6 +262,18 @@ export interface WebSearchResponse {
 export interface MessageMetadata {
   web_search?: MessageWebSearchMetadata | null;
   exclude_from_profile?: boolean | null;
+  context_summary?: ContextSummaryMetadata | null;
+}
+
+export interface AvailableModelInfo {
+  id: string;
+  context_window: number | null;
+}
+
+export interface ContextSummaryMetadata {
+  version: number;
+  covered_through_message_id: string;
+  covered_message_count: number;
 }
 
 export interface MessageWebSearchMetadata {

@@ -42,6 +42,7 @@ pub struct ModelConfig {
     pub api_key: String,
     pub temperature: f32,
     pub max_tokens: Option<u32>,
+    pub context_window: u32,
     pub top_p: Option<f32>,
     pub reasoning_effort: String,
     pub embedding_provider: String,
@@ -64,6 +65,8 @@ pub struct ModelConfigDraft {
     pub temperature: f32,
     #[serde(default)]
     pub max_tokens: Option<u32>,
+    #[serde(default = "default_model_context_window")]
+    pub context_window: u32,
     #[serde(default)]
     pub top_p: Option<f32>,
     #[serde(default)]
@@ -247,6 +250,12 @@ pub struct ChatRequest {
     pub reasoning_effort: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AvailableModelInfo {
+    pub id: String,
+    pub context_window: Option<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatStreamRequest {
     pub request_id: String,
@@ -264,6 +273,10 @@ pub struct ChatStreamRequest {
 
 fn default_model_temperature() -> f32 {
     0.4
+}
+
+fn default_model_context_window() -> u32 {
+    32_768
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -287,6 +300,15 @@ pub struct MessageMetadata {
     pub web_search: Option<MessageWebSearchMetadata>,
     #[serde(default)]
     pub exclude_from_profile: Option<bool>,
+    #[serde(default)]
+    pub context_summary: Option<ContextSummaryMetadata>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSummaryMetadata {
+    pub version: u32,
+    pub covered_through_message_id: String,
+    pub covered_message_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

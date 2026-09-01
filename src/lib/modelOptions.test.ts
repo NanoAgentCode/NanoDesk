@@ -12,6 +12,7 @@ function model(overrides: Partial<ModelConfig>): ModelConfig {
     api_key: "",
     temperature: 0.4,
     max_tokens: null,
+    context_window: 32_768,
     top_p: null,
     reasoning_effort: "",
     embedding_provider: "",

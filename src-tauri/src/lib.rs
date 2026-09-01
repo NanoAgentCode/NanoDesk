@@ -507,6 +507,7 @@ async fn test_llm_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
         api_key: draft.api_key,
         temperature: draft.temperature,
         max_tokens: draft.max_tokens,
+        context_window: draft.context_window,
         top_p: draft.top_p,
         reasoning_effort: draft.reasoning_effort,
         embedding_provider: draft.embedding_provider,
@@ -535,7 +536,9 @@ async fn test_llm_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
 }
 
 #[tauri::command]
-async fn list_available_models(draft: ModelConfigDraft) -> AppResult<Vec<String>> {
+async fn list_available_models(
+    draft: ModelConfigDraft,
+) -> AppResult<Vec<crate::models::AvailableModelInfo>> {
     crate::llm::list_available_models(&draft).await
 }
 
@@ -550,6 +553,7 @@ async fn test_embedding_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
         api_key: draft.api_key,
         temperature: draft.temperature,
         max_tokens: draft.max_tokens,
+        context_window: draft.context_window,
         top_p: draft.top_p,
         reasoning_effort: draft.reasoning_effort,
         embedding_provider: draft.embedding_provider,

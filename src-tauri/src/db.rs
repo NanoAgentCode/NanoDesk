@@ -83,6 +83,7 @@ impl Database {
                 api_key TEXT NOT NULL,
                 temperature REAL NOT NULL DEFAULT 0.4,
                 max_tokens INTEGER,
+                context_window INTEGER NOT NULL DEFAULT 32768,
                 top_p REAL,
                 reasoning_effort TEXT NOT NULL DEFAULT '',
                 embedding_provider TEXT NOT NULL DEFAULT 'openai-compatible',
@@ -598,6 +599,11 @@ impl Database {
         )?;
         self.ensure_column("model_configs", "temperature", "REAL NOT NULL DEFAULT 0.4")?;
         self.ensure_column("model_configs", "max_tokens", "INTEGER")?;
+        self.ensure_column(
+            "model_configs",
+            "context_window",
+            "INTEGER NOT NULL DEFAULT 32768",
+        )?;
         self.ensure_column("model_configs", "top_p", "REAL")?;
         self.ensure_column(
             "model_configs",
@@ -778,8 +784,8 @@ impl Database {
     }
 
     fn row_to_model_config(row: &rusqlite::Row<'_>) -> rusqlite::Result<ModelConfig> {
-        let created_at: String = row.get(14)?;
-        let updated_at: String = row.get(15)?;
+        let created_at: String = row.get(15)?;
+        let updated_at: String = row.get(16)?;
 
         Ok(ModelConfig {
             id: row.get(0)?,
@@ -790,12 +796,13 @@ impl Database {
             api_key: row.get(5)?,
             temperature: row.get(6)?,
             max_tokens: row.get(7)?,
-            top_p: row.get(8)?,
-            reasoning_effort: row.get(9)?,
-            embedding_provider: row.get(10)?,
-            embedding_base_url: row.get(11)?,
-            embedding_model: row.get(12)?,
-            embedding_api_key: row.get(13)?,
+            context_window: row.get(8)?,
+            top_p: row.get(9)?,
+            reasoning_effort: row.get(10)?,
+            embedding_provider: row.get(11)?,
+            embedding_base_url: row.get(12)?,
+            embedding_model: row.get(13)?,
+            embedding_api_key: row.get(14)?,
             created_at: parse_time_for_row(&created_at)?,
             updated_at: parse_time_for_row(&updated_at)?,
         })
@@ -1345,7 +1352,10 @@ fn ensure_affected(affected: usize, message: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{MemoryDraft, MemoryPatch, ModelConfigDraft};
+    use crate::models::{
+        ContextSummaryMetadata, ConversationDraft, MemoryDraft, MemoryPatch, MessageDraft,
+        MessageMetadata, ModelConfigDraft,
+    };
 
     #[test]
     fn model_generation_parameters_are_persisted() {
@@ -1360,6 +1370,7 @@ mod tests {
                 api_key: String::new(),
                 temperature: 0.65,
                 max_tokens: Some(3072),
+                context_window: 65_536,
                 top_p: Some(0.9),
                 reasoning_effort: "high".to_string(),
                 embedding_provider: String::new(),
@@ -1372,6 +1383,7 @@ mod tests {
 
         assert_eq!(loaded.temperature, 0.65);
         assert_eq!(loaded.max_tokens, Some(3072));
+        assert_eq!(loaded.context_window, 65_536);
         assert_eq!(loaded.top_p, Some(0.9));
         assert_eq!(loaded.reasoning_effort, "high");
     }
@@ -1416,11 +1428,66 @@ mod tests {
             .expect("legacy model should remain readable");
         assert_eq!(loaded.temperature, 0.4);
         assert_eq!(loaded.max_tokens, None);
+        assert_eq!(loaded.context_window, 32_768);
         assert_eq!(loaded.top_p, None);
         assert_eq!(loaded.reasoning_effort, "");
 
         drop(db);
         std::fs::remove_file(path).expect("temporary database should be removed");
+    }
+
+    #[test]
+    fn context_summary_metadata_round_trips_without_removing_original_messages() {
+        let db = Database::open(PathBuf::from(":memory:")).expect("database should open");
+        let conversation = db
+            .create_conversation(ConversationDraft {
+                title: Some("Summary test".to_string()),
+                model_config_id: None,
+                project_path: None,
+            })
+            .expect("conversation should be created");
+        let first = db
+            .append_message(MessageDraft {
+                conversation_id: conversation.id.clone(),
+                role: "user".to_string(),
+                content: "first".to_string(),
+                metadata: None,
+            })
+            .expect("first message should persist");
+        db.append_message(MessageDraft {
+            conversation_id: conversation.id.clone(),
+            role: "assistant".to_string(),
+            content: "second".to_string(),
+            metadata: None,
+        })
+        .expect("second message should persist");
+        db.append_message(MessageDraft {
+            conversation_id: conversation.id.clone(),
+            role: "system".to_string(),
+            content: "structured summary".to_string(),
+            metadata: Some(MessageMetadata {
+                web_search: None,
+                exclude_from_profile: None,
+                context_summary: Some(ContextSummaryMetadata {
+                    version: 1,
+                    covered_through_message_id: first.id.clone(),
+                    covered_message_count: 1,
+                }),
+            }),
+        })
+        .expect("summary should persist");
+
+        let messages = db
+            .list_messages(&conversation.id)
+            .expect("messages should load");
+        assert_eq!(messages.len(), 3);
+        let metadata = messages[2]
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.context_summary.as_ref())
+            .expect("summary metadata should load");
+        assert_eq!(metadata.covered_through_message_id, first.id);
+        assert_eq!(metadata.covered_message_count, 1);
     }
 
     #[test]

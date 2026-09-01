@@ -91,8 +91,15 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
                     : "可手动输入，或从服务商获取可用模型"
               }
               value={model.modelDraft.model}
-              data={model.availableModels}
-              onChange={(value) => model.setModelDraft({ ...model.modelDraft, model: value })}
+              data={model.availableModels.map((item) => item.id)}
+              onChange={(value) => {
+                const discovered = model.availableModels.find((item) => item.id === value);
+                model.setModelDraft({
+                  ...model.modelDraft,
+                  model: value,
+                  context_window: discovered?.context_window ?? model.modelDraft.context_window
+                });
+              }}
               placeholder="gpt-4o-mini"
               maxDropdownHeight={240}
               rightSectionPointerEvents="all"
@@ -116,7 +123,7 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
             <div className="model-parameters-heading model-field--wide">
               <div className="model-parameters-summary">
                 <strong>参数配置</strong>
-                <span>Temperature、输出上限、采样范围和推理强度</span>
+                <span>上下文窗口、动态输出预留、采样范围和推理强度</span>
               </div>
               <IconTooltipButton
                 className="profile-settings-expand"
@@ -130,6 +137,19 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
             </div>
             {generationParametersExpanded && (
               <div id="model-generation-parameters" className="model-parameters-grid model-field--wide">
+                <NumberInput
+                  label="上下文窗口 Token"
+                  description="填写服务商公布的该模型真实上下文窗口"
+                  value={model.modelDraft.context_window}
+                  min={2048}
+                  step={1024}
+                  allowDecimal={false}
+                  thousandSeparator=","
+                  onChange={(value) => model.setModelDraft({
+                    ...model.modelDraft,
+                    context_window: typeof value === "number" ? value : 32_768
+                  })}
+                />
                 <NumberInput
                   label="Temperature"
                   description="越低越稳定，越高越发散"
@@ -145,8 +165,8 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
                 />
                 <NumberInput
                   label="最大输出 Token"
-                  description="留空时由服务商决定"
-                  placeholder="服务商默认"
+                  description="留空时根据问题规模动态预留"
+                  placeholder="动态计算"
                   value={model.modelDraft.max_tokens ?? ""}
                   min={1}
                   step={256}

@@ -1529,6 +1529,7 @@ mod tests {
                 api_key: "test-key".to_string(),
                 temperature: 0.4,
                 max_tokens: None,
+                context_window: 32_768,
                 top_p: None,
                 reasoning_effort: String::new(),
                 embedding_provider: String::new(),
@@ -1641,6 +1642,7 @@ mod tests {
             metadata: Some(crate::models::MessageMetadata {
                 web_search: None,
                 exclude_from_profile: Some(true),
+                context_summary: None,
             }),
         })
         .expect("ordinary memory message should be appended");

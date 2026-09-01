@@ -17,7 +17,7 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "
             SELECT id, name, provider, base_url, model, api_key,
-                   temperature, max_tokens, top_p, reasoning_effort,
+                   temperature, max_tokens, context_window, top_p, reasoning_effort,
                    embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                    created_at, updated_at
             FROM model_configs
@@ -38,7 +38,7 @@ impl Database {
             .query_row(
                 "
                 SELECT id, name, provider, base_url, model, api_key,
-                       temperature, max_tokens, top_p, reasoning_effort,
+                       temperature, max_tokens, context_window, top_p, reasoning_effort,
                        embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                        created_at, updated_at
                 FROM model_configs WHERE id = ?1
@@ -74,6 +74,7 @@ impl Database {
             api_key: draft.api_key,
             temperature: validate_temperature(draft.temperature)?,
             max_tokens: validate_max_tokens(draft.max_tokens)?,
+            context_window: validate_context_window(draft.context_window, draft.max_tokens)?,
             top_p: validate_top_p(draft.top_p)?,
             reasoning_effort: validate_reasoning_effort(draft.reasoning_effort)?,
             embedding_provider: clean_or_default(draft.embedding_provider, "openai-compatible"),
@@ -88,10 +89,10 @@ impl Database {
             "
             INSERT INTO model_configs
                 (id, name, provider, base_url, model, api_key,
-                 temperature, max_tokens, top_p, reasoning_effort,
+                 temperature, max_tokens, context_window, top_p, reasoning_effort,
                  embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                  created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 provider = excluded.provider,
@@ -100,6 +101,7 @@ impl Database {
                 api_key = excluded.api_key,
                 temperature = excluded.temperature,
                 max_tokens = excluded.max_tokens,
+                context_window = excluded.context_window,
                 top_p = excluded.top_p,
                 reasoning_effort = excluded.reasoning_effort,
                 embedding_provider = excluded.embedding_provider,
@@ -117,6 +119,7 @@ impl Database {
                 config.api_key,
                 config.temperature,
                 config.max_tokens,
+                config.context_window,
                 config.top_p,
                 config.reasoning_effort,
                 config.embedding_provider,
@@ -388,6 +391,20 @@ fn validate_max_tokens(value: Option<u32>) -> AppResult<Option<u32>> {
         Some(0) => Err(AppError::Message("最大输出 Token 必须大于 0".to_string())),
         _ => Ok(value),
     }
+}
+
+fn validate_context_window(value: u32, max_tokens: Option<u32>) -> AppResult<u32> {
+    if value < 2_048 {
+        return Err(AppError::Message(
+            "上下文窗口不能小于 2048 Token".to_string(),
+        ));
+    }
+    if max_tokens.is_some_and(|max_tokens| max_tokens >= value) {
+        return Err(AppError::Message(
+            "最大输出 Token 必须小于上下文窗口".to_string(),
+        ));
+    }
+    Ok(value)
 }
 
 fn validate_top_p(value: Option<f32>) -> AppResult<Option<f32>> {

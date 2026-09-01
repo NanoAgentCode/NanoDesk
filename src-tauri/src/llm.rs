@@ -3,8 +3,8 @@ use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    ChatMessage, ChatRequest, ChatResponse, ChatStreamEvent, ChatStreamRequest, ModelConfig,
-    ModelConfigDraft,
+    AvailableModelInfo, ChatMessage, ChatRequest, ChatResponse, ChatStreamEvent, ChatStreamRequest,
+    ModelConfig, ModelConfigDraft,
 };
 
 #[derive(Debug, Serialize)]
@@ -59,6 +59,12 @@ struct ModelListResponse {
 #[derive(Debug, Deserialize)]
 struct ModelListItem {
     id: String,
+    #[serde(default)]
+    context_window: Option<u32>,
+    #[serde(default)]
+    context_length: Option<u32>,
+    #[serde(default)]
+    max_context_length: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -240,7 +246,7 @@ pub async fn create_embeddings(
     Ok(embeddings)
 }
 
-pub async fn list_available_models(draft: &ModelConfigDraft) -> AppResult<Vec<String>> {
+pub async fn list_available_models(draft: &ModelConfigDraft) -> AppResult<Vec<AvailableModelInfo>> {
     let base_url = draft.base_url.trim();
     if base_url.is_empty() {
         return Err(AppError::Message("模型接口地址不能为空".to_string()));
@@ -284,20 +290,37 @@ fn model_list_endpoint(provider: &str, base_url: &str) -> String {
     }
 }
 
-fn parse_model_list(body: &str) -> AppResult<Vec<String>> {
+fn parse_model_list(body: &str) -> AppResult<Vec<AvailableModelInfo>> {
     let parsed: ModelListResponse = serde_json::from_str(body)?;
     let mut models = parsed
         .data
         .into_iter()
-        .map(|item| item.id.trim().to_string())
-        .filter(|id| !id.is_empty())
+        .filter_map(|item| {
+            let id = item.id.trim().to_string();
+            (!id.is_empty()).then_some(AvailableModelInfo {
+                id,
+                context_window: item
+                    .context_window
+                    .or(item.context_length)
+                    .or(item.max_context_length),
+            })
+        })
         .collect::<Vec<_>>();
-    models.sort();
-    models.dedup();
-    if models.is_empty() {
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut deduplicated: Vec<AvailableModelInfo> = Vec::with_capacity(models.len());
+    for model in models {
+        if let Some(existing) = deduplicated.last_mut().filter(|item| item.id == model.id) {
+            if existing.context_window.is_none() {
+                existing.context_window = model.context_window;
+            }
+        } else {
+            deduplicated.push(model);
+        }
+    }
+    if deduplicated.is_empty() {
         return Err(AppError::Message("服务商未返回可用模型".to_string()));
     }
-    Ok(models)
+    Ok(deduplicated)
 }
 
 async fn send_openai_chat_completion(
@@ -742,7 +765,7 @@ mod model_list_tests {
     use super::{
         model_list_endpoint, parse_model_list, resolve_generation_params, GenerationParams,
     };
-    use crate::models::ModelConfig;
+    use crate::models::{AvailableModelInfo, ModelConfig};
 
     fn model_config() -> ModelConfig {
         let now = chrono::Utc::now();
@@ -755,6 +778,7 @@ mod model_list_tests {
             api_key: String::new(),
             temperature: 0.7,
             max_tokens: Some(2048),
+            context_window: 32_768,
             top_p: Some(0.85),
             reasoning_effort: "medium".to_string(),
             embedding_provider: String::new(),
@@ -784,10 +808,19 @@ mod model_list_tests {
 
     #[test]
     fn parses_sorts_and_deduplicates_model_ids() {
-        let body = r#"{"data":[{"id":"glm-4.5"},{"id":"glm-4-air"},{"id":"glm-4.5"},{"id":" "}]}"#;
+        let body = r#"{"data":[{"id":"glm-4.5"},{"id":"glm-4-air","max_context_length":65536},{"id":"glm-4.5","context_length":131072},{"id":" "}]}"#;
         assert_eq!(
             parse_model_list(body).unwrap(),
-            vec!["glm-4-air".to_string(), "glm-4.5".to_string()]
+            vec![
+                AvailableModelInfo {
+                    id: "glm-4-air".to_string(),
+                    context_window: Some(65_536)
+                },
+                AvailableModelInfo {
+                    id: "glm-4.5".to_string(),
+                    context_window: Some(131_072)
+                }
+            ]
         );
     }
 

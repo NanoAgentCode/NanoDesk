@@ -9,7 +9,7 @@ import {
   updateConversationModel
 } from "../api";
 import { confirmAction } from "../lib/dialogs";
-import type { ModelConfig, ModelConfigDraft, Conversation } from "../types";
+import type { AvailableModelInfo, ModelConfig, ModelConfigDraft, Conversation } from "../types";
 
 export const emptyModelDraft: ModelConfigDraft = {
   name: "OpenAI",
@@ -19,6 +19,7 @@ export const emptyModelDraft: ModelConfigDraft = {
   api_key: "",
   temperature: 0.4,
   max_tokens: null,
+  context_window: 32_768,
   top_p: null,
   reasoning_effort: "",
   embedding_provider: "openai-compatible",
@@ -36,6 +37,7 @@ export const emptyEmbeddingDraft: ModelConfigDraft = {
   api_key: "",
   temperature: 0.4,
   max_tokens: null,
+  context_window: 32_768,
   top_p: null,
   reasoning_effort: "",
   embedding_provider: "openai-compatible",
@@ -67,6 +69,7 @@ export function normalizeModelDraft(model: ModelConfig | ModelConfigDraft): Mode
     ...model,
     temperature: model.temperature ?? 0.4,
     max_tokens: model.max_tokens ?? null,
+    context_window: model.context_window || 32_768,
     top_p: model.top_p ?? null,
     reasoning_effort: model.reasoning_effort || "",
     embedding_provider: model.embedding_provider || "openai-compatible",
@@ -91,7 +94,7 @@ export interface UseModelReturn {
   setModelTestStatuses: React.Dispatch<React.SetStateAction<Record<string, { status: "idle" | "testing" | "success" | "error"; message?: string }>>>;
   embeddingTestStatus: { status: "idle" | "testing" | "success" | "error"; message?: string };
   setEmbeddingTestStatus: React.Dispatch<React.SetStateAction<{ status: "idle" | "testing" | "success" | "error"; message?: string }>>;
-  availableModels: string[];
+  availableModels: AvailableModelInfo[];
   modelListStatus: { status: "idle" | "loading" | "success" | "error"; message?: string };
   refreshModels: (selectId?: string) => Promise<void>;
   handleSaveModel: () => Promise<void>;
@@ -119,7 +122,7 @@ export function useModel(
   const [modelDraft, setModelDraft] = useState<ModelConfigDraft>(emptyModelDraft);
   const [activeModelId, setActiveModelId] = useState("");
   const [embeddingDraft, setEmbeddingDraft] = useState<ModelConfigDraft>(emptyEmbeddingDraft);
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [availableModels, setAvailableModels] = useState<AvailableModelInfo[]>([]);
   const [modelListStatus, setModelListStatus] = useState<{
     status: "idle" | "loading" | "success" | "error";
     message?: string;
@@ -151,6 +154,7 @@ export function useModel(
          modelDraft.api_key !== savedModel.api_key ||
          modelDraft.temperature !== savedModel.temperature ||
          modelDraft.max_tokens !== savedModel.max_tokens ||
+         modelDraft.context_window !== savedModel.context_window ||
          modelDraft.top_p !== savedModel.top_p ||
          modelDraft.reasoning_effort !== savedModel.reasoning_effort)
       : (modelDraft.name !== emptyModelDraft.name ||
@@ -160,6 +164,7 @@ export function useModel(
          modelDraft.api_key !== emptyModelDraft.api_key ||
          modelDraft.temperature !== emptyModelDraft.temperature ||
          modelDraft.max_tokens !== emptyModelDraft.max_tokens ||
+         modelDraft.context_window !== emptyModelDraft.context_window ||
          modelDraft.top_p !== emptyModelDraft.top_p ||
          modelDraft.reasoning_effort !== emptyModelDraft.reasoning_effort);
 
@@ -181,6 +186,7 @@ export function useModel(
     modelDraft.api_key,
     modelDraft.temperature,
     modelDraft.max_tokens,
+    modelDraft.context_window,
     modelDraft.top_p,
     modelDraft.reasoning_effort,
     models,
@@ -387,9 +393,19 @@ export function useModel(
     try {
       const nextModels = await listAvailableModels(modelDraft);
       setAvailableModels(nextModels);
+      const selectedModel = nextModels.find((item) => item.id === modelDraft.model);
+      if (selectedModel?.context_window != null) {
+        setModelDraft((current) => ({
+          ...current,
+          context_window: selectedModel.context_window ?? current.context_window
+        }));
+      }
+      const detectedContextWindows = nextModels.filter((item) => item.context_window != null).length;
       setModelListStatus({
         status: "success",
-        message: `已获取 ${nextModels.length} 个模型`
+        message: detectedContextWindows > 0
+          ? `已获取 ${nextModels.length} 个模型，其中 ${detectedContextWindows} 个带上下文窗口`
+          : `已获取 ${nextModels.length} 个模型；服务商未返回上下文窗口，请按文档填写`
       });
     } catch (err) {
       const message = String(err);

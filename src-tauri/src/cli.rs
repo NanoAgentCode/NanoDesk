@@ -584,6 +584,17 @@ fn configure_initial_model(db: &Database) -> AppResult<ModelConfig> {
     let name = prompt_line(&theme, "配置名称", Some(default_name))?;
     let base_url = prompt_line(&theme, "接口地址", Some(default_url))?;
     let model = prompt_line(&theme, "模型名称", Some(default_model))?;
+    let context_window = loop {
+        let value = prompt_line(
+            &theme,
+            "上下文窗口 Token（以服务商文档为准）",
+            Some("32768"),
+        )?;
+        match value.parse::<u32>() {
+            Ok(value) if value >= 2_048 => break value,
+            _ => println!("  {} 请输入不小于 2048 的整数。", theme.command("!")),
+        }
+    };
     let api_key = loop {
         let prompt = format!("  {} ", theme.prompt("API Key（隐藏输入）:"));
         let value = rpassword::prompt_password(prompt)
@@ -604,6 +615,7 @@ fn configure_initial_model(db: &Database) -> AppResult<ModelConfig> {
         api_key,
         temperature: 0.4,
         max_tokens: None,
+        context_window,
         top_p: None,
         reasoning_effort: String::new(),
         embedding_provider: String::new(),
@@ -1344,6 +1356,7 @@ mod tests {
                 api_key: String::new(),
                 temperature: 0.4,
                 max_tokens: None,
+                context_window: 32_768,
                 top_p: None,
                 reasoning_effort: String::new(),
                 embedding_provider: String::new(),
@@ -1464,6 +1477,7 @@ mod tests {
             api_key: "test".to_string(),
             temperature: 0.4,
             max_tokens: None,
+            context_window: 32_768,
             top_p: None,
             reasoning_effort: String::new(),
             embedding_provider: String::new(),
@@ -1482,6 +1496,7 @@ mod tests {
             api_key: model.api_key.clone(),
             temperature: model.temperature,
             max_tokens: model.max_tokens,
+            context_window: model.context_window,
             top_p: model.top_p,
             reasoning_effort: model.reasoning_effort.clone(),
             embedding_provider: String::new(),

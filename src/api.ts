@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AvailableModelInfo,
   ChatMessage,
   Conversation,
   ConversationDraft,
@@ -100,7 +101,7 @@ export function testLlmConnectivity(draft: ModelConfigDraft) {
 }
 
 export function listAvailableModels(draft: ModelConfigDraft) {
-  return invoke<string[]>("list_available_models", { draft });
+  return invoke<AvailableModelInfo[]>("list_available_models", { draft });
 }
 
 export function testEmbeddingConnectivity(draft: ModelConfigDraft) {
@@ -335,14 +336,15 @@ export function saveTavilyApiKey(apiKey: string) {
 export function chat(
   modelConfigId: string,
   messages: ChatMessage[],
-  traceId?: string
+  traceId?: string,
+  maxTokens?: number
 ) {
   return invoke<{ content: string }>("chat", {
     request: {
       model_config_id: modelConfigId,
       messages,
       temperature: null,
-      max_tokens: null,
+      max_tokens: maxTokens ?? null,
       top_p: null,
       reasoning_effort: null,
       trace_id: traceId || null
@@ -354,7 +356,8 @@ export function chatStream(
   requestId: string,
   modelConfigId: string,
   messages: ChatMessage[],
-  traceId?: string
+  traceId?: string,
+  maxTokens?: number
 ) {
   return invoke<void>("chat_stream", {
     request: {
@@ -362,16 +365,12 @@ export function chatStream(
       model_config_id: modelConfigId,
       messages,
       temperature: null,
-      max_tokens: null,
+      max_tokens: maxTokens ?? null,
       top_p: null,
       reasoning_effort: null,
       trace_id: traceId || null
     }
   });
-}
-
-export function deleteMessages(ids: string[]) {
-  return invoke<void>("delete_messages", { ids });
 }
 
 export function listRagFiles(conversationId: string) {
