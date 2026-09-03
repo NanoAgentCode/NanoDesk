@@ -15,7 +15,7 @@ use crate::models::{Memory, MemoryDraft, MemoryPatch};
 
 impl Database {
     pub fn list_memories(&self) -> AppResult<Vec<Memory>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.knowledge_conn.prepare(
             "
             SELECT id, title, content, tags_json, enabled, created_at, updated_at
             FROM memories
@@ -32,7 +32,7 @@ impl Database {
     }
 
     pub fn list_enabled_memories(&self) -> AppResult<Vec<Memory>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.knowledge_conn.prepare(
             "
             SELECT id, title, content, tags_json, enabled, created_at, updated_at
             FROM memories
@@ -63,7 +63,7 @@ impl Database {
             return Ok(memories);
         }
 
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.knowledge_conn.prepare(
             "
             SELECT id, title, content, tags_json, enabled, created_at, updated_at
             FROM memories
@@ -102,7 +102,7 @@ impl Database {
         model: &str,
         limit: i64,
     ) -> AppResult<Vec<Memory>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.knowledge_conn.prepare(
             "
             SELECT m.id, m.title, m.content, m.tags_json, m.enabled, m.created_at, m.updated_at
             FROM memories m
@@ -143,12 +143,12 @@ impl Database {
 
         let dimensions = embedding.len() as i64;
         let table = memory_vector_table(dimensions)?;
-        self.conn.execute_batch(&format!(
+        self.knowledge_conn.execute_batch(&format!(
             "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING vec0(embedding float[{dimensions}]);"
         ))?;
 
         let existing = self
-            .conn
+            .knowledge_conn
             .query_row(
                 "SELECT vector_rowid, dimensions FROM memory_embeddings WHERE memory_id = ?1",
                 params![memory.id],
@@ -156,7 +156,7 @@ impl Database {
             )
             .optional()?;
         let vector_rowid = existing.map(|value| value.0).unwrap_or_else(|| {
-            self.conn
+            self.knowledge_conn
                 .query_row(
                     "SELECT COALESCE(MAX(vector_rowid), 0) + 1 FROM memory_embeddings",
                     [],
@@ -165,20 +165,21 @@ impl Database {
                 .unwrap_or(1)
         });
 
-        self.conn.execute_batch("SAVEPOINT memory_vector_upsert")?;
+        self.knowledge_conn
+            .execute_batch("SAVEPOINT memory_vector_upsert")?;
         let result = (|| -> AppResult<()> {
             if let Some((_, old_dimensions)) = existing {
                 let old_table = memory_vector_table(old_dimensions)?;
-                self.conn.execute(
+                self.knowledge_conn.execute(
                     &format!("DELETE FROM {old_table} WHERE rowid = ?1"),
                     params![vector_rowid],
                 )?;
             }
-            self.conn.execute(
+            self.knowledge_conn.execute(
                 &format!("INSERT INTO {table}(rowid, embedding) VALUES (?1, ?2)"),
                 params![vector_rowid, embedding.as_bytes()],
             )?;
-            self.conn.execute(
+            self.knowledge_conn.execute(
                 "
                 INSERT INTO memory_embeddings
                     (vector_rowid, memory_id, model, dimensions, content_hash, indexed_at)
@@ -203,11 +204,12 @@ impl Database {
         })();
         match result {
             Ok(()) => {
-                self.conn.execute_batch("RELEASE memory_vector_upsert")?;
+                self.knowledge_conn
+                    .execute_batch("RELEASE memory_vector_upsert")?;
                 Ok(())
             }
             Err(error) => {
-                let _ = self.conn.execute_batch(
+                let _ = self.knowledge_conn.execute_batch(
                     "ROLLBACK TO memory_vector_upsert; RELEASE memory_vector_upsert;",
                 );
                 Err(error)
@@ -278,7 +280,7 @@ impl Database {
     }
 
     fn list_always_personalization_memories(&self, limit: usize) -> AppResult<Vec<Memory>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.knowledge_conn.prepare(
             "
             SELECT m.id, m.title, m.content, m.tags_json, m.enabled, m.created_at, m.updated_at
             FROM memory_entities e
@@ -303,7 +305,7 @@ impl Database {
         model: &str,
     ) -> AppResult<bool> {
         let indexed = self
-            .conn
+            .knowledge_conn
             .query_row(
                 "SELECT model, content_hash FROM memory_embeddings WHERE memory_id = ?1",
                 params![memory.id],
@@ -327,7 +329,7 @@ impl Database {
         let dimensions = query_embedding.len() as i64;
         let table = memory_vector_table(dimensions)?;
         let exists = self
-            .conn
+            .knowledge_conn
             .query_row(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
                 params![table],
@@ -352,7 +354,7 @@ impl Database {
             ORDER BY v.distance
             "
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.knowledge_conn.prepare(&sql)?;
         let ids = stmt
             .query_map(
                 params![query_embedding.as_bytes(), limit.clamp(1, 180), model],
@@ -373,7 +375,7 @@ impl Database {
             .map(|token| format!("\"{}\"*", token.replace('"', "\"\"")))
             .collect::<Vec<_>>()
             .join(" OR ");
-        let mut seed_stmt = self.conn.prepare(
+        let mut seed_stmt = self.knowledge_conn.prepare(
             "
             SELECT e.id
             FROM memory_entities_fts f
@@ -391,9 +393,9 @@ impl Database {
 
         let mut scores = HashMap::<String, f64>::new();
         let mut direct_stmt = self
-            .conn
+            .knowledge_conn
             .prepare("SELECT memory_id, weight FROM memory_entity_links WHERE entity_id = ?1")?;
-        let mut neighbor_stmt = self.conn.prepare(
+        let mut neighbor_stmt = self.knowledge_conn.prepare(
             "
             SELECT CASE WHEN source_entity_id = ?1 THEN target_entity_id ELSE source_entity_id END,
                    weight
@@ -441,7 +443,7 @@ impl Database {
     }
 
     pub(super) fn rebuild_missing_memory_graphs(&self) -> AppResult<()> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.knowledge_conn.prepare(
             "
             SELECT id, title, content, tags_json, enabled, created_at, updated_at
             FROM memories m
@@ -461,11 +463,11 @@ impl Database {
     }
 
     pub(super) fn sync_memory_graph(&self, memory: &Memory) -> AppResult<()> {
-        self.conn.execute(
+        self.knowledge_conn.execute(
             "DELETE FROM memory_relations WHERE evidence_memory_id = ?1",
             params![memory.id],
         )?;
-        self.conn.execute(
+        self.knowledge_conn.execute(
             "DELETE FROM memory_entity_links WHERE memory_id = ?1",
             params![memory.id],
         )?;
@@ -478,7 +480,7 @@ impl Database {
                 continue;
             }
             let existing_id = self
-                .conn
+                .knowledge_conn
                 .query_row(
                     "SELECT id FROM memory_entities WHERE kind = ?1 AND normalized_name = ?2",
                     params![entity.kind, normalized],
@@ -486,7 +488,7 @@ impl Database {
                 )
                 .optional()?;
             let entity_id = existing_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-            let inserted = self.conn.execute(
+            let inserted = self.knowledge_conn.execute(
                 "
                 INSERT OR IGNORE INTO memory_entities
                     (id, kind, name, normalized_name, created_at)
@@ -501,12 +503,12 @@ impl Database {
                 ],
             )?;
             if inserted > 0 {
-                self.conn.execute(
+                self.knowledge_conn.execute(
                     "INSERT INTO memory_entities_fts (id, name) VALUES (?1, ?2)",
                     params![entity_id, entity.name],
                 )?;
             }
-            self.conn.execute(
+            self.knowledge_conn.execute(
                 "INSERT OR REPLACE INTO memory_entity_links (memory_id, entity_id, weight) VALUES (?1, ?2, ?3)",
                 params![memory.id, entity_id, entity.weight],
             )?;
@@ -517,7 +519,7 @@ impl Database {
             for right in (left + 1)..entity_ids.len() {
                 let (source_id, source_weight) = &entity_ids[left];
                 let (target_id, target_weight) = &entity_ids[right];
-                self.conn.execute(
+                self.knowledge_conn.execute(
                     "
                     INSERT OR REPLACE INTO memory_relations
                         (source_entity_id, target_entity_id, kind, weight, evidence_memory_id)
@@ -536,7 +538,7 @@ impl Database {
     }
 
     fn remove_orphan_memory_entities(&self) -> AppResult<()> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.knowledge_conn.prepare(
             "
             SELECT id FROM memory_entities e
             WHERE NOT EXISTS (SELECT 1 FROM memory_entity_links l WHERE l.entity_id = e.id)
@@ -551,9 +553,9 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()?;
         drop(stmt);
         for id in ids {
-            self.conn
+            self.knowledge_conn
                 .execute("DELETE FROM memory_entities_fts WHERE id = ?1", params![id])?;
-            self.conn
+            self.knowledge_conn
                 .execute("DELETE FROM memory_entities WHERE id = ?1", params![id])?;
         }
         Ok(())
@@ -569,7 +571,7 @@ impl Database {
             return Ok(Vec::new());
         };
 
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.knowledge_conn.prepare(
             "
             SELECT m.id, m.title, m.content, m.tags_json, m.enabled, m.created_at, m.updated_at
             FROM memories_fts f
@@ -624,9 +626,9 @@ impl Database {
     }
 
     pub fn delete_memory(&self, id: &str) -> AppResult<()> {
-        self.with_savepoint("memory_delete", || {
+        self.with_knowledge_savepoint("memory_delete", || {
             if let Some((vector_rowid, dimensions)) = self
-                .conn
+                .knowledge_conn
                 .query_row(
                     "SELECT vector_rowid, dimensions FROM memory_embeddings WHERE memory_id = ?1",
                     params![id],
@@ -635,15 +637,15 @@ impl Database {
                 .optional()?
             {
                 let table = memory_vector_table(dimensions)?;
-                self.conn.execute(
+                self.knowledge_conn.execute(
                     &format!("DELETE FROM {table} WHERE rowid = ?1"),
                     params![vector_rowid],
                 )?;
             }
-            self.conn
+            self.knowledge_conn
                 .execute("DELETE FROM memories_fts WHERE id = ?1", params![id])?;
             let affected = self
-                .conn
+                .knowledge_conn
                 .execute("DELETE FROM memories WHERE id = ?1", params![id])?;
             ensure_affected(affected, "memory not found")?;
             self.remove_orphan_memory_entities()

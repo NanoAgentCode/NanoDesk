@@ -29,29 +29,29 @@ impl Database {
                 ));
             }
         }
-        self.conn.execute(
+        self.project_conn.execute(
             "DELETE FROM code_chunks_fts WHERE project_path = ?1",
             params![project_path],
         )?;
-        self.conn.execute(
+        self.project_conn.execute(
             "DELETE FROM code_embeddings WHERE project_path = ?1",
             params![project_path],
         )?;
-        self.conn.execute(
+        self.project_conn.execute(
             "DELETE FROM code_relations WHERE project_path = ?1",
             params![project_path],
         )?;
-        self.conn.execute(
+        self.project_conn.execute(
             "DELETE FROM code_entities WHERE project_path = ?1",
             params![project_path],
         )?;
-        self.conn.execute(
+        self.project_conn.execute(
             "DELETE FROM code_chunks WHERE project_path = ?1",
             params![project_path],
         )?;
 
         for entity in entities {
-            self.conn.execute(
+            self.project_conn.execute(
                 "
                 INSERT INTO code_entities
                     (id, project_path, file_path, name, kind, language, start_line,
@@ -74,7 +74,7 @@ impl Database {
         }
 
         for relation in relations {
-            self.conn.execute(
+            self.project_conn.execute(
                 "
                 INSERT INTO code_relations
                     (id, project_path, source_entity_id, source_name, target_entity_id,
@@ -97,7 +97,7 @@ impl Database {
         }
 
         for (chunk_index, chunk) in chunks.iter().enumerate() {
-            self.conn.execute(
+            self.project_conn.execute(
                 "
                 INSERT INTO code_chunks
                     (id, project_path, file_path, language, chunk_index, start_line,
@@ -118,7 +118,7 @@ impl Database {
                     now.to_rfc3339()
                 ],
             )?;
-            self.conn.execute(
+            self.project_conn.execute(
                 "
                 INSERT INTO code_chunks_fts
                     (chunk_id, project_path, file_path, language, text)
@@ -134,7 +134,7 @@ impl Database {
             )?;
             if let Some((embeddings, embedding_model)) = chunk_embeddings {
                 let embedding = &embeddings[chunk_index];
-                self.conn.execute(
+                self.project_conn.execute(
                     "
                     INSERT INTO code_embeddings
                         (chunk_id, project_path, embedding, dim, model, created_at)
@@ -164,7 +164,7 @@ impl Database {
             created_at: now,
             updated_at: now,
         };
-        self.conn.execute(
+        self.project_conn.execute(
             "
             INSERT INTO code_index_runs
                 (id, project_path, status, file_count, entity_count, relation_count,
@@ -189,7 +189,7 @@ impl Database {
 
     pub fn get_code_index_stats(&self, project_path: &str) -> AppResult<CodeIndexStats> {
         let latest_run = self
-            .conn
+            .project_conn
             .query_row(
                 "
                 SELECT id, project_path, status, file_count, entity_count, relation_count,
@@ -231,7 +231,7 @@ impl Database {
         let mut results = Vec::new();
 
         if let Some(query_embedding) = query_embedding {
-            let mut stmt = self.conn.prepare(
+            let mut stmt = self.project_conn.prepare(
                 "
                 SELECT chunks.file_path, chunks.language, chunks.start_line, chunks.end_line,
                        chunks.text, embeddings.embedding
@@ -267,7 +267,7 @@ impl Database {
         }
 
         if !terms.is_empty() {
-            let mut entity_stmt = self.conn.prepare(
+            let mut entity_stmt = self.project_conn.prepare(
                 "
             SELECT file_path, kind, name, language, start_line, end_line, signature
             FROM code_entities
@@ -309,7 +309,7 @@ impl Database {
 
             let remaining = limit.saturating_sub(results.len() as i64);
             if remaining > 0 {
-                let mut chunk_stmt = self.conn.prepare(
+                let mut chunk_stmt = self.project_conn.prepare(
                     "
                 SELECT file_path, language, start_line, end_line, text
                 FROM code_chunks

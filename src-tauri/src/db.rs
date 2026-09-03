@@ -21,11 +21,16 @@ mod memory_store;
 pub(crate) mod profile_store;
 mod project_index_store;
 mod rag_store;
+mod storage;
 
 pub(crate) use rag_store::RagFileReplacement;
 
 pub struct Database {
+    /// Conversation, RAG, and user-profile data.
     conn: Connection,
+    config_conn: Connection,
+    knowledge_conn: Connection,
+    project_conn: Connection,
 }
 
 impl Database {
@@ -44,14 +49,23 @@ impl Database {
                 sqlite3_vec_init as *const ()
             )));
         });
-        let conn = Connection::open(path)?;
-        let db = Self { conn };
-        db.init()?;
+        let paths = storage::DatabasePaths::from_legacy_path(&path)?;
+        let conn = Connection::open(&paths.conversations)?;
+        let config_conn = Connection::open(&paths.config)?;
+        let knowledge_conn = Connection::open(&paths.knowledge)?;
+        let project_conn = Connection::open(&paths.project_index)?;
+        let db = Self {
+            conn,
+            config_conn,
+            knowledge_conn,
+            project_conn,
+        };
+        db.initialize_split_storage(&paths)?;
         Ok(db)
     }
 
-    fn init(&self) -> AppResult<()> {
-        self.conn.execute_batch(
+    fn init_full_schema(conn: &Connection) -> AppResult<()> {
+        conn.execute_batch(
             "
             PRAGMA foreign_keys = ON;
             PRAGMA journal_mode = WAL;
@@ -556,11 +570,11 @@ impl Database {
             ",
         )?;
         let now = Utc::now().to_rfc3339();
-        self.conn.execute(
+        conn.execute(
             "INSERT OR IGNORE INTO profile_state (id, profile_generation, next_event_revision, updated_at) VALUES (1, 1, 0, ?1)",
             params![now],
         )?;
-        self.conn.execute(
+        conn.execute(
             "INSERT OR IGNORE INTO profile_settings
                 (id, enabled, model_config_id, character_threshold, idle_seconds,
                  max_wait_seconds, long_input_threshold, rolling_hour_attempt_limit,
@@ -568,71 +582,127 @@ impl Database {
              VALUES (1, 0, NULL, 3000, 1800, 86400, 8000, 2, 8, 30000, ?1)",
             params![now],
         )?;
-        self.ensure_column("conversations", "project_path", "TEXT")?;
-        self.ensure_column("conversations", "archived", "INTEGER NOT NULL DEFAULT 0")?;
-        self.ensure_column("conversations", "archived_at", "TEXT")?;
-        self.ensure_column("messages", "metadata_json", "TEXT")?;
-        self.ensure_column(
+        Self::ensure_column(conn, "conversations", "project_path", "TEXT")?;
+        Self::ensure_column(
+            conn,
+            "conversations",
+            "archived",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        Self::ensure_column(conn, "conversations", "archived_at", "TEXT")?;
+        Self::ensure_column(conn, "messages", "metadata_json", "TEXT")?;
+        Self::ensure_column(
+            conn,
             "profile_state",
             "skipped_observation_count",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
-        self.ensure_column(
+        Self::ensure_column(
+            conn,
             "model_configs",
             "embedding_provider",
             "TEXT NOT NULL DEFAULT 'openai-compatible'",
         )?;
-        self.ensure_column(
+        Self::ensure_column(
+            conn,
             "model_configs",
             "embedding_base_url",
             "TEXT NOT NULL DEFAULT ''",
         )?;
-        self.ensure_column(
+        Self::ensure_column(
+            conn,
             "model_configs",
             "embedding_model",
             "TEXT NOT NULL DEFAULT ''",
         )?;
-        self.ensure_column(
+        Self::ensure_column(
+            conn,
             "model_configs",
             "embedding_api_key",
             "TEXT NOT NULL DEFAULT ''",
         )?;
-        self.ensure_column("model_configs", "temperature", "REAL NOT NULL DEFAULT 0.4")?;
-        self.ensure_column("model_configs", "max_tokens", "INTEGER")?;
-        self.ensure_column(
+        Self::ensure_column(
+            conn,
+            "model_configs",
+            "temperature",
+            "REAL NOT NULL DEFAULT 0.4",
+        )?;
+        Self::ensure_column(conn, "model_configs", "max_tokens", "INTEGER")?;
+        Self::ensure_column(
+            conn,
             "model_configs",
             "context_window",
             "INTEGER NOT NULL DEFAULT 32768",
         )?;
-        self.ensure_column("model_configs", "top_p", "REAL")?;
-        self.ensure_column(
+        Self::ensure_column(conn, "model_configs", "top_p", "REAL")?;
+        Self::ensure_column(
+            conn,
             "model_configs",
             "reasoning_effort",
             "TEXT NOT NULL DEFAULT ''",
         )?;
-        self.ensure_column("mcp_servers", "transport", "TEXT NOT NULL DEFAULT 'stdio'")?;
-        self.ensure_column("mcp_servers", "args_json", "TEXT NOT NULL DEFAULT '[]'")?;
-        self.ensure_column("mcp_servers", "env_json", "TEXT NOT NULL DEFAULT '{}'")?;
-        self.ensure_column("mcp_servers", "url", "TEXT NOT NULL DEFAULT ''")?;
-        self.ensure_column("mcp_servers", "headers_json", "TEXT NOT NULL DEFAULT '{}'")?;
-        self.ensure_column("mcp_servers", "working_dir", "TEXT NOT NULL DEFAULT ''")?;
-        self.ensure_column("mcp_servers", "enabled", "INTEGER NOT NULL DEFAULT 1")?;
-        self.ensure_column("ops_servers", "auth_method", "TEXT NOT NULL DEFAULT 'key'")?;
-        self.ensure_column("ops_servers", "key_path", "TEXT NOT NULL DEFAULT ''")?;
-        self.ensure_column("ops_servers", "password", "TEXT NOT NULL DEFAULT ''")?;
-        self.ensure_column("ops_servers", "remote_dir", "TEXT NOT NULL DEFAULT ''")?;
-        self.rebuild_missing_memory_graphs()?;
+        Self::ensure_column(
+            conn,
+            "mcp_servers",
+            "transport",
+            "TEXT NOT NULL DEFAULT 'stdio'",
+        )?;
+        Self::ensure_column(
+            conn,
+            "mcp_servers",
+            "args_json",
+            "TEXT NOT NULL DEFAULT '[]'",
+        )?;
+        Self::ensure_column(
+            conn,
+            "mcp_servers",
+            "env_json",
+            "TEXT NOT NULL DEFAULT '{}'",
+        )?;
+        Self::ensure_column(conn, "mcp_servers", "url", "TEXT NOT NULL DEFAULT ''")?;
+        Self::ensure_column(
+            conn,
+            "mcp_servers",
+            "headers_json",
+            "TEXT NOT NULL DEFAULT '{}'",
+        )?;
+        Self::ensure_column(
+            conn,
+            "mcp_servers",
+            "working_dir",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
+        Self::ensure_column(conn, "mcp_servers", "enabled", "INTEGER NOT NULL DEFAULT 1")?;
+        Self::ensure_column(
+            conn,
+            "ops_servers",
+            "auth_method",
+            "TEXT NOT NULL DEFAULT 'key'",
+        )?;
+        Self::ensure_column(conn, "ops_servers", "key_path", "TEXT NOT NULL DEFAULT ''")?;
+        Self::ensure_column(conn, "ops_servers", "password", "TEXT NOT NULL DEFAULT ''")?;
+        Self::ensure_column(
+            conn,
+            "ops_servers",
+            "remote_dir",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
         Ok(())
     }
 
-    fn ensure_column(&self, table: &str, column: &str, definition: &str) -> AppResult<()> {
-        let mut stmt = self.conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    fn ensure_column(
+        conn: &Connection,
+        table: &str,
+        column: &str,
+        definition: &str,
+    ) -> AppResult<()> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
         let columns = stmt
             .query_map([], |row| row.get::<_, String>(1))?
             .collect::<Result<Vec<_>, _>>()?;
 
         if !columns.iter().any(|name| name == column) {
-            self.conn.execute(
+            conn.execute(
                 &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
                 [],
             )?;
@@ -642,7 +712,7 @@ impl Database {
     }
 
     fn get_item(&self, id: &str) -> AppResult<Option<Item>> {
-        self.conn
+        self.knowledge_conn
             .query_row(
                 "
                 SELECT id, kind, title, body, status, tags_json, created_at, updated_at
@@ -656,7 +726,7 @@ impl Database {
     }
 
     fn get_memory(&self, id: &str) -> AppResult<Option<Memory>> {
-        self.conn
+        self.knowledge_conn
             .query_row(
                 "
                 SELECT id, title, content, tags_json, enabled, created_at, updated_at
@@ -671,7 +741,7 @@ impl Database {
 
     fn upsert_item(&self, item: &Item) -> AppResult<()> {
         let tags_json = serde_json::to_string(&item.tags)?;
-        self.conn.execute(
+        self.knowledge_conn.execute(
             "
             INSERT INTO items (id, kind, title, body, status, tags_json, created_at, updated_at)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
@@ -695,9 +765,9 @@ impl Database {
             ],
         )?;
 
-        self.conn
+        self.knowledge_conn
             .execute("DELETE FROM items_fts WHERE id = ?1", params![item.id])?;
-        self.conn.execute(
+        self.knowledge_conn.execute(
             "INSERT INTO items_fts (id, title, body, tags) VALUES (?1, ?2, ?3, ?4)",
             params![item.id, item.title, item.body, item.tags.join(" ")],
         )?;
@@ -705,12 +775,12 @@ impl Database {
     }
 
     fn upsert_memory(&self, memory: &Memory) -> AppResult<()> {
-        self.with_savepoint("memory_record_upsert", || self.upsert_memory_inner(memory))
+        self.with_knowledge_savepoint("memory_record_upsert", || self.upsert_memory_inner(memory))
     }
 
     fn upsert_memory_inner(&self, memory: &Memory) -> AppResult<()> {
         let tags_json = serde_json::to_string(&memory.tags)?;
-        self.conn.execute(
+        self.knowledge_conn.execute(
             "
             INSERT INTO memories (id, title, content, tags_json, enabled, created_at, updated_at)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -732,9 +802,9 @@ impl Database {
             ],
         )?;
 
-        self.conn
+        self.knowledge_conn
             .execute("DELETE FROM memories_fts WHERE id = ?1", params![memory.id])?;
-        self.conn.execute(
+        self.knowledge_conn.execute(
             "INSERT INTO memories_fts (id, title, content, tags) VALUES (?1, ?2, ?3, ?4)",
             params![
                 memory.id,
@@ -760,6 +830,28 @@ impl Database {
             Err(error) => {
                 let _ = self
                     .conn
+                    .execute_batch(&format!("ROLLBACK TO {name}; RELEASE {name};"));
+                Err(error)
+            }
+        }
+    }
+
+    fn with_knowledge_savepoint<T>(
+        &self,
+        name: &str,
+        operation: impl FnOnce() -> AppResult<T>,
+    ) -> AppResult<T> {
+        self.knowledge_conn
+            .execute_batch(&format!("SAVEPOINT {name}"))?;
+        match operation() {
+            Ok(value) => {
+                self.knowledge_conn
+                    .execute_batch(&format!("RELEASE {name}"))?;
+                Ok(value)
+            }
+            Err(error) => {
+                let _ = self
+                    .knowledge_conn
                     .execute_batch(&format!("ROLLBACK TO {name}; RELEASE {name};"));
                 Err(error)
             }
@@ -1394,6 +1486,8 @@ mod tests {
             "nano-model-config-migration-{}.sqlite3",
             uuid::Uuid::new_v4()
         ));
+        let split_paths = storage::DatabasePaths::from_legacy_path(&path)
+            .expect("split database paths should resolve");
         {
             let conn = Connection::open(&path).expect("legacy database should open");
             conn.execute_batch(
@@ -1434,6 +1528,14 @@ mod tests {
 
         drop(db);
         std::fs::remove_file(path).expect("temporary database should be removed");
+        for split_path in [
+            split_paths.config,
+            split_paths.conversations,
+            split_paths.knowledge,
+            split_paths.project_index,
+        ] {
+            std::fs::remove_file(split_path).expect("split database should be removed");
+        }
     }
 
     #[test]

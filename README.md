@@ -112,9 +112,13 @@ npm.cmd run package:win
 运行时数据保存在 Tauri app data 目录下：
 
 ```text
-nano-agent.sqlite3                 主业务数据
+nano-agent-config.sqlite3          模型、MCP 与 Ops 配置
+nano-agent-conversations.sqlite3   会话、RAG 与用户画像
+nano-agent-knowledge.sqlite3       条目、长期记忆、向量与知识图谱
+nano-agent-project-index.sqlite3   代码与项目文档索引
 nano-agent-runtime.sqlite3         Agent 运行时数据
 nano-agent-observability.sqlite3   观测数据
+nano-agent.sqlite3                 旧版业务库迁移源（升级后保留、不再写入）
 settings.json                      Tavily API key
 logs/                              按天滚动的系统操作日志（保留 7 天）
 skills/                            本地 Skills 目录
@@ -141,8 +145,8 @@ src-tauri/src/cli.rs           nano 终端交互、模型选择和项目问答�
 src-tauri/src/bin/nano.rs      nano 命令行二进制入口
 src-tauri/src/core/plugin.rs   后端插件契约、清单与 Agent 工具扩展点
 src-tauri/src/plugins.rs       内置后端插件装配
-src-tauri/src/db.rs            主业务 SQLite schema、迁移与共享数据库入口
-src-tauri/src/db/              条目、配置、会话、RAG、记忆、画像和项目索引的领域存储
+src-tauri/src/db.rs            业务 SQLite schema 与共享数据库入口
+src-tauri/src/db/              分库迁移及条目、配置、会话、RAG、记忆、画像和项目索引存储
 src-tauri/src/code_index.rs    项目代码实体、关系和片段索引
 src-tauri/src/project_index.rs 项目文档片段索引与通用项目索引查询
 src-tauri/src/runtime.rs       Agent run/step/tool call 运行时存储

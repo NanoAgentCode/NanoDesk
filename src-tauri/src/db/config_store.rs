@@ -14,7 +14,7 @@ use crate::models::{
 
 impl Database {
     pub fn list_model_configs(&self) -> AppResult<Vec<ModelConfig>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.config_conn.prepare(
             "
             SELECT id, name, provider, base_url, model, api_key,
                    temperature, max_tokens, context_window, top_p, reasoning_effort,
@@ -34,7 +34,7 @@ impl Database {
     }
 
     pub fn get_model_config(&self, id: &str) -> AppResult<ModelConfig> {
-        self.conn
+        self.config_conn
             .query_row(
                 "
                 SELECT id, name, provider, base_url, model, api_key,
@@ -54,7 +54,7 @@ impl Database {
         let now = Utc::now();
         let id = draft.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let created_at = self
-            .conn
+            .config_conn
             .query_row(
                 "SELECT created_at FROM model_configs WHERE id = ?1",
                 params![id],
@@ -85,7 +85,7 @@ impl Database {
             updated_at: now,
         };
 
-        self.conn.execute(
+        self.config_conn.execute(
             "
             INSERT INTO model_configs
                 (id, name, provider, base_url, model, api_key,
@@ -131,19 +131,21 @@ impl Database {
             ],
         )?;
 
+        self.sync_model_config_references()?;
         Ok(config)
     }
 
     pub fn delete_model_config(&self, id: &str) -> AppResult<()> {
         let affected = self
-            .conn
+            .config_conn
             .execute("DELETE FROM model_configs WHERE id = ?1", params![id])?;
         ensure_affected(affected, "model config not found")?;
+        self.sync_model_config_references()?;
         Ok(())
     }
 
     pub fn list_mcp_servers(&self) -> AppResult<Vec<McpServerConfig>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.config_conn.prepare(
             "
             SELECT id, name, transport, command, args_json, env_json, url, headers_json,
                    working_dir, enabled, created_at, updated_at
@@ -161,7 +163,7 @@ impl Database {
     }
 
     pub fn get_mcp_server(&self, id: &str) -> AppResult<McpServerConfig> {
-        self.conn
+        self.config_conn
             .query_row(
                 "
                 SELECT id, name, transport, command, args_json, env_json, url, headers_json,
@@ -179,7 +181,7 @@ impl Database {
         let now = Utc::now();
         let id = draft.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let created_at = self
-            .conn
+            .config_conn
             .query_row(
                 "SELECT created_at FROM mcp_servers WHERE id = ?1",
                 params![id],
@@ -217,7 +219,7 @@ impl Database {
             return Err(AppError::Message("mcp server url is required".to_string()));
         }
 
-        self.conn.execute(
+        self.config_conn.execute(
             "
             INSERT INTO mcp_servers
                 (id, name, transport, command, args_json, env_json, url, headers_json,
@@ -256,14 +258,14 @@ impl Database {
 
     pub fn delete_mcp_server(&self, id: &str) -> AppResult<()> {
         let affected = self
-            .conn
+            .config_conn
             .execute("DELETE FROM mcp_servers WHERE id = ?1", params![id])?;
         ensure_affected(affected, "mcp server not found")?;
         Ok(())
     }
 
     pub fn list_ops_servers(&self) -> AppResult<Vec<OpsServer>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.config_conn.prepare(
             "
             SELECT id, name, host, port, username, auth_method, key_path, password,
                    remote_dir, created_at, updated_at
@@ -281,7 +283,7 @@ impl Database {
     }
 
     pub fn get_ops_server(&self, id: &str) -> AppResult<OpsServer> {
-        self.conn
+        self.config_conn
             .query_row(
                 "
                 SELECT id, name, host, port, username, auth_method, key_path, password,
@@ -299,7 +301,7 @@ impl Database {
         let now = Utc::now();
         let id = draft.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let created_at = self
-            .conn
+            .config_conn
             .query_row(
                 "SELECT created_at FROM ops_servers WHERE id = ?1",
                 params![id],
@@ -332,7 +334,7 @@ impl Database {
             return Err(AppError::Message("用户名不能为空".to_string()));
         }
 
-        self.conn.execute(
+        self.config_conn.execute(
             "
             INSERT INTO ops_servers
                 (id, name, host, port, username, auth_method, key_path, password,
@@ -369,7 +371,7 @@ impl Database {
 
     pub fn delete_ops_server(&self, id: &str) -> AppResult<()> {
         let affected = self
-            .conn
+            .config_conn
             .execute("DELETE FROM ops_servers WHERE id = ?1", params![id])?;
         ensure_affected(affected, "server not found")?;
         Ok(())

@@ -19,7 +19,7 @@ impl Database {
             }
         };
 
-        let mut stmt = self.conn.prepare(sql)?;
+        let mut stmt = self.knowledge_conn.prepare(sql)?;
         let rows: Result<Vec<_>, _> = match kind {
             Some(kind) => stmt.query_map([kind], Self::row_to_item)?.collect(),
             None => stmt.query_map([], Self::row_to_item)?.collect(),
@@ -38,7 +38,7 @@ impl Database {
             return Ok(Vec::new());
         };
 
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.knowledge_conn.prepare(
             "
             SELECT i.id, i.kind, i.title, i.body, i.status, i.tags_json, i.created_at, i.updated_at
             FROM items_fts f
@@ -95,10 +95,10 @@ impl Database {
     }
 
     pub fn delete_item(&self, id: &str) -> AppResult<()> {
-        self.conn
+        self.knowledge_conn
             .execute("DELETE FROM items_fts WHERE id = ?1", params![id])?;
         let affected = self
-            .conn
+            .knowledge_conn
             .execute("DELETE FROM items WHERE id = ?1", params![id])?;
         ensure_affected(affected, "item not found")?;
         Ok(())

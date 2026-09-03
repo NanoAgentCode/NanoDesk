@@ -29,21 +29,21 @@ impl Database {
             }
         }
 
-        self.conn.execute(
+        self.project_conn.execute(
             "DELETE FROM project_index_chunks_fts WHERE project_path = ?1 AND indexer = ?2",
             params![project_path, indexer],
         )?;
-        self.conn.execute(
+        self.project_conn.execute(
             "DELETE FROM project_index_embeddings WHERE project_path = ?1 AND indexer = ?2",
             params![project_path, indexer],
         )?;
-        self.conn.execute(
+        self.project_conn.execute(
             "DELETE FROM project_index_chunks WHERE project_path = ?1 AND indexer = ?2",
             params![project_path, indexer],
         )?;
 
         for (chunk_index, chunk) in chunks.iter().enumerate() {
-            self.conn.execute(
+            self.project_conn.execute(
                 "
                 INSERT INTO project_index_chunks
                     (id, project_path, indexer, file_path, title, chunk_index,
@@ -65,7 +65,7 @@ impl Database {
                     now.to_rfc3339()
                 ],
             )?;
-            self.conn.execute(
+            self.project_conn.execute(
                 "
                 INSERT INTO project_index_chunks_fts
                     (chunk_id, project_path, indexer, file_path, title, text)
@@ -82,7 +82,7 @@ impl Database {
             )?;
             if let Some((embeddings, embedding_model)) = chunk_embeddings {
                 let embedding = &embeddings[chunk_index];
-                self.conn.execute(
+                self.project_conn.execute(
                     "
                     INSERT INTO project_index_embeddings
                         (chunk_id, project_path, indexer, embedding, dim, model, created_at)
@@ -112,7 +112,7 @@ impl Database {
             created_at: now,
             updated_at: now,
         };
-        self.conn.execute(
+        self.project_conn.execute(
             "
             INSERT INTO project_index_runs
                 (id, project_path, indexer, status, file_count, chunk_count,
@@ -135,7 +135,7 @@ impl Database {
     }
 
     pub fn get_project_index_stats(&self, project_path: &str) -> AppResult<ProjectIndexStats> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.project_conn.prepare(
             "
             SELECT id, project_path, indexer, status, file_count, chunk_count,
                    error, created_at, updated_at
@@ -174,7 +174,7 @@ impl Database {
         let mut results = Vec::new();
 
         if let Some(query_embedding) = query_embedding {
-            let mut stmt = self.conn.prepare(
+            let mut stmt = self.project_conn.prepare(
                 "
                 SELECT chunks.indexer, chunks.file_path, chunks.title, chunks.chunk_index,
                        chunks.start_line, chunks.end_line, chunks.text, embeddings.embedding
@@ -217,7 +217,7 @@ impl Database {
                 .collect::<Vec<_>>();
             let remaining = limit.saturating_sub(results.len() as i64);
             if remaining > 0 {
-                let mut stmt = self.conn.prepare(
+                let mut stmt = self.project_conn.prepare(
                     "
                     SELECT indexer, file_path, title, chunk_index, start_line, end_line, text
                     FROM project_index_chunks
