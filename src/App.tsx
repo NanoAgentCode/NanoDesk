@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   Alert,
   Badge,
@@ -65,8 +66,16 @@ import type {
   ProjectEntry,
   SettingsTab
 } from "./types";
+import {
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  clampSidebarWidth,
+  parseSidebarWidth
+} from "./lib/sidebarSizing";
 
 const SIDEBAR_COLLAPSED_KEY = "nano-agent-sidebar-collapsed";
+const SIDEBAR_WIDTH_KEY = "nano-agent-sidebar-width";
 
 function App() {
   const workspaceRef = useRef<HTMLElement | null>(null);
@@ -79,6 +88,9 @@ function App() {
   const [activeMainView, setActiveMainView] = useState("chat");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+  });
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    return parseSidebarWidth(localStorage.getItem(SIDEBAR_WIDTH_KEY));
   });
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
@@ -225,6 +237,10 @@ function App() {
   }, [sidebarCollapsed]);
 
   useEffect(() => {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
     void loadAll();
   }, []);
 
@@ -296,6 +312,12 @@ function App() {
       const nextRatio = ((event.clientY - rect.top) / rect.height) * 100;
       setWorkspaceListRatio(Math.min(70, Math.max(24, nextRatio)));
     }, "row-resize");
+  }
+
+  function beginSidebarResize() {
+    beginResize((event) => {
+      setSidebarWidth(clampSidebarWidth(event.clientX));
+    });
   }
 
   function beginResize(onMove: (event: MouseEvent) => void, cursor = "col-resize") {
@@ -443,6 +465,7 @@ function App() {
     <MantineProvider theme={nanoTheme} forceColorScheme={resolvedTheme}>
       <main
       className={sidebarCollapsed ? "app-shell sidebar-collapsed" : "app-shell"}
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       onDragOver={(event) => {
         event.preventDefault();
         setIsRagDragging(true);
@@ -475,6 +498,12 @@ function App() {
         pluginMainViews={appPlugins.mainViews}
         isCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+        sidebarWidth={sidebarWidth}
+        sidebarMinWidth={SIDEBAR_MIN_WIDTH}
+        sidebarMaxWidth={SIDEBAR_MAX_WIDTH}
+        onResizeStart={beginSidebarResize}
+        onResize={(delta) => setSidebarWidth((width) => clampSidebarWidth(width + delta))}
+        onResizeReset={() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)}
       />
 
       {projects.showNewProjectDialog && (

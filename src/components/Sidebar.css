@@ -67,6 +67,34 @@
   background-size: 12px 12px;
   mask-image: linear-gradient(135deg, transparent 8%, #000 78%);
 }
+.sidebar-resizer {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 3px;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after {
+  background: rgba(58, 205, 255, 0.72);
+  box-shadow: 0 0 10px rgba(58, 205, 255, 0.45);
+}
+.sidebar-resizer:focus-visible {
+  outline: none;
+}
 .sidebar-topbar { min-height: 42px; }
 .sidebar-brand {
   display: flex;
@@ -576,6 +604,12 @@
 
 .sidebar.collapsed .sidebar-bottom-item svg {
   justify-self: center;
+}
+
+@media (max-width: 940px) {
+  .sidebar-resizer {
+    display: none;
+  }
 }
 
 /* Keep the prototype theme authoritative over the compact legacy rules above. */

@@ -19,6 +19,12 @@ interface SidebarProps {
   pluginMainViews: readonly MainViewContribution[];
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
+  sidebarWidth: number;
+  sidebarMinWidth: number;
+  sidebarMaxWidth: number;
+  onResizeStart: () => void;
+  onResize: (delta: number) => void;
+  onResizeReset: () => void;
 }
 
 export default function Sidebar({
@@ -35,7 +41,13 @@ export default function Sidebar({
   onMainViewChange,
   pluginMainViews,
   isCollapsed,
-  onToggleCollapsed
+  onToggleCollapsed,
+  sidebarWidth,
+  sidebarMinWidth,
+  sidebarMaxWidth,
+  onResizeStart,
+  onResize,
+  onResizeReset
 }: SidebarProps) {
   return (
     <aside className={isCollapsed ? "sidebar collapsed" : "sidebar"}>
@@ -276,6 +288,39 @@ export default function Sidebar({
           {!isCollapsed && <span>系统设置</span>}
         </UnstyledButton>
       </div>
+
+      {!isCollapsed && (
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          aria-label="调整侧边栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={sidebarMinWidth}
+          aria-valuemax={sidebarMaxWidth}
+          aria-valuenow={Math.round(sidebarWidth)}
+          tabIndex={0}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            onResizeStart();
+          }}
+          onDoubleClick={onResizeReset}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              onResize(event.shiftKey ? -20 : -8);
+            } else if (event.key === "ArrowRight") {
+              event.preventDefault();
+              onResize(event.shiftKey ? 20 : 8);
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              onResize(sidebarMinWidth - sidebarWidth);
+            } else if (event.key === "End") {
+              event.preventDefault();
+              onResize(sidebarMaxWidth - sidebarWidth);
+            }
+          }}
+        />
+      )}
     </aside>
   );
 }
