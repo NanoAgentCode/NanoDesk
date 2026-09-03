@@ -1,0 +1,16 @@
+{
+  "displayName": "NanoDesk",
+  "packageName": "nano-desk",
+  "rustLibName": "nano_desk_lib",
+  "desktopBinaryName": "nano-desk",
+  "cliName": "nano",
+  "bundleIdentifier": "com.nanoagent.desktop",
+  "storagePrefix": "nano-agent",
+  "projectDataDirectory": ".nano-agent",
+  "startupRegistryName": "NanoAgent",
+  "cliRegistryPath": "Software\\NanoAgent\\CLI",
+  "cliUninstallKey": "NanoAgentCLI",
+  "pluginNamespace": "nanoagent",
+  "legacyDisplayName": "NanoAgent",
+  "repository": "NanoAgentCode/NanoAgent"
+}

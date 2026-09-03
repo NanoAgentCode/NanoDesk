@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::brand;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     ProjectFileContent, ProjectFileEntry, ProjectFileMoveRequest, ProjectFileWriteRequest,
@@ -32,7 +33,7 @@ pub async fn list_project_files(project_path: String) -> AppResult<Vec<ProjectFi
         ".next",
         ".nuxt",
         "coverage",
-        ".nano-agent",
+        brand::PROJECT_DATA_DIRECTORY,
     ];
 
     let root = PathBuf::from(project_path);
@@ -498,7 +499,8 @@ mod tests {
             .expect("system clock should be after the Unix epoch")
             .as_nanos();
         let directory = std::env::temp_dir().join(format!(
-            "nano-agent-open-project-{}-{unique}",
+            "{}-open-project-{}-{unique}",
+            crate::brand::STORAGE_PREFIX,
             std::process::id()
         ));
         std::fs::create_dir(&directory).expect("test directory should be created");

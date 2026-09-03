@@ -296,8 +296,11 @@ mod tests {
 
     #[test]
     fn prunes_date_named_logs_older_than_seven_days() {
-        let dir =
-            std::env::temp_dir().join(format!("nano-agent-log-test-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!(
+            "{}-log-test-{}",
+            crate::brand::STORAGE_PREFIX,
+            uuid::Uuid::new_v4()
+        ));
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("2000-01-01.log"), "old").unwrap();
         fs::write(

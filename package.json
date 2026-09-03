@@ -1,12 +1,14 @@
 {
-  "name": "nano-agent",
+  "name": "nano-desk",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "brand:sync": "node scripts/sync-branding.mjs",
+    "brand:check": "node scripts/sync-branding.mjs --check",
     "dev": "vite",
-    "build": "tsc && vite build",
-    "test": "vitest run",
+    "build": "npm run brand:check && tsc && vite build",
+    "test": "npm run brand:check && vitest run",
     "install:nano": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-cli.ps1",
     "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "preview": "vite preview",

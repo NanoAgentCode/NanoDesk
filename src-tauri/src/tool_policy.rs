@@ -258,8 +258,8 @@ fn reject_internal_path(path: &str) -> AppResult<()> {
         || trimmed.starts_with(".git/")
         || trimmed == ".codegraph"
         || trimmed.starts_with(".codegraph/")
-        || trimmed == ".nano-agent"
-        || trimmed.starts_with(".nano-agent/")
+        || trimmed == crate::brand::PROJECT_DATA_DIRECTORY
+        || trimmed.starts_with(&format!("{}/", crate::brand::PROJECT_DATA_DIRECTORY))
     {
         return Err(AppError::Message(
             "工具策略拒绝访问项目内部控制目录".to_string(),
@@ -497,8 +497,11 @@ mod tests {
     }
 
     fn test_project() -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("nano-agent-policy-test-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!(
+            "{}-policy-test-{}",
+            crate::brand::STORAGE_PREFIX,
+            uuid::Uuid::new_v4()
+        ));
         fs::create_dir_all(&root).expect("test project should be created");
         root
     }

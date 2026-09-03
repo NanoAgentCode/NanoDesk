@@ -5,10 +5,11 @@ import {
   getTavilyApiKey,
   saveTavilyApiKey
 } from "../api";
+import { APP_NAME, APP_STORAGE_PREFIX } from "../config/brand";
 
-const NODE_PATH_KEY = "nano-agent-node-path";
-const PYTHON_PATH_KEY = "nano-agent-python-path";
-const ENV_CHECKED_KEY = "nano-agent-env-checked";
+const NODE_PATH_KEY = `${APP_STORAGE_PREFIX}-node-path`;
+const PYTHON_PATH_KEY = `${APP_STORAGE_PREFIX}-python-path`;
+const ENV_CHECKED_KEY = `${APP_STORAGE_PREFIX}-env-checked`;
 
 export interface UseEnvReturn {
   nodePath: string;
@@ -138,7 +139,7 @@ export function useEnv(setNotice: (message: string) => void): UseEnvReturn {
       if (finalStatus.tavily_cli) {
         setNotice("Tavily CLI 安装成功。");
       } else {
-        setNotice("Tavily CLI 已尝试安装，但当前 PATH 仍未检测到 tvly。请重启 NanoAgent 或检查 Python Scripts/uv tool 目录是否在 PATH。");
+        setNotice(`Tavily CLI 已尝试安装，但当前 PATH 仍未检测到 tvly。请重启 ${APP_NAME} 或检查 Python Scripts/uv tool 目录是否在 PATH。`);
       }
     } catch (error) {
       console.error("Tavily CLI installation failed:", error);

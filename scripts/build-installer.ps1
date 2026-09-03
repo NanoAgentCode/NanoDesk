@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$Brand = Get-Content -LiteralPath (Join-Path $Root "brand.config.json") -Raw | ConvertFrom-Json
 $VcVars = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 
 if (-not (Test-Path -LiteralPath $VcVars)) {
@@ -9,7 +10,7 @@ if (-not (Test-Path -LiteralPath $VcVars)) {
 
 Push-Location $Root
 try {
-  Write-Host "==> Building NanoAgent installer"
+  Write-Host "==> Building $($Brand.displayName) installer"
   Write-Host "==> Workspace: $Root"
 
   # vcvars64.bat 仅在 cmd 上下文有效，先在 cmd 中采集完整的 MSVC 环境。
@@ -62,7 +63,7 @@ try {
     throw "CLI build failed. Exit code: $LASTEXITCODE"
   }
 
-  Write-Host "==> Building NanoAgent desktop app and installers"
+  Write-Host "==> Building $($Brand.displayName) desktop app and installers"
   & cmd.exe /d /s /c 'npm.cmd run tauri build'
 
   if ($LASTEXITCODE -ne 0) {
@@ -71,12 +72,12 @@ try {
 
   $ReleaseDir = Join-Path $Root "src-tauri\target\release"
   $CliExe = Join-Path $ReleaseDir "nano.exe"
-  $DesktopExe = Join-Path $ReleaseDir "nano-agent.exe"
+  $DesktopExe = Join-Path $ReleaseDir "$($Brand.desktopBinaryName).exe"
   $BundleDir = Join-Path $ReleaseDir "bundle"
   $NsisDir = Join-Path $BundleDir "nsis"
   $CliInstallerDir = Join-Path $BundleDir "cli"
   $Version = (Get-Content -LiteralPath (Join-Path $Root "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).version
-  $CliInstaller = Join-Path $CliInstallerDir "NanoAgent-CLI_${Version}_x64-setup.exe"
+  $CliInstaller = Join-Path $CliInstallerDir "$($Brand.displayName)-CLI_${Version}_x64-setup.exe"
   $NsisRoot = Join-Path $env:LOCALAPPDATA "tauri\NSIS"
   $MakeNsis = Join-Path $NsisRoot "makensis.exe"
 
@@ -124,8 +125,8 @@ try {
   }
 
   New-Item -ItemType Directory -Path $CliInstallerDir -Force | Out-Null
-  Write-Host "==> Building NanoAgent CLI installer"
-  & $MakeNsis /V2 "/DCLI_EXE=$CliExe" "/DPATH_HELPER=$(Join-Path $Root 'scripts\update-user-path.ps1')" "/DOUTPUT_FILE=$CliInstaller" "/DPRODUCT_VERSION=$Version" "/DAPP_ICON=$(Join-Path $Root 'src-tauri\icons\icon.ico')" (Join-Path $Root "scripts\nano-cli-installer.nsi")
+  Write-Host "==> Building $($Brand.displayName) CLI installer"
+  & $MakeNsis /V2 "/DCLI_EXE=$CliExe" "/DPATH_HELPER=$(Join-Path $Root 'scripts\update-user-path.ps1')" "/DOUTPUT_FILE=$CliInstaller" "/DPRODUCT_VERSION=$Version" "/DPRODUCT_NAME=$($Brand.displayName)" "/DCLI_REGISTRY_PATH=$($Brand.cliRegistryPath)" "/DCLI_UNINSTALL_KEY=$($Brand.cliUninstallKey)" "/DAPP_ICON=$(Join-Path $Root 'src-tauri\icons\icon.ico')" (Join-Path $Root "scripts\nano-cli-installer.nsi")
 
   if ($LASTEXITCODE -ne 0) {
     throw "CLI installer build failed. Exit code: $LASTEXITCODE"

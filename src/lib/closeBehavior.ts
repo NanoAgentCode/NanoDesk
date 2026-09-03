@@ -1,8 +1,10 @@
+import { APP_STORAGE_PREFIX } from "../config/brand";
+
 export type CloseAction = "tray" | "quit";
 
-export const CLOSE_ACTION_KEY = "nano-agent-close-action";
-export const CLOSE_SKIP_PROMPT_KEY = "nano-agent-close-skip-prompt";
-export const CLOSE_PREFERENCES_CHANGED_EVENT = "nano-agent-close-preferences-changed";
+export const CLOSE_ACTION_KEY = `${APP_STORAGE_PREFIX}-close-action`;
+export const CLOSE_SKIP_PROMPT_KEY = `${APP_STORAGE_PREFIX}-close-skip-prompt`;
+export const CLOSE_PREFERENCES_CHANGED_EVENT = `${APP_STORAGE_PREFIX}-close-preferences-changed`;
 
 export interface ClosePreferences {
   action: CloseAction;

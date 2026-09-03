@@ -16,11 +16,20 @@ Unicode true
 !ifndef PRODUCT_VERSION
   !define PRODUCT_VERSION "0.1.0"
 !endif
+!ifndef PRODUCT_NAME
+  !error "PRODUCT_NAME is required"
+!endif
+!ifndef CLI_REGISTRY_PATH
+  !error "CLI_REGISTRY_PATH is required"
+!endif
+!ifndef CLI_UNINSTALL_KEY
+  !error "CLI_UNINSTALL_KEY is required"
+!endif
 
-Name "NanoAgent CLI"
+Name "${PRODUCT_NAME} CLI"
 OutFile "${OUTPUT_FILE}"
 InstallDir "$PROFILE\.nano"
-InstallDirRegKey HKCU "Software\NanoAgent\CLI" "InstallDir"
+InstallDirRegKey HKCU "${CLI_REGISTRY_PATH}" "InstallDir"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 ShowInstDetails show
@@ -46,7 +55,7 @@ ShowUninstDetails show
 
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
-Section "NanoAgent CLI" SecCli
+Section "${PRODUCT_NAME} CLI" SecCli
   SetShellVarContext current
   SetOutPath "$INSTDIR"
   File "/oname=nano.exe" "${CLI_EXE}"
@@ -61,15 +70,15 @@ Section "NanoAgent CLI" SecCli
     Abort "Failed to add $INSTDIR to the user PATH (exit code $0)"
   ${EndIf}
 
-  WriteRegStr HKCU "Software\NanoAgent\CLI" "InstallDir" "$INSTDIR"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoAgentCLI" "DisplayName" "NanoAgent CLI"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoAgentCLI" "DisplayVersion" "${PRODUCT_VERSION}"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoAgentCLI" "Publisher" "NanoAgent"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoAgentCLI" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoAgentCLI" "UninstallString" '"$INSTDIR\uninstall.exe"'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoAgentCLI" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoAgentCLI" "NoModify" 1
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoAgentCLI" "NoRepair" 1
+  WriteRegStr HKCU "${CLI_REGISTRY_PATH}" "InstallDir" "$INSTDIR"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${CLI_UNINSTALL_KEY}" "DisplayName" "${PRODUCT_NAME} CLI"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${CLI_UNINSTALL_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${CLI_UNINSTALL_KEY}" "Publisher" "${PRODUCT_NAME}"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${CLI_UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${CLI_UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${CLI_UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${CLI_UNINSTALL_KEY}" "NoModify" 1
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${CLI_UNINSTALL_KEY}" "NoRepair" 1
 
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
 SectionEnd
@@ -91,7 +100,7 @@ path_done:
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
 
-  DeleteRegKey HKCU "Software\NanoAgent\CLI"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoAgentCLI"
+  DeleteRegKey HKCU "${CLI_REGISTRY_PATH}"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${CLI_UNINSTALL_KEY}"
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
 SectionEnd

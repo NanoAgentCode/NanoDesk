@@ -675,7 +675,7 @@ pub(crate) async fn ask_ops_ai(
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: "你是 NanoAgent 的本地运维助手。基于用户保存的服务器上下文提供谨慎、可执行的建议。涉及危险命令、删除、重启、权限变更、网络暴露时必须明确风险和确认步骤。不要编造服务器状态。".to_string(),
+                content: format!("你是 {} 的本地运维助手。基于用户保存的服务器上下文提供谨慎、可执行的建议。涉及危险命令、删除、重启、权限变更、网络暴露时必须明确风险和确认步骤。不要编造服务器状态。", crate::brand::DISPLAY_NAME),
             },
             ChatMessage {
                 role: "user".to_string(),

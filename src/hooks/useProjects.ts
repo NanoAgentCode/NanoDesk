@@ -17,9 +17,10 @@ import type {
   ProjectFileEntry,
   ProjectIndexStats
 } from "../types";
+import { APP_STORAGE_PREFIX } from "../config/brand";
 
-const projectStorageKey = "nano-agent-projects";
-const activeProjectStorageKey = "nano-agent-active-project-id";
+const projectStorageKey = `${APP_STORAGE_PREFIX}-projects`;
+const activeProjectStorageKey = `${APP_STORAGE_PREFIX}-active-project-id`;
 
 function projectNameFromPath(path: string) {
   const normalized = path.replace(/[\\/]+$/, "");

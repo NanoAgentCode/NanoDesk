@@ -1,9 +1,10 @@
 import { confirm as tauriConfirm, message as tauriMessage } from "@tauri-apps/plugin-dialog";
+import { APP_NAME } from "../config/brand";
 
 export type DialogKind = "info" | "warning" | "error";
 export type ConfirmActionHandler = (content: string, kind: DialogKind) => Promise<boolean>;
 
-const APP_DIALOG_TITLE = "NanoAgent";
+const APP_DIALOG_TITLE = APP_NAME;
 let customConfirmHandler: ConfirmActionHandler | null = null;
 
 export function registerConfirmActionHandler(handler: ConfirmActionHandler | null) {

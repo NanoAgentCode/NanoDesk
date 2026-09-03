@@ -4,6 +4,7 @@ use chrono::Utc;
 use tauri::State;
 use uuid::Uuid;
 
+use crate::brand;
 use crate::error::{AppError, AppResult};
 use crate::llm::create_embeddings;
 use crate::models::{
@@ -30,7 +31,7 @@ const SKIP_DIRS: &[&str] = &[
     ".next",
     ".nuxt",
     "coverage",
-    ".nano-agent",
+    brand::PROJECT_DATA_DIRECTORY,
     ".codegraph",
 ];
 

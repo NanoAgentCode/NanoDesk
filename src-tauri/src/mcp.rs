@@ -12,6 +12,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::{timeout, Duration};
 
+use crate::brand;
 use crate::error::{AppError, AppResult};
 use crate::models::McpServerConfig;
 use crate::tool_policy::McpToolScope;
@@ -609,7 +610,7 @@ impl SseSession {
             .headers(headers.clone())
             .header(ACCEPT, "text/event-stream")
             .header(ORIGIN, "tauri://localhost")
-            .header(USER_AGENT, "NanoAgent")
+            .header(USER_AGENT, brand::DISPLAY_NAME)
             .send()
             .await?;
         if !response.status().is_success() {
@@ -856,7 +857,7 @@ fn initialize_params(protocol_version: &str) -> Value {
         "protocolVersion": protocol_version,
         "capabilities": {},
         "clientInfo": {
-            "name": "NanoAgent",
+            "name": brand::DISPLAY_NAME,
             "version": env!("CARGO_PKG_VERSION")
         }
     })

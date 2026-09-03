@@ -6,7 +6,14 @@ use tokio::sync::Semaphore;
 
 use crate::error::{AppError, AppResult};
 
-const USER_AGENT: &str = "NanoAgent/0.1 (https://github.com/NanoAgentCode/NanoAgent)";
+const USER_AGENT: &str = concat!(
+    env!("APP_DISPLAY_NAME"),
+    "/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/",
+    env!("APP_REPOSITORY"),
+    ")"
+);
 
 /// Maximum concurrent HTTP requests when fetching individual SKILL.md files.
 /// Keeps us well below GitHub's unauthenticated rate limit (60 req / hr) for

@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NanoAgent</title>
+    <title>%APP_DISPLAY_NAME%</title>
     <script>
       (function () {
         try {
-          var mode = localStorage.getItem("nano-agent-theme") || "system";
+          var mode = localStorage.getItem("%APP_STORAGE_PREFIX%-theme") || "system";
           var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
           var theme = mode === "system" ? (prefersDark ? "dark" : "light") : mode;
           document.documentElement.dataset.theme = theme;
@@ -171,7 +171,7 @@
       <div class="nano-startup-card">
         <div class="nano-startup-mark"></div>
         <div class="nano-startup-title">
-          <strong>NanoAgent</strong>
+          <strong>%APP_DISPLAY_NAME%</strong>
           <span>正在打开本地工作台</span>
         </div>
         <div class="nano-startup-bar"></div>

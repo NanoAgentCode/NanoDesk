@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
 
+use crate::brand;
 use crate::core::plugin::{AgentToolDefinition, AppPlugin, PluginManifest, PluginRegistry};
 use crate::error::{AppError, AppResult};
 use crate::tool_policy;
@@ -18,7 +19,7 @@ struct CoreAgentToolsPlugin;
 impl AppPlugin for CoreAgentToolsPlugin {
     fn manifest(&self) -> PluginManifest {
         PluginManifest {
-            id: "nanoagent.core-tools".to_string(),
+            id: format!("{}.core-tools", brand::PLUGIN_NAMESPACE),
             name: "Core Agent Tools".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             capabilities: vec!["agent-tools".to_string()],
@@ -83,7 +84,7 @@ struct McpToolsPlugin;
 impl AppPlugin for McpToolsPlugin {
     fn manifest(&self) -> PluginManifest {
         PluginManifest {
-            id: "nanoagent.mcp-tools".to_string(),
+            id: format!("{}.mcp-tools", brand::PLUGIN_NAMESPACE),
             name: "MCP Tool Adapter".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             capabilities: vec!["agent-tools".to_string(), "mcp".to_string()],

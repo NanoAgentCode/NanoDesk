@@ -1,17 +1,18 @@
 [package]
-name = "nano-agent"
+name = "nano-desk"
 version = "0.1.0"
 description = "A local productivity client for notes, search, and external LLMs."
-authors = ["NanoAgent"]
+authors = ["NanoDesk"]
 edition = "2021"
-default-run = "nano-agent"
+default-run = "nano-desk"
 
 [lib]
-name = "nano_agent_lib"
+name = "nano_desk_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+serde_json = "1"
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }

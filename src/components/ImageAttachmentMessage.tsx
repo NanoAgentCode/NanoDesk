@@ -3,6 +3,7 @@ import { FolderOpen, X } from "lucide-react";
 import MarkdownMessage from "./MarkdownMessage";
 import { openProjectFileLocation, readChatImageAttachment } from "../api";
 import type { ProjectFileEntry } from "../types";
+import { PROJECT_DATA_DIRECTORY } from "../config/brand";
 
 interface ImageAttachmentMessageProps {
   content: string;
@@ -21,7 +22,8 @@ interface LoadedImageAttachment extends ParsedImageAttachment {
   error?: string;
 }
 
-const IMAGE_ATTACHMENT_LINE = /^-\s+(.+?):\s+(\.nano-agent\/uploads\/images\/.+)$/;
+const escapedProjectDataDirectory = PROJECT_DATA_DIRECTORY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const IMAGE_ATTACHMENT_LINE = new RegExp(`^-\\s+(.+?):\\s+(${escapedProjectDataDirectory}/uploads/images/.+)$`);
 const IMAGE_ATTACHMENT_HINT = "需要识别图片文字时，请调用 ocr_image 工具。";
 
 function parseImageAttachmentContent(content: string) {

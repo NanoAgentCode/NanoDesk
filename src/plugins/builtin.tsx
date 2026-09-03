@@ -11,10 +11,11 @@ import SettingsSkillsTab from "../components/settings/SettingsSkillsTab";
 import SettingsObservabilityTab from "../components/settings/SettingsObservabilityTab";
 import SettingsMcpTab from "../components/settings/SettingsMcpTab";
 import SettingsEnvironmentTab from "../components/settings/SettingsEnvironmentTab";
+import { APP_PLUGIN_NAMESPACE } from "../config/brand";
 
 const coreUiPlugin: FrontendPlugin = {
   manifest: {
-    id: "nanoagent.core-ui",
+    id: `${APP_PLUGIN_NAMESPACE}.core-ui`,
     name: "Core UI",
     version: "0.1.0",
     capabilities: ["settings"]
@@ -81,7 +82,7 @@ const coreUiPlugin: FrontendPlugin = {
 
 const skillsPlugin: FrontendPlugin = {
   manifest: {
-    id: "nanoagent.skills",
+    id: `${APP_PLUGIN_NAMESPACE}.skills`,
     name: "Skills",
     version: "0.1.0",
     capabilities: ["settings"]
@@ -96,7 +97,7 @@ const skillsPlugin: FrontendPlugin = {
 
 const mcpPlugin: FrontendPlugin = {
   manifest: {
-    id: "nanoagent.mcp",
+    id: `${APP_PLUGIN_NAMESPACE}.mcp`,
     name: "MCP",
     version: "0.1.0",
     capabilities: ["settings"]
@@ -111,7 +112,7 @@ const mcpPlugin: FrontendPlugin = {
 
 const environmentPlugin: FrontendPlugin = {
   manifest: {
-    id: "nanoagent.environment",
+    id: `${APP_PLUGIN_NAMESPACE}.environment`,
     name: "Environment",
     version: "0.1.0",
     capabilities: ["settings"]
@@ -126,7 +127,7 @@ const environmentPlugin: FrontendPlugin = {
 
 const opsPlugin: FrontendPlugin = {
   manifest: {
-    id: "nanoagent.ops",
+    id: `${APP_PLUGIN_NAMESPACE}.ops`,
     name: "Server Operations",
     version: "0.1.0",
     capabilities: ["main-view"]

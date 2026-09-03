@@ -1,8 +1,21 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import brandConfig from "./brand.config.json";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "brand-config",
+      transformIndexHtml(html) {
+        return html
+          .split("%APP_DISPLAY_NAME%")
+          .join(brandConfig.displayName)
+          .split("%APP_STORAGE_PREFIX%")
+          .join(brandConfig.storagePrefix);
+      }
+    }
+  ],
   clearScreen: false,
   server: {
     port: 1420,

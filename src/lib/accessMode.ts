@@ -1,6 +1,7 @@
 import type { AgentAccessMode } from "../types";
+import { APP_STORAGE_PREFIX } from "../config/brand";
 
-export const ACCESS_MODE_STORAGE_KEY = "nano-agent-access-mode";
+export const ACCESS_MODE_STORAGE_KEY = `${APP_STORAGE_PREFIX}-access-mode`;
 
 export const ACCESS_MODE_OPTIONS: ReadonlyArray<{
   value: AgentAccessMode;

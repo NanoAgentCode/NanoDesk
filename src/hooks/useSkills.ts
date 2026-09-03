@@ -8,6 +8,7 @@ import {
   type Skill
 } from "../lib/skills";
 import { confirmAction } from "../lib/dialogs";
+import { APP_STORAGE_PREFIX } from "../config/brand";
 
 export interface UseSkillsReturn {
   skills: Skill[];
@@ -72,8 +73,8 @@ export interface UseSkillsReturn {
   handleSaveNewSkill: () => void;
 }
 
-const GITHUB_SKILLS_SOURCE_KEY = "nano-agent-github-skills-source";
-const GITHUB_SKILLS_SOURCES_KEY = "nano-agent-github-skills-sources";
+const GITHUB_SKILLS_SOURCE_KEY = `${APP_STORAGE_PREFIX}-github-skills-source`;
+const GITHUB_SKILLS_SOURCES_KEY = `${APP_STORAGE_PREFIX}-github-skills-sources`;
 
 interface GitHubSkillSource {
   id: string;
@@ -187,7 +188,7 @@ export function useSkills(setNotice: (message: string) => void): UseSkillsReturn
   const [sourceSkillPreview, setSourceSkillPreview] = useState<UseSkillsReturn["sourceSkillPreview"]>(null);
 
   const [skills, setSkills] = useState<Skill[]>(() => {
-    const saved = localStorage.getItem("nano-agent-skills");
+    const saved = localStorage.getItem(`${APP_STORAGE_PREFIX}-skills`);
     if (saved) {
       try {
         return normalizeSkills(JSON.parse(saved) as Skill[]);
@@ -206,12 +207,12 @@ export function useSkills(setNotice: (message: string) => void): UseSkillsReturn
 
   // Cleanup computer_use logic and check local skills on mount
   useEffect(() => {
-    const saved = localStorage.getItem("nano-agent-skills");
+    const saved = localStorage.getItem(`${APP_STORAGE_PREFIX}-skills`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as Skill[];
         if (parsed.some((s) => s.id === "computer_use")) {
-          localStorage.removeItem("nano-agent-skills");
+          localStorage.removeItem(`${APP_STORAGE_PREFIX}-skills`);
           setSkills(defaultSkills);
           setSelectedSkillId("text_editor");
         }
@@ -280,7 +281,7 @@ export function useSkills(setNotice: (message: string) => void): UseSkillsReturn
         }
 
         const merged = Array.from(skillMap.values());
-        localStorage.setItem("nano-agent-skills", JSON.stringify(merged));
+        localStorage.setItem(`${APP_STORAGE_PREFIX}-skills`, JSON.stringify(merged));
         return merged;
       });
     } catch (error) {
@@ -436,7 +437,7 @@ export function useSkills(setNotice: (message: string) => void): UseSkillsReturn
         });
 
         const merged = normalizeSkills(Array.from(skillMap.values()));
-        localStorage.setItem("nano-agent-skills", JSON.stringify(merged));
+        localStorage.setItem(`${APP_STORAGE_PREFIX}-skills`, JSON.stringify(merged));
         return merged;
       });
 
@@ -456,7 +457,7 @@ export function useSkills(setNotice: (message: string) => void): UseSkillsReturn
       s.id === id ? { ...s, enabled } : s
     );
     setSkills(nextSkills);
-    localStorage.setItem("nano-agent-skills", JSON.stringify(nextSkills));
+        localStorage.setItem(`${APP_STORAGE_PREFIX}-skills`, JSON.stringify(nextSkills));
   }
 
   async function handleDeleteSkill(id: string) {
@@ -468,7 +469,7 @@ export function useSkills(setNotice: (message: string) => void): UseSkillsReturn
     if (await confirmAction("确定要删除该技能吗？")) {
       const nextSkills = skills.filter((s) => s.id !== id);
       setSkills(nextSkills);
-      localStorage.setItem("nano-agent-skills", JSON.stringify(nextSkills));
+      localStorage.setItem(`${APP_STORAGE_PREFIX}-skills`, JSON.stringify(nextSkills));
       if (selectedSkillId === id) {
         setSelectedSkillId(nextSkills.length > 0 ? nextSkills[0].id : "");
       }
@@ -499,7 +500,7 @@ export function useSkills(setNotice: (message: string) => void): UseSkillsReturn
 
     const nextSkills = [...skills, newSkill];
     setSkills(nextSkills);
-    localStorage.setItem("nano-agent-skills", JSON.stringify(nextSkills));
+    localStorage.setItem(`${APP_STORAGE_PREFIX}-skills`, JSON.stringify(nextSkills));
     
     setIsAddingSkill(false);
     setSelectedSkillId(newSkill.id);

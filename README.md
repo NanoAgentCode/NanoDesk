@@ -1,6 +1,6 @@
-# NanoAgent
+# NanoDesk
 
-NanoAgent 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、React 和 TypeScript 构建。它把持久化对话、项目文件、轻量 RAG、长期记忆、Skills、MCP 工具、OCR 图片附件、Ops SSH 工作台和运行时观测集中在一个桌面客户端里，业务数据默认保存在本机 SQLite。
+NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、React 和 TypeScript 构建。它把持久化对话、项目文件、轻量 RAG、长期记忆、Skills、MCP 工具、OCR 图片附件、Ops SSH 工作台和运行时观测集中在一个桌面客户端里，业务数据默认保存在本机 SQLite。
 
 ## 核心能力
 
@@ -73,7 +73,7 @@ npm.cmd run dev
 安装 `nano` 命令行客户端（Windows）：运行 `npm.cmd run package:win` 后，双击下面生成的独立安装器：
 
 ```text
-src-tauri\target\release\bundle\cli\NanoAgent-CLI_0.1.0_x64-setup.exe
+src-tauri\target\release\bundle\cli\NanoDesk-CLI_0.1.0_x64-setup.exe
 ```
 
 安装器无需管理员权限，会将 CLI 释放到 `%USERPROFILE%\.nano` 并把该目录加入当前用户的 `PATH`。安装完成后打开新终端，即可在任意目录直接运行：
@@ -97,13 +97,15 @@ cd src-tauri
 cargo check
 ```
 
+品牌名称统一维护在根目录的 `brand.config.json`。修改后运行 `npm.cmd run brand:sync`，将名称同步到 npm、Cargo 和 Tauri 静态清单；`npm.cmd run brand:check` 用于检查清单是否一致。`bundleIdentifier`、`storagePrefix`、`projectDataDirectory` 和注册表字段属于兼容标识，修改时需要同步设计已有数据迁移。
+
 Windows 打包：
 
 ```bash
 npm.cmd run package:win
 ```
 
-`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，然后构建 CLI、Tauri 桌面端及安装包。常见产物包括 `nano.exe`、独立 CLI 安装器、`nano-agent.exe`、桌面端标准 NSIS 安装包、内置 WebView2 Offline Installer 的离线 NSIS 安装包和 MSI 安装包。离线 NSIS 包以 `-offline-setup.exe` 结尾，最终用户安装时不需要联网下载 WebView2 Runtime，但文件通常会增加百余 MB，实际大小随微软提供的离线安装器版本变化。
+`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，然后构建 CLI、Tauri 桌面端及安装包。常见产物包括 `nano.exe`、独立 CLI 安装器、`nano-desk.exe`、桌面端标准 NSIS 安装包、内置 WebView2 Offline Installer 的离线 NSIS 安装包和 MSI 安装包。离线 NSIS 包以 `-offline-setup.exe` 结尾，最终用户安装时不需要联网下载 WebView2 Runtime，但文件通常会增加百余 MB，实际大小随微软提供的离线安装器版本变化。
 
 ## 数据位置
 

@@ -1,3 +1,3 @@
 fn main() {
-    std::process::exit(nano_agent_lib::run_cli());
+    std::process::exit(nano_desk_lib::run_cli());
 }

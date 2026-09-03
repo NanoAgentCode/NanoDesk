@@ -3,6 +3,7 @@ import { ActionIcon, Button, Tooltip, UnstyledButton } from "@mantine/core";
 import type { Conversation, ProjectEntry } from "../types";
 import type { UseProjectsReturn } from "../hooks/useProjects";
 import type { MainViewContribution } from "../core/plugins";
+import { APP_NAME } from "../config/brand";
 
 interface SidebarProps {
   projects: UseProjectsReturn;
@@ -52,7 +53,7 @@ export default function Sidebar({
   return (
     <aside className={isCollapsed ? "sidebar collapsed" : "sidebar"}>
       <div className="sidebar-topbar">
-        <div className="sidebar-brand" aria-label="NanoAgent">
+        <div className="sidebar-brand" aria-label={APP_NAME}>
           <span className="nano-brand-mark" aria-hidden="true"><i /></span>
           {!isCollapsed && <p className="sidebar-slogan">本地优先，智能协作</p>}
         </div>

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "NanoAgent",
+  "productName": "NanoDesk",
   "version": "0.1.0",
   "identifier": "com.nanoagent.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "NanoAgent",
+        "title": "NanoDesk",
         "width": 1280,
         "height": 820,
         "minWidth": 960,

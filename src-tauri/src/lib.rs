@@ -1,5 +1,6 @@
 mod agent_commands;
 mod agent_runner;
+mod brand;
 mod cli;
 mod code_index;
 mod core;
@@ -1141,7 +1142,9 @@ fn run_paddle_ocr(
             "未检测到 PaddleOCR CLI。请在环境页安装 OCR，或将 paddleocr.exe 加入 PATH，也可以设置 NANO_AGENT_PADDLEOCR_BIN。".to_string(),
         )
     })?;
-    let paddle_cache_dir = root.join(".nano-agent").join("paddlex-cache");
+    let paddle_cache_dir = root
+        .join(brand::PROJECT_DATA_DIRECTORY)
+        .join("paddlex-cache");
     std::fs::create_dir_all(&paddle_cache_dir)?;
 
     let target_path_arg = target_path.to_string_lossy().to_string();
@@ -1634,7 +1637,8 @@ async fn save_chat_image_attachment(
     let root = project_root(&request.project_path)?;
     let safe_name = sanitize_attachment_file_name(&request.file_name)?;
     let relative_path = format!(
-        ".nano-agent/uploads/images/{}-{}-{}",
+        "{}/{}-{}-{}",
+        brand::IMAGE_UPLOADS_DIRECTORY,
         Utc::now().format("%Y%m%d%H%M%S%3f"),
         uuid::Uuid::new_v4(),
         safe_name
@@ -1729,7 +1733,7 @@ async fn read_chat_image_attachment(
     const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 
     let normalized = normalize_relative_path(&relative_path)?;
-    if !normalized.starts_with(".nano-agent/uploads/images/") {
+    if !normalized.starts_with(&format!("{}/", brand::IMAGE_UPLOADS_DIRECTORY)) {
         return Err(crate::error::AppError::Message(
             "只能预览对话图片附件".to_string(),
         ));
@@ -1926,7 +1930,9 @@ fn get_autostart() -> Result<bool, String> {
             Err(e) => return Err(format!("Failed to open startup registry key: {e}")),
         };
 
-        Ok(run_key.get_value::<String, _>("NanoAgent").is_ok())
+        Ok(run_key
+            .get_value::<String, _>(brand::STARTUP_REGISTRY_NAME)
+            .is_ok())
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -1954,10 +1960,10 @@ fn set_autostart(enabled: bool) -> Result<(), String> {
             // makes Windows show a console window during logon startup.
             let startup_command = format!("\"{}\"", current_exe.display());
             run_key
-                .set_value("NanoAgent", &startup_command)
+                .set_value(brand::STARTUP_REGISTRY_NAME, &startup_command)
                 .map_err(|e| format!("Failed to update startup registry value: {e}"))?;
         } else {
-            match run_key.delete_value("NanoAgent") {
+            match run_key.delete_value(brand::STARTUP_REGISTRY_NAME) {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => return Err(format!("Failed to remove startup registry value: {e}")),
@@ -1993,9 +1999,9 @@ fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
     let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])
         .map_err(|err| err.to_string())?;
 
-    let mut tray = TrayIconBuilder::with_id("nano-agent-tray")
+    let mut tray = TrayIconBuilder::with_id(brand::TRAY_ID)
         .menu(&menu)
-        .tooltip("NanoAgent")
+        .tooltip(brand::DISPLAY_NAME)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "tray_show" => {
@@ -2060,7 +2066,11 @@ pub fn run() {
             let log_dir = data_dir.join("logs");
             logging::init_system_logger(log_dir)
                 .map_err(|err| format!("failed to initialize system logger: {err}"))?;
-            logging::info("app", "NanoAgent startup", serde_json::json!({}));
+            logging::info(
+                "app",
+                &format!("{} startup", brand::DISPLAY_NAME),
+                serde_json::json!({}),
+            );
             logging::debug(
                 "app",
                 "app data directory resolved",
@@ -2069,11 +2079,11 @@ pub fn run() {
             let temp_dir = data_dir.join("temp");
             std::fs::create_dir_all(&temp_dir)
                 .map_err(|err| format!("failed to create temp directory: {err}"))?;
-            let db_path = data_dir.join("nano-agent.sqlite3");
+            let db_path = data_dir.join(brand::MAIN_DATABASE_NAME);
             let db = Database::open(db_path).map_err(|err| err.to_string())?;
-            let runtime_path = data_dir.join("nano-agent-runtime.sqlite3");
+            let runtime_path = data_dir.join(brand::RUNTIME_DATABASE_NAME);
             let runtime = RuntimeStore::open(runtime_path).map_err(|err| err.to_string())?;
-            let observability_path = data_dir.join("nano-agent-observability.sqlite3");
+            let observability_path = data_dir.join(brand::OBSERVABILITY_DATABASE_NAME);
             let observability = match SqliteObservabilitySink::open(observability_path) {
                 Ok(sink) => ObservabilityPipeline::new(vec![Box::new(sink)]),
                 Err(err) => {
@@ -2216,7 +2226,7 @@ pub fn run() {
             set_autostart
         ])
         .run(tauri::generate_context!())
-        .expect("error while running NanoAgent");
+        .unwrap_or_else(|error| panic!("error while running {}: {error}", brand::DISPLAY_NAME));
 }
 
 pub fn run_cli() -> i32 {

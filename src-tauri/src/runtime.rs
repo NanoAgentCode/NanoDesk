@@ -750,7 +750,8 @@ mod tests {
 
     fn test_db_path() -> PathBuf {
         std::env::temp_dir().join(format!(
-            "nano-agent-runtime-test-{}.sqlite3",
+            "{}-runtime-test-{}.sqlite3",
+            crate::brand::STORAGE_PREFIX,
             Uuid::new_v4()
         ))
     }

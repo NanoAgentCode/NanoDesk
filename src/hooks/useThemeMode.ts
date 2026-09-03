@@ -1,8 +1,9 @@
 import { useLayoutEffect, useState } from "react";
 import { setTheme } from "@tauri-apps/api/app";
 import type { ThemeMode } from "../types";
+import { APP_STORAGE_PREFIX } from "../config/brand";
 
-const THEME_STORAGE_KEY = "nano-agent-theme";
+const THEME_STORAGE_KEY = `${APP_STORAGE_PREFIX}-theme`;
 
 function resolveThemeMode(themeMode: ThemeMode) {
   if (themeMode === "system") {

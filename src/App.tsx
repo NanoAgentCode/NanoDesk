@@ -73,9 +73,10 @@ import {
   clampSidebarWidth,
   parseSidebarWidth
 } from "./lib/sidebarSizing";
+import { APP_STORAGE_PREFIX } from "./config/brand";
 
-const SIDEBAR_COLLAPSED_KEY = "nano-agent-sidebar-collapsed";
-const SIDEBAR_WIDTH_KEY = "nano-agent-sidebar-width";
+const SIDEBAR_COLLAPSED_KEY = `${APP_STORAGE_PREFIX}-sidebar-collapsed`;
+const SIDEBAR_WIDTH_KEY = `${APP_STORAGE_PREFIX}-sidebar-width`;
 
 function App() {
   const workspaceRef = useRef<HTMLElement | null>(null);
@@ -268,7 +269,7 @@ function App() {
       unlistenClose = unlisten;
     });
 
-    void appWindow.listen("nano-agent-show-window", () => {
+    void appWindow.listen(`${APP_STORAGE_PREFIX}-show-window`, () => {
       void showAppWindow();
     }).then((unlisten) => {
       unlistenTrayShow = unlisten;

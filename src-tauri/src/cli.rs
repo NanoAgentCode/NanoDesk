@@ -6,6 +6,7 @@ use std::thread;
 
 use uuid::Uuid;
 
+use crate::brand;
 use crate::code_index::build_project_code_index;
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
@@ -17,7 +18,6 @@ use crate::models::{
 use crate::project_files::{list_project_files, project_root};
 use crate::project_index::{build_document_index, DOCUMENT_INDEXER};
 
-const APP_IDENTIFIER: &str = "com.nanoagent.desktop";
 const EMBEDDING_CONFIG_ID: &str = "embedding-config";
 const CODE_MATCH_LIMIT: i64 = 8;
 const DOCUMENT_MATCH_LIMIT: i64 = 6;
@@ -264,7 +264,7 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         None => default_app_data_dir()?,
     };
     std::fs::create_dir_all(&data_dir)?;
-    let db_path = data_dir.join("nano-agent.sqlite3");
+    let db_path = data_dir.join(brand::MAIN_DATABASE_NAME);
     let db = Database::open(db_path.clone())?;
     let project = match &options.mode {
         SessionMode::Temporary => None,
@@ -549,13 +549,18 @@ where
 fn configure_initial_model(db: &Database) -> AppResult<ModelConfig> {
     if !io::stdin().is_terminal() {
         return Err(AppError::Message(
-            "尚未配置聊天模型。请在交互式终端运行 nano 完成首次配置，或在 NanoAgent 桌面端的“设置 > 模型”中添加模型"
-                .to_string(),
+            format!(
+                "尚未配置聊天模型。请在交互式终端运行 nano 完成首次配置，或在 {} 桌面端的“设置 > 模型”中添加模型",
+                brand::DISPLAY_NAME
+            ),
         ));
     }
 
     let theme = CliTheme::stdout();
-    println!("{}", theme.brand("◆ NanoAgent 首次配置"));
+    println!(
+        "{}",
+        theme.brand(format!("◆ {} 首次配置", brand::DISPLAY_NAME))
+    );
     println!(
         "{}",
         theme.muted("尚未发现聊天模型。完成下面几项配置后即可开始使用。")
@@ -840,11 +845,18 @@ async fn build_system_message(
         .collect::<Vec<_>>()
         .join("\n");
     let session_instruction = if project.is_some() {
-        "你是 NanoAgent 的终端助手。回答应准确、简明、可执行。当前项目会话会保存到 NanoAgent 本地数据库，可在退出后恢复。"
+        format!(
+            "你是 {} 的终端助手。回答应准确、简明、可执行。当前项目会话会保存到 {} 本地数据库，可在退出后恢复。",
+            brand::DISPLAY_NAME,
+            brand::DISPLAY_NAME
+        )
     } else {
-        "你是 NanoAgent 的终端助手。回答应准确、简明、可执行。当前临时会话只保存在进程内，退出后不会写入对话历史。"
+        format!(
+            "你是 {} 的终端助手。回答应准确、简明、可执行。当前临时会话只保存在进程内，退出后不会写入对话历史。",
+            brand::DISPLAY_NAME
+        )
     };
-    let mut sections = vec![session_instruction.to_string()];
+    let mut sections = vec![session_instruction];
     if let Some(profile_context) = crate::profile::load_profile_context(db)? {
         sections.push(profile_context);
     }
@@ -930,7 +942,7 @@ fn default_app_data_dir() -> AppResult<PathBuf> {
     {
         env::var_os("APPDATA")
             .map(PathBuf::from)
-            .map(|path| path.join(APP_IDENTIFIER))
+            .map(|path| path.join(brand::IDENTIFIER))
             .ok_or_else(|| AppError::Message("无法确定 APPDATA 目录".to_string()))
     }
     #[cfg(target_os = "macos")]
@@ -940,18 +952,18 @@ fn default_app_data_dir() -> AppResult<PathBuf> {
             .map(|path| {
                 path.join("Library")
                     .join("Application Support")
-                    .join(APP_IDENTIFIER)
+                    .join(brand::IDENTIFIER)
             })
             .ok_or_else(|| AppError::Message("无法确定 HOME 目录".to_string()));
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         if let Some(path) = env::var_os("XDG_DATA_HOME") {
-            return Ok(PathBuf::from(path).join(APP_IDENTIFIER));
+            return Ok(PathBuf::from(path).join(brand::IDENTIFIER));
         }
         return env::var_os("HOME")
             .map(PathBuf::from)
-            .map(|path| path.join(".local").join("share").join(APP_IDENTIFIER))
+            .map(|path| path.join(".local").join("share").join(brand::IDENTIFIER))
             .ok_or_else(|| AppError::Message("无法确定 HOME 目录".to_string()));
     }
 }
@@ -1136,13 +1148,19 @@ fn print_interactive_help() {
 
 fn print_help() {
     let theme = CliTheme::stdout();
-    println!("{}", theme.brand("◆ NanoAgent 终端交互客户端"));
+    println!(
+        "{}",
+        theme.brand(format!("◆ {} 终端交互客户端", brand::DISPLAY_NAME))
+    );
     println!();
     println!("{}", theme.label("用法"));
     println!("  {}", theme.command("nano [选项] [问题]"));
     println!();
     println!("{}", theme.label("默认行为"));
-    println!("  在当前目录启动项目问答，并将项目会话保存到 NanoAgent 本地数据库。");
+    println!(
+        "  在当前目录启动项目问答，并将项目会话保存到 {} 本地数据库。",
+        brand::DISPLAY_NAME
+    );
     println!("  首次使用且没有聊天模型时，将引导完成模型配置。");
     println!();
     println!("{}", theme.label("选项"));
@@ -1160,7 +1178,7 @@ fn print_help() {
         ("-p, --prompt <问题>", "单次提问后退出"),
         ("-m, --model <模型>", "按名称、模型名或 ID 选择模型"),
         ("    --no-index", "使用已有项目索引，不在启动时重建"),
-        ("    --data-dir <目录>", "覆盖 NanoAgent 应用数据目录"),
+        ("    --data-dir <目录>", "覆盖应用数据目录"),
         ("-h, --help", "显示帮助"),
         ("-V, --version", "显示版本"),
     ] {
@@ -1297,7 +1315,8 @@ mod tests {
         let canonical_project =
             project_root(&project.to_string_lossy()).expect("project should resolve");
         let project_path = display_project_path(&canonical_project);
-        let db = Database::open(data_dir.join("nano-agent.sqlite3")).expect("database should open");
+        let db =
+            Database::open(data_dir.join(brand::MAIN_DATABASE_NAME)).expect("database should open");
         let conversation = db
             .create_conversation(ConversationDraft {
                 title: Some("Inspect me".to_string()),
