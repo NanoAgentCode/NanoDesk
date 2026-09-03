@@ -19,6 +19,7 @@ import {
   Cpu,
   Edit,
   Edit3,
+  FolderOpen,
   FolderPlus,
   Power,
   Trash2,
@@ -28,6 +29,7 @@ import {
   archiveConversation,
   deleteConversation,
   minimizeToTray,
+  openProjectLocation,
   quitApp,
   showAppWindow
 } from "./api";
@@ -836,19 +838,37 @@ function App() {
           )}
 
           {projects.contextMenu.project && (
-            <button
-              className="custom-context-menu-item danger-action"
-              onClick={() => {
-                if (projects.contextMenu.project) {
-                  projects.handleRemoveProjectApproval(projects.contextMenu.project);
-                }
-                projects.setContextMenu((prev) => ({ ...prev, visible: false }));
-              }}
-              type="button"
-            >
-              <Trash2 size={14} />
-              <span>移除项目入口</span>
-            </button>
+            <>
+              <button
+                className="custom-context-menu-item"
+                onClick={() => {
+                  const project = projects.contextMenu.project;
+                  projects.setContextMenu((prev) => ({ ...prev, visible: false }));
+                  if (project) {
+                    void openProjectLocation(project.path).catch((error) => {
+                      setNotice(`打开项目目录失败：${String(error)}`);
+                    });
+                  }
+                }}
+                type="button"
+              >
+                <FolderOpen size={14} />
+                <span>在资源管理器中打开</span>
+              </button>
+              <button
+                className="custom-context-menu-item danger-action"
+                onClick={() => {
+                  if (projects.contextMenu.project) {
+                    projects.handleRemoveProjectApproval(projects.contextMenu.project);
+                  }
+                  projects.setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+                type="button"
+              >
+                <Trash2 size={14} />
+                <span>移除项目入口</span>
+              </button>
+            </>
           )}
         </div>
       )}

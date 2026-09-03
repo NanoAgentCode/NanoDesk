@@ -2202,6 +2202,7 @@ pub fn run() {
             save_chat_image_attachment,
             read_chat_image_attachment,
             project_files::open_project_file_location,
+            project_files::open_project_location,
             execute_bash_command,
             write_local_file,
             read_local_file,

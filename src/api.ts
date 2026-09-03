@@ -484,6 +484,10 @@ export function openProjectFileLocation(projectPath: string, relativePath: strin
   return invoke<string>("open_project_file_location", { projectPath, relativePath });
 }
 
+export function openProjectLocation(projectPath: string) {
+  return invoke<string>("open_project_location", { projectPath });
+}
+
 export function openExternalUrl(url: string) {
   return invoke<void>("plugin:opener|open_url", { url });
 }

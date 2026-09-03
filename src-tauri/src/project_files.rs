@@ -186,6 +186,20 @@ pub async fn open_project_file_location(
     Ok(folder.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+pub async fn open_project_location(project_path: String) -> AppResult<String> {
+    open_project_location_with(&project_path, open_directory_in_file_manager)
+}
+
+fn open_project_location_with<F>(project_path: &str, open_directory: F) -> AppResult<String>
+where
+    F: FnOnce(&Path) -> AppResult<()>,
+{
+    let root = project_root(&project_path)?;
+    open_directory(&root)?;
+    Ok(root.to_string_lossy().to_string())
+}
+
 pub fn project_root(project_path: &str) -> AppResult<PathBuf> {
     let root = PathBuf::from(project_path);
     let canonical = root
@@ -440,5 +454,72 @@ fn open_file_location_in_file_manager(
             .spawn()
             .map_err(|err| AppError::Message(format!("打开文件管理器失败: {err}")))?;
         Ok(())
+    }
+}
+
+fn open_directory_in_file_manager(directory: &Path) -> AppResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(directory)
+            .spawn()
+            .map_err(|err| AppError::Message(format!("打开资源管理器失败: {err}")))?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(directory)
+            .spawn()
+            .map_err(|err| AppError::Message(format!("打开访达失败: {err}")))?;
+        Ok(())
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(directory)
+            .spawn()
+            .map_err(|err| AppError::Message(format!("打开文件管理器失败: {err}")))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn open_project_location_validates_and_opens_the_canonical_directory() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after the Unix epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "nano-agent-open-project-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&directory).expect("test directory should be created");
+        let canonical = directory
+            .canonicalize()
+            .expect("test directory should be canonicalized");
+        let mut opened = None;
+
+        let result = open_project_location_with(
+            directory.to_string_lossy().as_ref(),
+            |resolved_directory| {
+                opened = Some(resolved_directory.to_path_buf());
+                Ok(())
+            },
+        );
+
+        assert_eq!(
+            result.expect("project directory should open"),
+            canonical.to_string_lossy()
+        );
+        assert_eq!(opened.as_deref(), Some(canonical.as_path()));
+        std::fs::remove_dir(&directory).expect("test directory should be removed");
     }
 }
