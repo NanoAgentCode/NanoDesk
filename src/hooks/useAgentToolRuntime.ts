@@ -129,7 +129,8 @@ export function useAgentToolRuntime({
       await appendMessage({
         conversation_id: conversationId,
         role: "user",
-        content: `[工具执行结果: ${toolCall.name}] 执行结果如下：\n\n${execution.result_text}`
+        content: `[工具执行结果: ${toolCall.name}] 执行结果如下：\n\n${execution.result_text}`,
+        metadata: { exclude_from_profile: true }
       });
       const updatedMessages = await listMessages(conversationId);
       setMessages(updatedMessages);
@@ -165,7 +166,8 @@ export function useAgentToolRuntime({
         await appendMessage({
           conversation_id: conversationId,
           role: "user",
-          content: `[工具执行结果: ${toolCall.name}] 执行失败: ${String(error)}`
+          content: `[工具执行结果: ${toolCall.name}] 执行失败: ${String(error)}`,
+          metadata: { exclude_from_profile: true }
         });
         const updatedMessages = await listMessages(conversationId);
         setMessages(updatedMessages);
@@ -219,7 +221,8 @@ export function useAgentToolRuntime({
       await appendMessage({
         conversation_id: conversationId,
         role: "user",
-        content: `[工具执行结果: ${toolCall.name}] 用户拒绝了执行该工具请求。`
+        content: `[工具执行结果: ${toolCall.name}] 用户拒绝了执行该工具请求。`,
+        metadata: { exclude_from_profile: true }
       });
       const updatedMessages = await listMessages(conversationId);
       setMessages(updatedMessages);

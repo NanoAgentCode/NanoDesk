@@ -1663,6 +1663,36 @@ mod tests {
     }
 
     #[test]
+    fn system_generated_tool_results_are_not_collected_for_profile_analysis() {
+        let db = enabled_database();
+        db.append_message(MessageDraft {
+            conversation_id: "conversation-1".to_string(),
+            role: "user".to_string(),
+            content: "[工具执行结果: read_file] 我主要使用 Rust".to_string(),
+            metadata: Some(crate::models::MessageMetadata {
+                web_search: None,
+                exclude_from_profile: Some(true),
+                context_summary: None,
+            }),
+        })
+        .expect("system-generated tool result should be appended");
+
+        let observation_count: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM profile_observations", [], |row| {
+                row.get(0)
+            })
+            .expect("count should load");
+        let message_count: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
+            .expect("message count should load");
+
+        assert_eq!(observation_count, 0);
+        assert_eq!(message_count, 1);
+    }
+
+    #[test]
     fn preprocessing_lease_epoch_rejects_a_stale_worker() {
         let db = enabled_database();
         append_user_message(&db, "我主要使用 Rust");
