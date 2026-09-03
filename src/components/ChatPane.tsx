@@ -522,7 +522,7 @@ export default function ChatPane({
               disabled={busy || uploadingImageAttachment}
               variant="subtle"
               >
-                <ImagePlus size={18} />
+                <ImagePlus size={22} />
               </MantineActionIcon>
             </Tooltip>
             <Tooltip label="新建空白对话" openDelay={450}>
