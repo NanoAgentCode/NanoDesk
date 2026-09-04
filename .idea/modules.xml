@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/NanoAgent.iml" filepath="$PROJECT_DIR$/.idea/NanoAgent.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/NanoDesk.iml" filepath="$PROJECT_DIR$/.idea/NanoDesk.iml" />
     </modules>
   </component>
 </project>

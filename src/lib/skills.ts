@@ -1,4 +1,4 @@
-import { LEGACY_APP_NAME } from "../config/brand";
+import { APP_NAME } from "../config/brand";
 
 export interface Skill {
   id: string;
@@ -74,7 +74,7 @@ export const defaultSkills: Skill[] = [
     description: "通过与 AI 进行自然语言交互，动态生成、设计并自动打包一个新的 Agent 技能（Skill）。",
     enabled: true,
     parameters: {
-      skills_root: `C:\\Users\\13439\\Desktop\\${LEGACY_APP_NAME}\\.agents\\skills`
+      skills_root: `C:\\Users\\13439\\Desktop\\${APP_NAME}\\.agents\\skills`
     },
     docUrl: "https://github.com/anthropics/skills"
   },

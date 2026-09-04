@@ -49,7 +49,7 @@ impl Database {
                 sqlite3_vec_init as *const ()
             )));
         });
-        let paths = storage::DatabasePaths::from_legacy_path(&path)?;
+        let paths = storage::DatabasePaths::from_base_path(&path)?;
         let conn = Connection::open(&paths.conversations)?;
         let config_conn = Connection::open(&paths.config)?;
         let knowledge_conn = Connection::open(&paths.knowledge)?;
@@ -60,7 +60,7 @@ impl Database {
             knowledge_conn,
             project_conn,
         };
-        db.initialize_split_storage(&paths)?;
+        db.initialize_split_storage()?;
         Ok(db)
     }
 
@@ -1481,15 +1481,16 @@ mod tests {
     }
 
     #[test]
-    fn legacy_model_configs_receive_generation_parameter_defaults() {
+    fn existing_model_configs_receive_generation_parameter_defaults() {
         let path = std::env::temp_dir().join(format!(
-            "nano-model-config-migration-{}.sqlite3",
+            "nanodesk-model-config-migration-{}.sqlite3",
             uuid::Uuid::new_v4()
         ));
-        let split_paths = storage::DatabasePaths::from_legacy_path(&path)
+        let split_paths = storage::DatabasePaths::from_base_path(&path)
             .expect("split database paths should resolve");
         {
-            let conn = Connection::open(&path).expect("legacy database should open");
+            let conn = Connection::open(&split_paths.config)
+                .expect("existing config database should open");
             conn.execute_batch(
                 "
                 CREATE TABLE model_configs (
@@ -1509,17 +1510,17 @@ mod tests {
                 INSERT INTO model_configs
                     (id, name, provider, base_url, model, api_key, created_at, updated_at)
                 VALUES
-                    ('legacy', 'Legacy', 'openai-compatible', 'http://localhost:11434/v1',
-                     'legacy-model', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                    ('existing', 'Existing', 'openai-compatible', 'http://localhost:11434/v1',
+                     'existing-model', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
                 ",
             )
-            .expect("legacy schema should be created");
+            .expect("existing schema should be created");
         }
 
         let db = Database::open(path.clone()).expect("database migration should succeed");
         let loaded = db
-            .get_model_config("legacy")
-            .expect("legacy model should remain readable");
+            .get_model_config("existing")
+            .expect("existing model should remain readable");
         assert_eq!(loaded.temperature, 0.4);
         assert_eq!(loaded.max_tokens, None);
         assert_eq!(loaded.context_window, 32_768);
@@ -1527,7 +1528,6 @@ mod tests {
         assert_eq!(loaded.reasoning_effort, "");
 
         drop(db);
-        std::fs::remove_file(path).expect("temporary database should be removed");
         for split_path in [
             split_paths.config,
             split_paths.conversations,

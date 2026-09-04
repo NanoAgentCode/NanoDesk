@@ -10,7 +10,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - 流式回复、reasoning/thinking 片段展示、动态 Token 预算和保留原始消息的结构化滚动摘要，以及 GFM/KaTeX 数学公式渲染。
 - 轻量 RAG：拖拽文件、抽取文本、分块、生成 embedding，并在对话时召回相关片段。
 - 项目索引中心：为项目构建可插拔索引，当前包含代码实体/关系索引和文档片段索引，代码、配置、说明、数据文件问答会优先召回项目级上下文。
-- 图片附件和 OCR：图片保存到 `.nano-agent/uploads/images/`，消息中渲染缩略图，点击可预览，并可通过 `ocr_image` 调用本机 PaddleOCR。
+- 图片附件和 OCR：图片保存到 `.nanodesk/uploads/images/`，消息中渲染缩略图，点击可预览，并可通过 `ocr_image` 调用本机 PaddleOCR。
 - 归档预览：设置页的 Archive 预览复用普通聊天的消息渲染链路，项目会话使用 `project_path`，普通会话回退到 app data 下的 `temp/`。
 - 项目工作区：添加或打开已有项目目录，可从项目条目右键菜单在系统资源管理器中打开目录；支持构建轻量文件索引、浏览文件树、读写/重命名/删除项目文件和执行项目命令。
 - 智能文件链接：聊天 Markdown 中的项目相对路径、裸文件名和已有文件链接会自动解析为项目内真实相对路径；外部 URL 会弹出到系统浏览器，避免应用内跳转。
@@ -19,7 +19,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - MCP 管理：支持 stdio、SSE、streamable HTTP，连接后把工具注入模型上下文。
 - Skills 管理：同步 Anthropic Skills、维护本地 Skills 目录，并在系统提示中注入启用技能。
 - Ops 工作台：管理 SSH 服务器、测试连接、上传文件、打开交互式 SSH 终端。
-- 独立诊断链路：LLM、MCP、Ops、部分工具和数据库操作写入 `nano-agent-observability.sqlite3`；系统操作日志按天写入 `logs/` 并保留 7 天。
+- 独立诊断链路：LLM、MCP、Ops、部分工具和数据库操作写入 `nanodesk-observability.sqlite3`；系统操作日志按天写入 `logs/` 并保留 7 天。
 - 深色、浅色、跟随系统主题，以及可配置的关闭行为、系统托盘和 Windows 开机自启动。
 
 ## 文档
@@ -112,20 +112,19 @@ npm.cmd run package:win
 运行时数据保存在 Tauri app data 目录下：
 
 ```text
-nano-agent-config.sqlite3          模型、MCP 与 Ops 配置
-nano-agent-conversations.sqlite3   会话、RAG 与用户画像
-nano-agent-knowledge.sqlite3       条目、长期记忆、向量与知识图谱
-nano-agent-project-index.sqlite3   代码与项目文档索引
-nano-agent-runtime.sqlite3         Agent 运行时数据
-nano-agent-observability.sqlite3   观测数据
-nano-agent.sqlite3                 旧版业务库迁移源（升级后保留、不再写入）
+nanodesk-config.sqlite3          模型、MCP 与 Ops 配置
+nanodesk-conversations.sqlite3   会话、RAG 与用户画像
+nanodesk-knowledge.sqlite3       条目、长期记忆、向量与知识图谱
+nanodesk-project-index.sqlite3   代码与项目文档索引
+nanodesk-runtime.sqlite3         Agent 运行时数据
+nanodesk-observability.sqlite3   观测数据
 settings.json                      Tavily API key
 logs/                              按天滚动的系统操作日志（保留 7 天）
 skills/                            本地 Skills 目录
 temp/                              无项目上下文时的临时工作目录
 ```
 
-项目内图片附件保存在对应根目录下的 `.nano-agent/uploads/images/`。普通对话没有真实项目路径时，会使用 app data 下的 `temp/` 作为附件和工具工作目录。
+项目内图片附件保存在对应根目录下的 `.nanodesk/uploads/images/`。普通对话没有真实项目路径时，会使用 app data 下的 `temp/` 作为附件和工具工作目录。
 
 ## 项目结构
 

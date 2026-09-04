@@ -14,9 +14,9 @@ describe("brand configuration", () => {
     expect(brandConfig.desktopBinaryName).toBe("nano-desk");
   });
 
-  it("keeps existing persisted data identifiers compatible", () => {
-    expect(APP_IDENTIFIER).toBe("com.nanoagent.desktop");
-    expect(APP_STORAGE_PREFIX).toBe("nano-agent");
-    expect(PROJECT_DATA_DIRECTORY).toBe(".nano-agent");
+  it("uses NanoDesk identifiers for new persisted data", () => {
+    expect(APP_IDENTIFIER).toBe("com.nanodesk.desktop");
+    expect(APP_STORAGE_PREFIX).toBe("nanodesk");
+    expect(PROJECT_DATA_DIRECTORY).toBe(".nanodesk");
   });
 });

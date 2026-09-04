@@ -5,8 +5,7 @@ pub const STORAGE_PREFIX: &str = env!("APP_STORAGE_PREFIX");
 pub const PROJECT_DATA_DIRECTORY: &str = env!("APP_PROJECT_DATA_DIRECTORY");
 pub const STARTUP_REGISTRY_NAME: &str = env!("APP_STARTUP_REGISTRY_NAME");
 pub const PLUGIN_NAMESPACE: &str = env!("APP_PLUGIN_NAMESPACE");
-pub const LEGACY_DATABASE_NAME: &str = concat!(env!("APP_STORAGE_PREFIX"), ".sqlite3");
-pub const MAIN_DATABASE_NAME: &str = LEGACY_DATABASE_NAME;
+pub const MAIN_DATABASE_NAME: &str = concat!(env!("APP_STORAGE_PREFIX"), ".sqlite3");
 pub const RUNTIME_DATABASE_NAME: &str = concat!(env!("APP_STORAGE_PREFIX"), "-runtime.sqlite3");
 pub const OBSERVABILITY_DATABASE_NAME: &str =
     concat!(env!("APP_STORAGE_PREFIX"), "-observability.sqlite3");

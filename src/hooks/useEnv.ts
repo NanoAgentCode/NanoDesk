@@ -165,7 +165,7 @@ export function useEnv(setNotice: (message: string) => void): UseEnvReturn {
       if (finalStatus.paddleocr) {
         setNotice("PaddleOCR 已安装。首次执行 OCR 时会按需准备 PP-OCRv6 small 模型。");
       } else {
-        setNotice("PaddleOCR 已尝试安装，但仍未检测到 paddleocr CLI。请重新检测环境，或在启动前设置 NANO_AGENT_PADDLEOCR_BIN。");
+        setNotice("PaddleOCR 已尝试安装，但仍未检测到 paddleocr CLI。请重新检测环境，或在启动前设置 NANODESK_PADDLEOCR_BIN。");
       }
     } catch (error) {
       console.error("PaddleOCR installation failed:", error);

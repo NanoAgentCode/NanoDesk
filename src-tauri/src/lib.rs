@@ -1139,7 +1139,7 @@ fn run_paddle_ocr(
 
     let paddleocr_bin = find_paddleocr_binary(None).ok_or_else(|| {
         crate::error::AppError::Message(
-            "未检测到 PaddleOCR CLI。请在环境页安装 OCR，或将 paddleocr.exe 加入 PATH，也可以设置 NANO_AGENT_PADDLEOCR_BIN。".to_string(),
+            "未检测到 PaddleOCR CLI。请在环境页安装 OCR，或将 paddleocr.exe 加入 PATH，也可以设置 NANODESK_PADDLEOCR_BIN。".to_string(),
         )
     })?;
     let paddle_cache_dir = root
@@ -1246,7 +1246,7 @@ fn run_paddleocr_with_timeout(
     command.stderr(std::process::Stdio::piped());
     let mut child = command.spawn().map_err(|err| {
         crate::error::AppError::Message(format!(
-            "未能启动 PaddleOCR。请先安装：python -m pip install paddleocr paddlepaddle；如 paddleocr 不在 PATH，可设置 NANO_AGENT_PADDLEOCR_BIN。原始错误：{err}"
+            "未能启动 PaddleOCR。请先安装：python -m pip install paddleocr paddlepaddle；如 paddleocr 不在 PATH，可设置 NANODESK_PADDLEOCR_BIN。原始错误：{err}"
         ))
     })?;
 
@@ -1553,7 +1553,7 @@ fn paddleocr_from_windows_user_scripts() -> Option<String> {
 }
 
 fn find_paddleocr_binary(python_path: Option<&str>) -> Option<String> {
-    if let Ok(bin) = std::env::var("NANO_AGENT_PADDLEOCR_BIN") {
+    if let Ok(bin) = std::env::var("NANODESK_PADDLEOCR_BIN") {
         let bin = bin.trim();
         if !bin.is_empty() && std::path::Path::new(bin).is_file() {
             return Some(bin.to_string());

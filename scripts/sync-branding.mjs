@@ -19,7 +19,6 @@ for (const field of [
   "cliRegistryPath",
   "cliUninstallKey",
   "pluginNamespace",
-  "legacyDisplayName",
   "repository"
 ]) {
   if (typeof config[field] !== "string" || !config[field].trim()) {

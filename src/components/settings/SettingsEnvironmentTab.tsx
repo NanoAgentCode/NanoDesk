@@ -137,7 +137,7 @@ export default function SettingsEnvironmentTab({ env }: SettingsEnvironmentTabPr
             <span className="spinner">⏳</span> {env.envInstallProgress}
           </div>
         )}
-        <p className="env-note">OCR 工具会调用本机 paddleocr，并使用 PP-OCRv6 small 检测与识别模型；会自动检查 PATH、Python Scripts 目录和 NANO_AGENT_PADDLEOCR_BIN。</p>
+        <p className="env-note">OCR 工具会调用本机 paddleocr，并使用 PP-OCRv6 small 检测与识别模型；会自动检查 PATH、Python Scripts 目录和 NANODESK_PADDLEOCR_BIN。</p>
       </div>
     </div>
   );
