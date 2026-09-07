@@ -9,6 +9,8 @@ import {
   indexRagFile,
   listRelevantMemories,
   getProfileContext,
+  listAgentRunTimelines,
+  listAgentRuns,
   listMessages,
   listProjectFiles,
   listRagFiles,
@@ -21,6 +23,9 @@ import { prepareBudgetedContext as prepareContextWithinBudget } from "../lib/con
 import { isSupportedImageAttachmentFile } from "../lib/imageAttachments";
 import {
   resolveUserMemoryRoute,
+  buildAutomaticClarificationAnswers,
+  findPendingClarification,
+  formatClarificationAnswerMessage,
   type ParsedToolCall
 } from "../lib/messageHelpers";
 import {
@@ -38,7 +43,7 @@ import {
   useChatAttachments
 } from "./useChatAttachments";
 import type {
-  AgentAccessMode, AgentRun, AgentToolCall, ChatMessage, ChatStreamEvent, Memory,
+  AgentAccessMode, AgentClarificationAnswer, AgentClarificationRequest, AgentRun, AgentToolCall, ChatMessage, ChatStreamEvent, Memory,
   ChatImageAttachment, Conversation, Item, PersistedMessage, ProjectEntry, ProjectFileEntry
 } from "../types";
 import type { UseProjectsReturn } from "./useProjects";
@@ -83,6 +88,7 @@ export interface UseChatReturn {
   setMessageToolCalls: React.Dispatch<React.SetStateAction<Record<string, AgentToolCall>>>;
   conversationRunIds: Record<string, string>;
   setConversationRunIds: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  clarificationFallbackIds: string[];
   uploadingImageAttachment: boolean;
   pendingImageAttachments: ChatImageAttachment[];
   removePendingImageAttachment: (relativePath: string) => void;
@@ -106,6 +112,12 @@ export interface UseChatReturn {
   handleSendMessage: () => Promise<void>;
   handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  handleClarificationAnswer: (
+    messageId: string,
+    request: AgentClarificationRequest,
+    answers: AgentClarificationAnswer[],
+    automatic?: boolean
+  ) => Promise<void>;
   handleCloseConversation: () => void;
   handleRagFiles: (files: FileList | File[]) => Promise<void>;
   handleImageFiles: (files: FileList | File[]) => Promise<number>;
@@ -144,6 +156,7 @@ export function useChat({
 }: UseChatArgs): UseChatReturn {
   const messageLoadRequestRef = useRef(0);
   const activeConversationIdRef = useRef("");
+  const autoClarificationIdsRef = useRef(new Set<string>());
 
   // ── Sub-hooks ──
   const conv = useConversations(setNotice, model, projects, showModelConfig, activeSettingsTab);
@@ -159,6 +172,7 @@ export function useChat({
   const [messages, setMessages] = useState<PersistedMessage[]>([]);
   const [messageReasoning, setMessageReasoning] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [clarificationFallbackIds, setClarificationFallbackIds] = useState<string[]>([]);
   const {
     executingToolMessageId,
     setExecutingToolMessageId,
@@ -196,6 +210,20 @@ export function useChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conv.activeConversationId]);
 
+  useEffect(() => {
+    if (accessMode === "ask" || busy) return;
+    const pending = findPendingClarification(messages);
+    if (
+      !pending ||
+      autoClarificationIdsRef.current.has(pending.messageId) ||
+      clarificationFallbackIds.includes(pending.messageId)
+    ) return;
+    autoClarificationIdsRef.current.add(pending.messageId);
+    const answers = buildAutomaticClarificationAnswers(pending.request);
+    void handleClarificationAnswer(pending.messageId, pending.request, answers, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessMode, busy, messages, clarificationFallbackIds]);
+
   // ── Tauri drag-drop listener ──
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -227,8 +255,28 @@ export function useChat({
     const requestId = ++messageLoadRequestRef.current;
     try {
       const nextMessages = await listMessages(conversationId);
+      const timelines = await listAgentRunTimelines(conversationId, 20).catch((error) => {
+        console.error("Failed to restore agent runtime state:", error);
+        return [];
+      });
       if (requestId === messageLoadRequestRef.current && activeConversationIdRef.current === conversationId) {
         setMessages(nextMessages);
+        const restoredToolCalls = timelines
+          .flatMap((timeline) => timeline.tool_calls)
+          .reduce<Record<string, AgentToolCall>>((current, toolCall) => {
+            current[toolCall.message_id] = toolCall;
+            return current;
+          }, {});
+        setMessageToolCalls(restoredToolCalls);
+        const activeRun = timelines.find((timeline) =>
+          timeline.run.status === "awaiting_tool" || timeline.run.status === "awaiting_clarification"
+        )?.run;
+        setConversationRunIds((current) => {
+          const next = { ...current };
+          if (activeRun) next[conversationId] = activeRun.id;
+          else delete next[conversationId];
+          return next;
+        });
       }
     } catch (error) {
       if (requestId === messageLoadRequestRef.current) {
@@ -621,6 +669,53 @@ export function useChat({
     }
   }
 
+  async function handleClarificationAnswer(
+    messageId: string,
+    request: AgentClarificationRequest,
+    answers: AgentClarificationAnswer[],
+    automatic = false
+  ) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const projectHint = conv.getConversationProjectHint();
+      const conversationId = await conv.ensureConversation(projectHint);
+      const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
+      let runId = conversationRunIds[conversationId] || null;
+      if (!runId) {
+        const runs = await listAgentRuns(conversationId, 20);
+        runId = runs.find((run) => run.status === "awaiting_clarification")?.id || null;
+      }
+      const answerMessage = await appendMessage({
+        conversation_id: conversationId,
+        role: "user",
+        content: formatClarificationAnswerMessage(messageId, request, answers, automatic),
+        metadata: { exclude_from_profile: true }
+      });
+      if (runId) {
+        setConversationRunIds((current) => ({ ...current, [conversationId]: runId! }));
+        await safeRecordAgentStep({
+          run_id: runId,
+          kind: "clarification",
+          status: "completed",
+          input_summary: `questions=${request.questions.length}`,
+          output_summary: automatic ? "policy_auto_selected" : "user_selected",
+          metadata_json: JSON.stringify({ message_id: messageId, answer_message_id: answerMessage.id, automatic })
+        });
+      }
+      const updatedMessages = await listMessages(conversationId);
+      setMessages(updatedMessages);
+      setClarificationFallbackIds((current) => current.filter((id) => id !== messageId));
+      await triggerLlmContinue(conversationId, updatedMessages, projectForRequest, runId);
+    } catch (error) {
+      console.error("Clarification answer failed:", error);
+      setClarificationFallbackIds((current) => current.includes(messageId) ? current : [...current, messageId]);
+      setNotice(`提交澄清结果失败：${String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // ── Close conversation ──
   function handleCloseConversation() {
     conv.setActiveConversationId("");
@@ -804,6 +899,7 @@ export function useChat({
     executingToolMessageId, setExecutingToolMessageId,
     messageToolCalls, setMessageToolCalls,
     conversationRunIds, setConversationRunIds,
+    clarificationFallbackIds,
     uploadingImageAttachment: attachments.uploadingImageAttachment,
     pendingImageAttachments: attachments.pendingImageAttachments,
     removePendingImageAttachment: attachments.removePendingImageAttachment,
@@ -830,6 +926,7 @@ export function useChat({
     handleSendMessage,
     handleExecuteTool,
     handleRejectTool,
+    handleClarificationAnswer,
     handleCloseConversation,
 
     // RAG handlers

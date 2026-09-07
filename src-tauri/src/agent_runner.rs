@@ -11,6 +11,31 @@ pub struct AgentModelOutputResolution {
     pub run_id: String,
     pub status: String,
     pub tool_call: Option<crate::runtime::AgentToolCall>,
+    pub clarification: Option<AgentClarificationRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentClarificationOption {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub recommended: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentClarificationQuestion {
+    pub id: String,
+    pub prompt: String,
+    pub options: Vec<AgentClarificationOption>,
+    #[serde(default = "default_true")]
+    pub allow_custom: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentClarificationRequest {
+    pub questions: Vec<AgentClarificationQuestion>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,6 +102,66 @@ pub fn parse_tool_call(
     plugins.validate_agent_tool_args(&name, &args)?;
 
     Ok(Some(ParsedToolCall { name, args }))
+}
+
+pub fn parse_clarification(content: &str) -> AppResult<Option<AgentClarificationRequest>> {
+    let Some(open_start) = content.find("<clarification>") else {
+        return Ok(None);
+    };
+    let body_start = open_start + "<clarification>".len();
+    let body_end = content[body_start..]
+        .find("</clarification>")
+        .map(|offset| body_start + offset)
+        .ok_or_else(|| AppError::Message("clarification closing tag is missing".to_string()))?;
+    let request: AgentClarificationRequest =
+        serde_json::from_str(content[body_start..body_end].trim())
+            .map_err(|err| AppError::Message(format!("invalid clarification JSON: {err}")))?;
+    validate_clarification(&request)?;
+    Ok(Some(request))
+}
+
+fn validate_clarification(request: &AgentClarificationRequest) -> AppResult<()> {
+    if request.questions.is_empty() || request.questions.len() > 3 {
+        return Err(AppError::Message(
+            "clarification must contain between 1 and 3 questions".to_string(),
+        ));
+    }
+    let mut question_ids = std::collections::BTreeSet::new();
+    for question in &request.questions {
+        if question.id.trim().is_empty() || question.prompt.trim().is_empty() {
+            return Err(AppError::Message(
+                "clarification question id and prompt are required".to_string(),
+            ));
+        }
+        if !question_ids.insert(question.id.trim()) {
+            return Err(AppError::Message(
+                "clarification question ids must be unique".to_string(),
+            ));
+        }
+        if question.options.len() < 2 || question.options.len() > 5 {
+            return Err(AppError::Message(
+                "clarification questions must contain between 2 and 5 options".to_string(),
+            ));
+        }
+        let mut option_ids = std::collections::BTreeSet::new();
+        for option in &question.options {
+            if option.id.trim().is_empty() || option.label.trim().is_empty() {
+                return Err(AppError::Message(
+                    "clarification option id and label are required".to_string(),
+                ));
+            }
+            if !option_ids.insert(option.id.trim()) {
+                return Err(AppError::Message(
+                    "clarification option ids must be unique within a question".to_string(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub fn parse_args_json(args_json: &str) -> AppResult<BTreeMap<String, String>> {
@@ -155,4 +240,30 @@ fn parse_arg_tags(body: &str) -> BTreeMap<String, String> {
         cursor = value_end + close_tag.len();
     }
     args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_structured_clarification() {
+        let parsed = parse_clarification(
+            r#"<clarification>{"questions":[{"id":"theme","prompt":"选择主题？","options":[{"id":"gallery","label":"画廊对比","recommended":true},{"id":"keep","label":"保持现状"}],"allow_custom":true}]}</clarification>"#,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(parsed.questions.len(), 1);
+        assert_eq!(parsed.questions[0].options[0].id, "gallery");
+        assert!(parsed.questions[0].options[0].recommended);
+    }
+
+    #[test]
+    fn rejects_duplicate_clarification_options() {
+        let result = parse_clarification(
+            r#"<clarification>{"questions":[{"id":"theme","prompt":"选择主题？","options":[{"id":"same","label":"A"},{"id":"same","label":"B"}]}]}</clarification>"#,
+        );
+        assert!(result.is_err());
+    }
 }

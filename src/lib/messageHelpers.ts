@@ -131,3 +131,99 @@ export function parseToolResult(content: string): ParsedToolResult | null {
     detail: body
   };
 }
+
+export function parseClarificationRequest(content: string): AgentClarificationRequest | null {
+  if (!content) return null;
+  const match = content.match(/<clarification>([\s\S]*?)<\/clarification>/);
+  if (!match) return null;
+
+  try {
+    const value = JSON.parse(match[1].trim()) as Partial<AgentClarificationRequest>;
+    if (!Array.isArray(value.questions) || value.questions.length < 1 || value.questions.length > 3) {
+      return null;
+    }
+    const questions = value.questions.map((question) => {
+      if (
+        !question ||
+        typeof question.id !== "string" || !question.id.trim() ||
+        typeof question.prompt !== "string" || !question.prompt.trim() ||
+        !Array.isArray(question.options) || question.options.length < 2 || question.options.length > 5
+      ) {
+        throw new Error("invalid clarification question");
+      }
+      const ids = new Set<string>();
+      const options = question.options.map((option) => {
+        if (
+          !option ||
+          typeof option.id !== "string" || !option.id.trim() || ids.has(option.id) ||
+          typeof option.label !== "string" || !option.label.trim()
+        ) {
+          throw new Error("invalid clarification option");
+        }
+        ids.add(option.id);
+        return {
+          id: option.id.trim(),
+          label: option.label.trim(),
+          description: typeof option.description === "string" && option.description.trim()
+            ? option.description.trim()
+            : null,
+          recommended: option.recommended === true
+        };
+      });
+      return {
+        id: question.id.trim(),
+        prompt: question.prompt.trim(),
+        options,
+        allow_custom: question.allow_custom !== false
+      };
+    });
+    if (new Set(questions.map((question) => question.id)).size !== questions.length) return null;
+    return { questions };
+  } catch {
+    return null;
+  }
+}
+
+export function formatClarificationAnswerMessage(
+  messageId: string,
+  request: AgentClarificationRequest,
+  answers: AgentClarificationAnswer[],
+  automatic: boolean
+) {
+  const lines = answers.map((answer) => {
+    const question = request.questions.find((item) => item.id === answer.question_id);
+    const option = question?.options.find((item) => item.id === answer.option_id);
+    const response = answer.skipped
+      ? "已跳过"
+      : answer.custom_text?.trim() || option?.label || "未回答";
+    return `- ${question?.prompt || answer.question_id}：${response}`;
+  });
+  return `[澄清回答: ${messageId}]${automatic ? "（自动选择）" : ""}\n${lines.join("\n")}`;
+}
+
+export function buildAutomaticClarificationAnswers(request: AgentClarificationRequest) {
+  return request.questions.map((question): AgentClarificationAnswer => ({
+    question_id: question.id,
+    option_id: (question.options.find((option) => option.recommended) || question.options[0]).id
+  }));
+}
+
+export function findPendingClarification(messages: PersistedMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "assistant") continue;
+    const request = parseClarificationRequest(message.content);
+    if (!request) continue;
+    const responsePrefix = `[澄清回答: ${message.id}]`;
+    const answered = messages.slice(index + 1).some((item) =>
+      item.role === "user" && item.content.startsWith(responsePrefix)
+    );
+    if (!answered) return { messageId: message.id, request };
+  }
+  return null;
+}
+import type {
+  AgentClarificationAnswer,
+  AgentClarificationRequest,
+  PersistedMessage
+} from "../types";

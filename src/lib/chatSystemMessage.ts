@@ -158,7 +158,16 @@ export function buildSystemMessage(
   <arguments>{"key":"value"}</arguments>
 </tool_call>
 
-注意：请一次仅发出一个 <tool_call>，等待用户确认执行并向你回传结果后，你再根据执行结果继续后续思考或操作。`;
+注意：一次仅发出一个工具调用，等待执行结果回传后，再继续后续思考或操作。`;
+
+  const clarificationSystemInstruction = `当继续任务所需的信息缺失，而且不同选择会显著改变结果时，不要只在普通文本中提问。请输出一个结构化澄清请求：
+<clarification>{"questions":[{"id":"stable_question_id","prompt":"需要用户确认的问题","options":[{"id":"recommended","label":"推荐选项","description":"选择后的影响","recommended":true},{"id":"alternative","label":"其他选项","description":"选择后的影响","recommended":false}],"allow_custom":true}]}</clarification>
+
+澄清规则：
+- 一次包含 1 到 3 个真正必要的问题，每题提供 2 到 5 个互斥选项。
+- 每题优先标记一个 recommended 选项，供自动执行模式代替用户选择。
+- id 必须简短、稳定且在当前请求内唯一；不要把澄清请求和工具调用放在同一次回答中。
+- 如果根据现有上下文可以安全、合理地继续，就直接继续，不要为了确认显而易见的细节而澄清。`;
 
   const sections = [
     runtimeContext,
@@ -166,6 +175,7 @@ export function buildSystemMessage(
     projectContext,
     mcpContext,
     skillsContext || mcpContext ? `当前已启用的技能列表与工具调用规范：\n${skillsContext || "无已启用本地技能"}\n\n${toolsSystemInstruction}` : "",
+    clarificationSystemInstruction,
     memoryContext ? [
       "用户个性化记忆（用于保持跨会话一致性）：",
       "- 这些记忆可能包含用户偏好、身份背景、工作方式、常用技术栈或长期项目上下文。",

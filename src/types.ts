@@ -575,10 +575,36 @@ export interface AgentToolDefinition {
   parameters_json: string;
 }
 
+export interface AgentClarificationOption {
+  id: string;
+  label: string;
+  description?: string | null;
+  recommended: boolean;
+}
+
+export interface AgentClarificationQuestion {
+  id: string;
+  prompt: string;
+  options: AgentClarificationOption[];
+  allow_custom: boolean;
+}
+
+export interface AgentClarificationRequest {
+  questions: AgentClarificationQuestion[];
+}
+
+export interface AgentClarificationAnswer {
+  question_id: string;
+  option_id?: string | null;
+  custom_text?: string | null;
+  skipped?: boolean;
+}
+
 export interface AgentModelOutputResolution {
   run_id: string;
   status: string;
   tool_call?: AgentToolCall | null;
+  clarification?: AgentClarificationRequest | null;
 }
 
 export interface AgentToolExecutionRequest {

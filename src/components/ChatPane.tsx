@@ -27,13 +27,15 @@ import {
 import MarkdownMessage from "./MarkdownMessage";
 import AgentRuntimePanel from "./AgentRuntimePanel";
 import AccessModeSelector from "./AccessModeSelector";
+import ChatDecisionPanel from "./ChatDecisionPanel";
 import { formatWebSearchBadge, renderMessageContent } from "../lib/appHelpers";
-import { parseToolCall, parseToolResult } from "../lib/messageHelpers";
+import { findPendingClarification, parseToolCall, parseToolResult } from "../lib/messageHelpers";
 import type { ParsedToolCall } from "../lib/messageHelpers";
-import type { AgentAccessMode, AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../types";
+import type { AgentAccessMode, AgentClarificationAnswer, AgentClarificationRequest, AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../types";
 import type { UseObservabilityReturn } from "../hooks/useObservability";
 import type { UseModelReturn } from "../hooks/useModel";
 import { buildChatModelOptions } from "../lib/modelOptions";
+import { resolveChatDecisionState } from "../lib/chatDecisionState";
 
 interface ChatPaneProps {
   activeConversationId: string;
@@ -51,6 +53,7 @@ interface ChatPaneProps {
   isRagDragging: boolean;
   executingToolMessageId: string | null;
   messageToolCalls: Record<string, AgentToolCall>;
+  clarificationFallbackIds: string[];
   attachmentProjectPath: string;
   project: ProjectEntry | null;
   projectFiles: ProjectFileEntry[];
@@ -63,6 +66,7 @@ interface ChatPaneProps {
   handleCloseConversation: () => void;
   handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  handleClarificationAnswer: (messageId: string, request: AgentClarificationRequest, answers: AgentClarificationAnswer[]) => Promise<void>;
   handleInputChange: (value: string, cursorIndex: number) => Promise<void>;
   handleChatInputKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   handleChatInputPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
@@ -137,6 +141,7 @@ export default function ChatPane({
   isRagDragging,
   executingToolMessageId,
   messageToolCalls,
+  clarificationFallbackIds,
   attachmentProjectPath,
   project,
   projectFiles,
@@ -149,6 +154,7 @@ export default function ChatPane({
   handleCloseConversation,
   handleExecuteTool,
   handleRejectTool,
+  handleClarificationAnswer,
   handleInputChange,
   handleChatInputKeyDown,
   handleChatInputPaste,
@@ -241,6 +247,27 @@ export default function ChatPane({
     }
     return null;
   }
+
+  const pendingToolApproval = busy
+    ? null
+    : [...messages].reverse().map((message) => {
+        const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
+        return toolCall && getToolDisplayState(message.id, toolCall) === "pending_approval"
+          ? { messageId: message.id, toolCall }
+          : null;
+      }).find((candidate) => candidate !== null) || null;
+  const unresolvedClarification = findPendingClarification(messages);
+  const {
+    pendingClarification,
+    decisionPending,
+    placeholder: decisionPlaceholder
+  } = resolveChatDecisionState({
+    accessMode,
+    busy,
+    pendingToolApproval,
+    unresolvedClarification,
+    clarificationFallbackIds
+  });
 
   return (
     <aside className="chat-pane">
@@ -354,22 +381,7 @@ export default function ChatPane({
                     ) : executingToolMessageId === message.id ? (
                       <span style={{ color: "var(--text-secondary)" }}>⏳ 正在执行中...</span>
                     ) : (
-                      <>
-                        <button
-                          className="primary"
-                          style={{ padding: "4px 12px", fontSize: "0.8rem", height: "auto" }}
-                          onClick={() => handleExecuteTool(message.id, toolCall)}
-                        >
-                          运行工具
-                        </button>
-                        <button
-                          className="secondary"
-                          style={{ padding: "4px 12px", fontSize: "0.8rem", height: "auto" }}
-                          onClick={() => handleRejectTool(message.id, toolCall)}
-                        >
-                          拒绝
-                        </button>
-                      </>
+                      <span style={{ color: "var(--text-secondary)" }}>等待用户选择...</span>
                     )}
                   </div>
                 </div>
@@ -421,8 +433,17 @@ export default function ChatPane({
         )}
       </div>
 
-      <div className={`chat-input${isRagDragging ? " rag-dragging" : ""}${uploadingImageAttachment ? " image-uploading" : ""}`}>
-        {promptSuggestions.length > 0 && (
+      <ChatDecisionPanel
+        tool={pendingToolApproval}
+        clarification={pendingClarification}
+        disabled={busy}
+        onRunTool={handleExecuteTool}
+        onRejectTool={handleRejectTool}
+        onSubmitClarification={handleClarificationAnswer}
+      />
+
+      <div className={`chat-input${decisionPending ? " decision-locked" : ""}${isRagDragging ? " rag-dragging" : ""}${uploadingImageAttachment ? " image-uploading" : ""}`}>
+        {!decisionPending && promptSuggestions.length > 0 && (
           <div className="prompt-suggestions-dropdown">
             {promptSuggestions.map((prompt, index) => (
               <button
@@ -448,6 +469,7 @@ export default function ChatPane({
                   onClick={() => removePendingImageAttachment(attachment.relative_path)}
                   title="移除图片"
                   type="button"
+                  disabled={decisionPending}
                 >
                   <X size={12} />
                 </button>
@@ -469,6 +491,7 @@ export default function ChatPane({
                   onClick={() => void handleDeleteRagFile(file.id)}
                   title="移除文件索引"
                   type="button"
+                  disabled={decisionPending}
                 >
                   <X size={12} />
                 </button>
@@ -489,7 +512,8 @@ export default function ChatPane({
           onKeyDown={handleChatInputKeyDown}
           onPaste={handleChatInputPaste}
           aria-label="输入消息"
-          placeholder={activeModel ? "描述目标、粘贴错误信息，或输入 # 使用提示词…" : "可以先输入内容，发送前请在下方选择或配置模型…"}
+          disabled={busy || decisionPending}
+          placeholder={decisionPending ? decisionPlaceholder : activeModel ? "描述目标、粘贴错误信息，或输入 # 使用提示词…" : "可以先输入内容，发送前请在下方选择或配置模型…"}
         />
         <input
           ref={imageInputRef}
@@ -497,11 +521,12 @@ export default function ChatPane({
           type="file"
           accept="image/png,image/jpeg,image/bmp,image/webp,image/tiff"
           multiple
+          disabled={decisionPending}
           onChange={handleImageInputChange}
         />
         <div className="chat-input-footer">
           <div className="chat-input-left">
-            <AccessModeSelector value={accessMode} onChange={onAccessModeChange} disabled={busy} />
+            <AccessModeSelector value={accessMode} onChange={onAccessModeChange} disabled={busy || decisionPending} />
             <Select
               className="chat-model-select"
               aria-label="当前对话模型"
@@ -511,6 +536,7 @@ export default function ChatPane({
               onChange={(value) => void model.handleActiveModelChange(value || "")}
               allowDeselect={false}
               size="xs"
+              disabled={busy || decisionPending}
             />
           </div>
           <div className="chat-input-actions">
@@ -519,14 +545,14 @@ export default function ChatPane({
               className="chat-header-square ghost"
               aria-label="添加图片"
               onClick={() => imageInputRef.current?.click()}
-              disabled={busy || uploadingImageAttachment}
+              disabled={busy || decisionPending || uploadingImageAttachment}
               variant="subtle"
               >
                 <ImagePlus size={22} />
               </MantineActionIcon>
             </Tooltip>
             <Tooltip label="新建空白对话" openDelay={450}>
-              <MantineActionIcon className="project-add-chat-btn" aria-label="新建空白对话" variant="subtle" color="gray" onClick={() => void handleNewConversation()}>
+              <MantineActionIcon disabled={busy || decisionPending} className="project-add-chat-btn" aria-label="新建空白对话" variant="subtle" color="gray" onClick={() => void handleNewConversation()}>
                 <Plus size={16} />
               </MantineActionIcon>
             </Tooltip>
@@ -536,7 +562,7 @@ export default function ChatPane({
                 aria-label="发送"
                 variant="filled"
                 onClick={handleSendMessage}
-                disabled={busy || (!chatInput.trim() && pendingImageAttachments.length === 0)}
+                disabled={busy || decisionPending || (!chatInput.trim() && pendingImageAttachments.length === 0)}
               >
                 <SendHorizontal size={20} />
               </MantineActionIcon>

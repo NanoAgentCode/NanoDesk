@@ -148,6 +148,7 @@ function App() {
     projectFiles,
     executingToolMessageId,
     messageToolCalls,
+    clarificationFallbackIds,
     activeConversation,
     handleNewConversation,
     handleNewProjectConversation,
@@ -157,6 +158,7 @@ function App() {
     handleSendMessage,
     handleExecuteTool,
     handleRejectTool,
+    handleClarificationAnswer,
     handleCloseConversation,
     handleRagFiles,
     handleImageFiles,
@@ -702,6 +704,7 @@ function App() {
           isRagDragging={isRagDragging}
           executingToolMessageId={executingToolMessageId}
           messageToolCalls={messageToolCalls}
+          clarificationFallbackIds={clarificationFallbackIds}
           attachmentProjectPath={attachmentProjectPath}
           project={activeConversation ? projects.findConversationProject(activeConversation) : projects.activeProject}
           projectFiles={projectFiles}
@@ -714,6 +717,7 @@ function App() {
           handleCloseConversation={handleCloseConversation}
           handleExecuteTool={handleExecuteTool}
           handleRejectTool={handleRejectTool}
+          handleClarificationAnswer={handleClarificationAnswer}
           handleInputChange={handleInputChange}
           handleChatInputKeyDown={handleChatInputKeyDown}
           handleChatInputPaste={handleChatInputPaste}

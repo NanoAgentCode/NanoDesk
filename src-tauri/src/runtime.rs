@@ -981,4 +981,23 @@ mod tests {
         assert_eq!(tool_call.status, "pending_approval");
         assert!(tool_call.completed_at.is_none());
     }
+
+    #[test]
+    fn open_keeps_run_awaiting_clarification() {
+        let path = test_db_path();
+        let run_id = {
+            let store = test_store_at(path.clone());
+            let run = create_run(&store);
+            store
+                .finish_run(&run.id, "awaiting_clarification", None)
+                .expect("run should wait on clarification");
+            run.id
+        };
+
+        let recovered = test_store_at(path);
+        let run = recovered.get_run(&run_id).expect("run should exist");
+        assert_eq!(run.status, "awaiting_clarification");
+        assert!(run.completed_at.is_none());
+        assert!(run.error.is_none());
+    }
 }

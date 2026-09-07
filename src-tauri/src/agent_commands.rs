@@ -218,7 +218,19 @@ pub(crate) async fn resolve_agent_model_output(
     step_kind: Option<String>,
     input_summary: Option<String>,
 ) -> AppResult<AgentModelOutputResolution> {
-    let parsed = match agent_runner::parse_tool_call(&state.plugins, &content) {
+    let parsed_result = match (
+        agent_runner::parse_tool_call(&state.plugins, &content),
+        agent_runner::parse_clarification(&content),
+    ) {
+        (Ok(tool_call), Ok(clarification)) if tool_call.is_some() && clarification.is_some() => {
+            Err(crate::error::AppError::Message(
+                "model output cannot request a tool and clarification at the same time".to_string(),
+            ))
+        }
+        (Ok(tool_call), Ok(clarification)) => Ok((tool_call, clarification)),
+        (Err(err), _) | (_, Err(err)) => Err(err),
+    };
+    let parsed = match parsed_result {
         Ok(parsed) => parsed,
         Err(err) => {
             let runtime = state.runtime.lock().await;
@@ -245,27 +257,36 @@ pub(crate) async fn resolve_agent_model_output(
         metadata_json: Some(serde_json::json!({ "message_id": message_id }).to_string()),
     })?;
 
-    let tool_call = if let Some(parsed) = parsed {
+    let (parsed_tool_call, clarification) = parsed;
+    let tool_call = if let Some(parsed) = parsed_tool_call {
         let tool_call = runtime.create_tool_call(AgentToolCallDraft {
             run_id: run_id.clone(),
-            message_id,
+            message_id: message_id.clone(),
             name: parsed.name,
             args_json: agent_runner::args_to_json(&parsed.args)?,
         })?;
         runtime.finish_run(&run_id, "awaiting_tool", None)?;
         Some(tool_call)
+    } else if clarification.is_some() {
+        runtime.finish_run(&run_id, "awaiting_clarification", None)?;
+        None
     } else {
         runtime.finish_run(&run_id, "completed", None)?;
         None
     };
 
+    let status = if tool_call.is_some() {
+        "awaiting_tool"
+    } else if clarification.is_some() {
+        "awaiting_clarification"
+    } else {
+        "completed"
+    };
+
     Ok(AgentModelOutputResolution {
         run_id,
-        status: if tool_call.is_some() {
-            "awaiting_tool".to_string()
-        } else {
-            "completed".to_string()
-        },
+        status: status.to_string(),
         tool_call,
+        clarification,
     })
 }
