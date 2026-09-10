@@ -79,6 +79,7 @@ function formatAgentEventTitle(event: AgentEventLogEntry) {
     "approval.decision": "审批",
     "memory.write": "记忆写入",
     "runtime.error": "错误",
+    "runtime.recovery": "恢复操作",
     "runtime.step": "运行步骤"
   };
   return labels[event.event_type] || event.title || event.event_type;
@@ -97,7 +98,8 @@ function formatAgentStepTitle(step: AgentStep) {
     tool: "工具执行",
     approval: "审批",
     memory: "记忆写入",
-    error: "错误"
+    error: "错误",
+    recovery: "恢复操作"
   };
   return labels[step.kind] || step.kind;
 }
@@ -111,6 +113,9 @@ export function formatRuntimeStatus(status: string) {
     rejected: "已拒绝",
     completed: "已完成",
     failed: "失败",
+    interrupted: "已中断",
+    awaiting_recovery: "等待恢复",
+    skipped: "已跳过",
     cancelled: "已取消"
   };
   return labels[status] || status;

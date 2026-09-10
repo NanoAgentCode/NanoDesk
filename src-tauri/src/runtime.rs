@@ -49,6 +49,8 @@ pub struct AgentToolCall {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    pub attempt_count: i64,
+    pub max_attempts: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,7 +64,8 @@ pub struct AgentRunTimeline {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct RuntimeRecoverySummary {
     pub runs_failed: usize,
-    pub tool_calls_failed: usize,
+    pub runs_awaiting_recovery: usize,
+    pub tool_calls_interrupted: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -148,6 +151,8 @@ impl RuntimeStore {
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 completed_at TEXT,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 3,
                 FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
             );
 
@@ -161,6 +166,30 @@ impl RuntimeStore {
                 ON agent_tool_calls(message_id);
             ",
         )?;
+        self.ensure_column(
+            "agent_tool_calls",
+            "attempt_count",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        self.ensure_column(
+            "agent_tool_calls",
+            "max_attempts",
+            "INTEGER NOT NULL DEFAULT 3",
+        )?;
+        Ok(())
+    }
+
+    fn ensure_column(&self, table: &str, column: &str, definition: &str) -> AppResult<()> {
+        let mut stmt = self.conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if !columns.iter().any(|name| name == column) {
+            self.conn.execute(
+                &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -170,9 +199,11 @@ impl RuntimeStore {
             self.record_step(AgentStepDraft {
                 run_id: tool_call.run_id.clone(),
                 kind: "tool".to_string(),
-                status: "failed".to_string(),
+                status: "interrupted".to_string(),
                 input_summary: Some(tool_call.name.clone()),
-                output_summary: Some("tool execution interrupted by app restart".to_string()),
+                output_summary: Some(
+                    "tool execution interrupted by app restart; outcome is unknown".to_string(),
+                ),
                 metadata_json: Some(
                     json!({
                         "tool_call_id": tool_call.id,
@@ -184,14 +215,15 @@ impl RuntimeStore {
         }
 
         let now = Utc::now().to_rfc3339();
-        let tool_calls_failed = self.conn.execute(
+        let tool_calls_interrupted = self.conn.execute(
             "
             UPDATE agent_tool_calls
-            SET status = 'failed',
+            SET status = 'interrupted',
                 result_summary = 'interrupted_by_restart',
-                error = 'tool execution interrupted by app restart',
+                error = 'tool execution interrupted by app restart; outcome is unknown',
                 updated_at = ?1,
-                completed_at = ?1
+                completed_at = ?1,
+                attempt_count = CASE WHEN attempt_count = 0 THEN 1 ELSE attempt_count END
             WHERE status = 'running'
             ",
             params![now],
@@ -199,10 +231,15 @@ impl RuntimeStore {
 
         let interrupted_runs = self.list_runs_needing_recovery()?;
         for run in &interrupted_runs {
+            let awaiting_recovery = self.run_has_recoverable_tool_call(&run.id)?;
             self.record_step(AgentStepDraft {
                 run_id: run.id.clone(),
                 kind: "error".to_string(),
-                status: "failed".to_string(),
+                status: if awaiting_recovery {
+                    "awaiting_recovery".to_string()
+                } else {
+                    "failed".to_string()
+                },
                 input_summary: Some(run.status.clone()),
                 output_summary: Some("agent run interrupted by app restart".to_string()),
                 metadata_json: Some(json!({ "recovery": "app_restart" }).to_string()),
@@ -210,6 +247,24 @@ impl RuntimeStore {
         }
 
         let now = Utc::now().to_rfc3339();
+        let runs_awaiting_recovery = self.conn.execute(
+            "
+            UPDATE agent_runs
+            SET status = 'awaiting_recovery',
+                updated_at = ?1,
+                completed_at = NULL,
+                error = 'tool execution failed or was interrupted; user decision required'
+            WHERE status IN ('running', 'awaiting_tool')
+              AND EXISTS (
+                  SELECT 1
+                  FROM agent_tool_calls
+                  WHERE agent_tool_calls.run_id = agent_runs.id
+                    AND agent_tool_calls.status IN ('failed', 'interrupted')
+              )
+            ",
+            params![now],
+        )?;
+
         let runs_failed = self.conn.execute(
             "
             UPDATE agent_runs
@@ -220,11 +275,21 @@ impl RuntimeStore {
             WHERE status = 'running'
                OR (
                     status = 'awaiting_tool'
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM agent_tool_calls
-                        WHERE agent_tool_calls.run_id = agent_runs.id
-                          AND agent_tool_calls.status IN ('pending_approval', 'approved', 'running')
+                    AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM agent_tool_calls
+                            WHERE agent_tool_calls.run_id = agent_runs.id
+                              AND agent_tool_calls.status = 'interrupted'
+                        )
+                        OR NOT EXISTS (
+                            SELECT 1
+                            FROM agent_tool_calls
+                            WHERE agent_tool_calls.run_id = agent_runs.id
+                              AND agent_tool_calls.status IN (
+                                  'pending_approval', 'approved', 'running'
+                              )
+                        )
                     )
                )
             ",
@@ -233,7 +298,8 @@ impl RuntimeStore {
 
         Ok(RuntimeRecoverySummary {
             runs_failed,
-            tool_calls_failed,
+            runs_awaiting_recovery,
+            tool_calls_interrupted,
         })
     }
 
@@ -241,7 +307,7 @@ impl RuntimeStore {
         let mut stmt = self.conn.prepare(
             "
             SELECT id, run_id, message_id, name, args_json, status, result_summary,
-                   error, created_at, updated_at, completed_at
+                   error, created_at, updated_at, completed_at, attempt_count, max_attempts
             FROM agent_tool_calls
             WHERE status = ?1
             ORDER BY created_at ASC
@@ -264,11 +330,21 @@ impl RuntimeStore {
             WHERE status = 'running'
                OR (
                     status = 'awaiting_tool'
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM agent_tool_calls
-                        WHERE agent_tool_calls.run_id = agent_runs.id
-                          AND agent_tool_calls.status IN ('pending_approval', 'approved', 'running')
+                    AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM agent_tool_calls
+                            WHERE agent_tool_calls.run_id = agent_runs.id
+                              AND agent_tool_calls.status = 'interrupted'
+                        )
+                        OR NOT EXISTS (
+                            SELECT 1
+                            FROM agent_tool_calls
+                            WHERE agent_tool_calls.run_id = agent_runs.id
+                              AND agent_tool_calls.status IN (
+                                  'pending_approval', 'approved', 'running'
+                              )
+                        )
                     )
                )
             ORDER BY created_at ASC
@@ -280,6 +356,19 @@ impl RuntimeStore {
             .collect::<Result<Vec<_>, _>>()
             .map_err(AppError::from)?;
         Ok(runs)
+    }
+
+    fn run_has_recoverable_tool_call(&self, run_id: &str) -> AppResult<bool> {
+        let count: i64 = self.conn.query_row(
+            "
+            SELECT COUNT(*)
+            FROM agent_tool_calls
+            WHERE run_id = ?1 AND status IN ('failed', 'interrupted')
+            ",
+            params![run_id],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
     }
 
     pub fn create_run(&self, draft: AgentRunDraft) -> AppResult<AgentRun> {
@@ -323,6 +412,18 @@ impl RuntimeStore {
     pub fn finish_run(&self, id: &str, status: &str, error: Option<String>) -> AppResult<AgentRun> {
         let now = Utc::now();
         let status = clean_status(status);
+        if !is_valid_run_status(&status) {
+            return Err(AppError::Message(format!(
+                "invalid agent run status: {status}"
+            )));
+        }
+        let current = self.get_run(id)?;
+        if !can_transition_run(&current.status, &status) {
+            return Err(AppError::Message(format!(
+                "agent run cannot transition from {} to {status}",
+                current.status
+            )));
+        }
         let completed_at = if is_terminal_status(&status) {
             Some(now.to_rfc3339())
         } else {
@@ -346,6 +447,43 @@ impl RuntimeStore {
             ],
         )?;
         self.get_run(id)
+    }
+
+    pub fn resume_run(&self, id: &str) -> AppResult<AgentRun> {
+        let previous = self.get_run(id)?;
+        let now = Utc::now().to_rfc3339();
+        let changed = self.conn.execute(
+            "
+            UPDATE agent_runs
+            SET status = 'running',
+                updated_at = ?2,
+                completed_at = NULL,
+                error = NULL
+            WHERE id = ?1 AND status IN ('failed', 'awaiting_recovery')
+            ",
+            params![id, now],
+        )?;
+        if changed == 1 {
+            if matches!(previous.status.as_str(), "failed" | "awaiting_recovery") {
+                self.conn.execute(
+                    "
+                    UPDATE agent_tool_calls
+                    SET status = 'skipped',
+                        result_summary = 'user_skipped_failure',
+                        updated_at = ?2,
+                        completed_at = COALESCE(completed_at, ?2)
+                    WHERE run_id = ?1 AND status IN ('failed', 'interrupted')
+                    ",
+                    params![id, now],
+                )?;
+            }
+            return self.get_run(id);
+        }
+
+        Err(AppError::Message(format!(
+            "agent run cannot resume from status: {}",
+            previous.status
+        )))
     }
 
     pub fn get_run(&self, id: &str) -> AppResult<AgentRun> {
@@ -441,7 +579,7 @@ impl RuntimeStore {
         let mut stmt = self.conn.prepare(
             "
             SELECT id, run_id, message_id, name, args_json, status, result_summary,
-                   error, created_at, updated_at, completed_at
+                   error, created_at, updated_at, completed_at, attempt_count, max_attempts
             FROM agent_tool_calls
             WHERE run_id = ?1
             ORDER BY created_at ASC
@@ -510,14 +648,16 @@ impl RuntimeStore {
             created_at: now,
             updated_at: now,
             completed_at: None,
+            attempt_count: 0,
+            max_attempts: 3,
         };
 
         self.conn.execute(
             "
             INSERT INTO agent_tool_calls
                 (id, run_id, message_id, name, args_json, status, result_summary,
-                 error, created_at, updated_at, completed_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 error, created_at, updated_at, completed_at, attempt_count, max_attempts)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             ",
             params![
                 tool_call.id,
@@ -530,7 +670,9 @@ impl RuntimeStore {
                 tool_call.error,
                 tool_call.created_at.to_rfc3339(),
                 tool_call.updated_at.to_rfc3339(),
-                tool_call.completed_at.map(|time| time.to_rfc3339())
+                tool_call.completed_at.map(|time| time.to_rfc3339()),
+                tool_call.attempt_count,
+                tool_call.max_attempts
             ],
         )?;
         Ok(tool_call)
@@ -545,6 +687,18 @@ impl RuntimeStore {
     ) -> AppResult<AgentToolCall> {
         let now = Utc::now();
         let status = clean_status(status);
+        if !is_valid_tool_call_status(&status) {
+            return Err(AppError::Message(format!(
+                "invalid agent tool call status: {status}"
+            )));
+        }
+        let current = self.get_tool_call(id)?;
+        if !can_transition_tool_call(&current.status, &status) {
+            return Err(AppError::Message(format!(
+                "agent tool call cannot transition from {} to {status}",
+                current.status
+            )));
+        }
         let completed_at =
             if status == "pending_approval" || status == "approved" || status == "running" {
                 None
@@ -583,8 +737,11 @@ impl RuntimeStore {
                 result_summary = NULL,
                 error = NULL,
                 updated_at = ?2,
-                completed_at = NULL
-            WHERE id = ?1 AND status = 'approved'
+                completed_at = NULL,
+                attempt_count = attempt_count + 1
+            WHERE id = ?1
+              AND status = 'approved'
+              AND attempt_count < max_attempts
             ",
             params![id, now.to_rfc3339()],
         )?;
@@ -598,6 +755,13 @@ impl RuntimeStore {
             "running" => "tool call is already running; duplicate execution refused".to_string(),
             "completed" => "tool call already completed; duplicate execution refused".to_string(),
             "failed" => "tool call already failed; duplicate execution refused".to_string(),
+            "interrupted" => {
+                "tool call was interrupted; retry must be requested explicitly".to_string()
+            }
+            "approved" if tool_call.attempt_count >= tool_call.max_attempts => format!(
+                "tool call retry limit reached: {}/{}",
+                tool_call.attempt_count, tool_call.max_attempts
+            ),
             "rejected" => "tool call was rejected and cannot be executed".to_string(),
             status => {
                 format!("tool call must be approved before execution; current status: {status}")
@@ -633,12 +797,64 @@ impl RuntimeStore {
         )
     }
 
+    pub fn retry_tool_call(&self, id: &str) -> AppResult<AgentToolCall> {
+        let tool_call = self.get_tool_call(id)?;
+        if tool_call.status != "failed" && tool_call.status != "interrupted" {
+            return Err(AppError::Message(format!(
+                "tool call cannot retry from status: {}",
+                tool_call.status
+            )));
+        }
+        if tool_call.attempt_count >= tool_call.max_attempts {
+            return Err(AppError::Message(format!(
+                "tool call retry limit reached: {}/{}",
+                tool_call.attempt_count, tool_call.max_attempts
+            )));
+        }
+        let run = self.get_run(&tool_call.run_id)?;
+        if !matches!(
+            run.status.as_str(),
+            "awaiting_tool" | "awaiting_recovery" | "failed"
+        ) {
+            return Err(AppError::Message(format!(
+                "tool call cannot retry while agent run is: {}",
+                run.status
+            )));
+        }
+
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "
+            UPDATE agent_tool_calls
+            SET status = 'approved',
+                result_summary = 'user_requested_retry',
+                error = NULL,
+                updated_at = ?2,
+                completed_at = NULL
+            WHERE id = ?1
+            ",
+            params![id, now],
+        )?;
+        self.conn.execute(
+            "
+            UPDATE agent_runs
+            SET status = 'awaiting_tool',
+                updated_at = ?2,
+                completed_at = NULL,
+                error = NULL
+            WHERE id = ?1
+            ",
+            params![tool_call.run_id, now],
+        )?;
+        self.get_tool_call(id)
+    }
+
     pub fn get_tool_call(&self, id: &str) -> AppResult<AgentToolCall> {
         self.conn
             .query_row(
                 "
                 SELECT id, run_id, message_id, name, args_json, status, result_summary,
-                       error, created_at, updated_at, completed_at
+                       error, created_at, updated_at, completed_at, attempt_count, max_attempts
                 FROM agent_tool_calls
                 WHERE id = ?1
                 ",
@@ -705,6 +921,8 @@ fn row_to_tool_call(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentToolCall> 
         completed_at: completed_at
             .map(|value| parse_time_for_row(&value))
             .transpose()?,
+        attempt_count: row.get(11)?,
+        max_attempts: row.get(12)?,
     })
 }
 
@@ -741,6 +959,66 @@ fn clean_status(status: &str) -> String {
 
 fn is_terminal_status(status: &str) -> bool {
     matches!(status, "completed" | "failed" | "cancelled" | "rejected")
+}
+
+fn is_valid_run_status(status: &str) -> bool {
+    matches!(
+        status,
+        "running"
+            | "awaiting_tool"
+            | "awaiting_clarification"
+            | "awaiting_recovery"
+            | "completed"
+            | "failed"
+            | "cancelled"
+            | "rejected"
+    )
+}
+
+fn can_transition_run(current: &str, next: &str) -> bool {
+    if current == next {
+        return true;
+    }
+    match current {
+        "running" | "awaiting_tool" | "awaiting_clarification" => matches!(
+            next,
+            "awaiting_tool"
+                | "awaiting_clarification"
+                | "awaiting_recovery"
+                | "completed"
+                | "failed"
+                | "cancelled"
+                | "rejected"
+        ),
+        "awaiting_recovery" => matches!(next, "failed" | "cancelled"),
+        _ => false,
+    }
+}
+
+fn is_valid_tool_call_status(status: &str) -> bool {
+    matches!(
+        status,
+        "pending_approval"
+            | "approved"
+            | "running"
+            | "completed"
+            | "failed"
+            | "interrupted"
+            | "rejected"
+            | "skipped"
+    )
+}
+
+fn can_transition_tool_call(current: &str, next: &str) -> bool {
+    if current == next {
+        return true;
+    }
+    match current {
+        "pending_approval" => matches!(next, "approved" | "rejected"),
+        "approved" => matches!(next, "running" | "rejected"),
+        "running" => matches!(next, "completed" | "failed" | "interrupted"),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -797,6 +1075,8 @@ mod tests {
         assert!(tool_call.completed_at.is_none());
         assert!(tool_call.result_summary.is_none());
         assert!(tool_call.error.is_none());
+        assert_eq!(tool_call.attempt_count, 0);
+        assert_eq!(tool_call.max_attempts, 3);
     }
 
     #[test]
@@ -828,6 +1108,7 @@ mod tests {
             .start_tool_call(&tool_call.id)
             .expect("approved tool call should start");
         assert_eq!(running.status, "running");
+        assert_eq!(running.attempt_count, 1);
         assert!(running.completed_at.is_none());
 
         let err = store
@@ -929,24 +1210,200 @@ mod tests {
             .expect("tool call should exist");
         let steps = recovered.list_steps(&run_id).expect("steps should list");
 
-        assert_eq!(run.status, "failed");
+        assert_eq!(run.status, "awaiting_recovery");
         assert_eq!(
             run.error.as_deref(),
-            Some("agent run interrupted by app restart")
+            Some("tool execution failed or was interrupted; user decision required")
         );
-        assert!(run.completed_at.is_some());
-        assert_eq!(tool_call.status, "failed");
+        assert!(run.completed_at.is_none());
+        assert_eq!(tool_call.status, "interrupted");
         assert_eq!(
             tool_call.error.as_deref(),
-            Some("tool execution interrupted by app restart")
+            Some("tool execution interrupted by app restart; outcome is unknown")
         );
         assert!(tool_call.completed_at.is_some());
         assert!(steps
             .iter()
-            .any(|step| step.kind == "tool" && step.status == "failed"));
+            .any(|step| step.kind == "tool" && step.status == "interrupted"));
         assert!(steps
             .iter()
-            .any(|step| step.kind == "error" && step.status == "failed"));
+            .any(|step| step.kind == "error" && step.status == "awaiting_recovery"));
+    }
+
+    #[test]
+    fn interrupted_tool_call_can_be_retried_explicitly() {
+        let path = test_db_path();
+        let (run_id, tool_call_id) = {
+            let store = test_store_at(path.clone());
+            let run = create_run(&store);
+            let tool_call = store
+                .create_tool_call(AgentToolCallDraft {
+                    run_id: run.id.clone(),
+                    message_id: "message-1".to_string(),
+                    name: "read_file".to_string(),
+                    args_json: "{\"path\":\"README.md\"}".to_string(),
+                })
+                .unwrap();
+            store.approve_tool_call(&tool_call.id).unwrap();
+            store.start_tool_call(&tool_call.id).unwrap();
+            store.finish_run(&run.id, "awaiting_tool", None).unwrap();
+            (run.id, tool_call.id)
+        };
+
+        let store = test_store_at(path);
+        let retried = store.retry_tool_call(&tool_call_id).unwrap();
+        assert_eq!(retried.status, "approved");
+        assert_eq!(retried.attempt_count, 1);
+        assert!(retried.completed_at.is_none());
+        assert_eq!(store.get_run(&run_id).unwrap().status, "awaiting_tool");
+        let running = store.start_tool_call(&tool_call_id).unwrap();
+        assert_eq!(running.attempt_count, 2);
+    }
+
+    #[test]
+    fn tool_call_retry_limit_is_enforced() {
+        let store = test_store();
+        let tool_call = create_tool_call(&store);
+        store.approve_tool_call(&tool_call.id).unwrap();
+
+        for attempt in 1..=3 {
+            let running = store.start_tool_call(&tool_call.id).unwrap();
+            assert_eq!(running.attempt_count, attempt);
+            store
+                .update_tool_call(&tool_call.id, "failed", None, Some("transient".to_string()))
+                .unwrap();
+            store
+                .finish_run(
+                    &tool_call.run_id,
+                    "awaiting_recovery",
+                    Some("transient".to_string()),
+                )
+                .unwrap();
+            if attempt < 3 {
+                store.retry_tool_call(&tool_call.id).unwrap();
+            }
+        }
+
+        let err = store
+            .retry_tool_call(&tool_call.id)
+            .expect_err("retry limit should be enforced");
+        assert!(err.to_string().contains("retry limit reached: 3/3"));
+    }
+
+    #[test]
+    fn failed_and_recovery_runs_can_resume() {
+        let store = test_store();
+        let failed = create_run(&store);
+        store
+            .finish_run(&failed.id, "failed", Some("network".to_string()))
+            .unwrap();
+        let resumed = store.resume_run(&failed.id).unwrap();
+        assert_eq!(resumed.status, "running");
+        assert!(resumed.error.is_none());
+        assert!(resumed.completed_at.is_none());
+
+        let recovery = create_run(&store);
+        let recovery_tool = store
+            .create_tool_call(AgentToolCallDraft {
+                run_id: recovery.id.clone(),
+                message_id: "message-recovery".to_string(),
+                name: "read_file".to_string(),
+                args_json: "{\"path\":\"README.md\"}".to_string(),
+            })
+            .unwrap();
+        store.approve_tool_call(&recovery_tool.id).unwrap();
+        store.start_tool_call(&recovery_tool.id).unwrap();
+        store
+            .update_tool_call(
+                &recovery_tool.id,
+                "failed",
+                None,
+                Some("tool failed".to_string()),
+            )
+            .unwrap();
+        store
+            .finish_run(
+                &recovery.id,
+                "awaiting_recovery",
+                Some("tool failed".to_string()),
+            )
+            .unwrap();
+        assert_eq!(store.resume_run(&recovery.id).unwrap().status, "running");
+        assert_eq!(
+            store.get_tool_call(&recovery_tool.id).unwrap().status,
+            "skipped"
+        );
+    }
+
+    #[test]
+    fn terminal_states_cannot_be_overwritten_by_late_updates() {
+        let store = test_store();
+        let run = create_run(&store);
+        store.finish_run(&run.id, "completed", None).unwrap();
+        let run_err = store
+            .finish_run(&run.id, "failed", Some("late error".to_string()))
+            .expect_err("completed run must remain terminal");
+        assert!(run_err.to_string().contains("completed to failed"));
+        assert_eq!(store.get_run(&run.id).unwrap().status, "completed");
+
+        let tool_call = create_tool_call(&store);
+        store.approve_tool_call(&tool_call.id).unwrap();
+        store.start_tool_call(&tool_call.id).unwrap();
+        store
+            .update_tool_call(&tool_call.id, "completed", Some("ok".to_string()), None)
+            .unwrap();
+        let tool_err = store
+            .update_tool_call(
+                &tool_call.id,
+                "failed",
+                None,
+                Some("late error".to_string()),
+            )
+            .expect_err("completed tool call must remain terminal");
+        assert!(tool_err.to_string().contains("completed to failed"));
+        assert_eq!(
+            store.get_tool_call(&tool_call.id).unwrap().status,
+            "completed"
+        );
+    }
+
+    #[test]
+    fn opening_legacy_runtime_database_adds_retry_columns() {
+        let path = test_db_path();
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE agent_tool_calls (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    args_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    result_summary TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT
+                );
+                ",
+            )
+            .unwrap();
+        }
+
+        let store = test_store_at(path);
+        let mut stmt = store
+            .conn
+            .prepare("PRAGMA table_info(agent_tool_calls)")
+            .unwrap();
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(columns.iter().any(|column| column == "attempt_count"));
+        assert!(columns.iter().any(|column| column == "max_attempts"));
     }
 
     #[test]
@@ -980,6 +1437,40 @@ mod tests {
         assert!(run.error.is_none());
         assert_eq!(tool_call.status, "pending_approval");
         assert!(tool_call.completed_at.is_none());
+    }
+
+    #[test]
+    fn open_recovers_failed_tool_left_in_awaiting_tool_state() {
+        let path = test_db_path();
+        let (run_id, tool_call_id) = {
+            let store = test_store_at(path.clone());
+            let run = create_run(&store);
+            let tool_call = store
+                .create_tool_call(AgentToolCallDraft {
+                    run_id: run.id.clone(),
+                    message_id: "message-1".to_string(),
+                    name: "read_file".to_string(),
+                    args_json: "{\"path\":\"README.md\"}".to_string(),
+                })
+                .unwrap();
+            store.approve_tool_call(&tool_call.id).unwrap();
+            store.start_tool_call(&tool_call.id).unwrap();
+            store
+                .update_tool_call(&tool_call.id, "failed", None, Some("transient".to_string()))
+                .unwrap();
+            store.finish_run(&run.id, "awaiting_tool", None).unwrap();
+            (run.id, tool_call.id)
+        };
+
+        let recovered = test_store_at(path);
+        assert_eq!(
+            recovered.get_run(&run_id).unwrap().status,
+            "awaiting_recovery"
+        );
+        assert_eq!(
+            recovered.get_tool_call(&tool_call_id).unwrap().status,
+            "failed"
+        );
     }
 
     #[test]

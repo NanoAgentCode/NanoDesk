@@ -536,6 +536,10 @@ export function finishAgentRun(id: string, status: string, error?: string | null
   });
 }
 
+export function resumeAgentRun(id: string) {
+  return invoke<AgentRun>("resume_agent_run", { id });
+}
+
 export function listAgentRuns(conversationId: string, limit = 50) {
   return invoke<AgentRun[]>("list_agent_runs", { conversationId, limit });
 }
@@ -568,6 +572,10 @@ export function updateAgentToolCall(
     resultSummary: resultSummary || null,
     error: error || null
   });
+}
+
+export function retryAgentToolCall(id: string) {
+  return invoke<AgentToolCall>("retry_agent_tool_call", { id });
 }
 
 export function approveAgentToolCall(id: string) {

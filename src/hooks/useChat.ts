@@ -31,6 +31,7 @@ import {
 import {
   safeCreateAgentRun,
   safeFinishAgentRun,
+  safeResumeAgentRun,
   safeRecordAgentStep,
   safeResolveAgentModelOutput
 } from "../lib/agentSafe";
@@ -112,6 +113,8 @@ export interface UseChatReturn {
   handleSendMessage: () => Promise<void>;
   handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  handleRetryTool: (messageId: string) => Promise<void>;
+  handleResumeAgentRun: (runId: string) => Promise<void>;
   handleClarificationAnswer: (
     messageId: string,
     request: AgentClarificationRequest,
@@ -182,7 +185,8 @@ export function useChat({
     setConversationRunIds,
     prepareResolvedToolCall,
     handleExecuteTool,
-    handleRejectTool
+    handleRejectTool,
+    handleRetryTool
   } = useAgentToolRuntime({
     accessMode,
     busy,
@@ -269,7 +273,9 @@ export function useChat({
           }, {});
         setMessageToolCalls(restoredToolCalls);
         const activeRun = timelines.find((timeline) =>
-          timeline.run.status === "awaiting_tool" || timeline.run.status === "awaiting_clarification"
+          timeline.run.status === "awaiting_tool" ||
+          timeline.run.status === "awaiting_clarification" ||
+          timeline.run.status === "awaiting_recovery"
         )?.run;
         setConversationRunIds((current) => {
           const next = { ...current };
@@ -669,6 +675,56 @@ export function useChat({
     }
   }
 
+  async function handleResumeAgentRun(runId: string) {
+    if (busy) return;
+    const conversationId = conv.activeConversationId;
+    if (!conversationId) return;
+    setBusy(true);
+    let resumedRunId: string | null = null;
+    try {
+      const previousRuns = await listAgentRuns(conversationId, 20);
+      const previousRun = previousRuns.find((run) => run.id === runId);
+      if (!previousRun) {
+        throw new Error("当前会话中找不到该任务");
+      }
+      const resumed = await safeResumeAgentRun(runId);
+      if (!resumed) {
+        throw new Error("任务不再处于可恢复状态");
+      }
+      resumedRunId = resumed.id;
+      setConversationRunIds((current) => ({ ...current, [conversationId]: resumed.id }));
+      if (previousRun.status === "failed" || previousRun.status === "awaiting_recovery") {
+        setMessageToolCalls((current) => Object.fromEntries(
+          Object.entries(current).map(([messageId, toolCall]) => [
+            messageId,
+            toolCall.run_id === resumed.id && (toolCall.status === "failed" || toolCall.status === "interrupted")
+              ? { ...toolCall, status: "skipped", result_summary: "user_skipped_failure" }
+              : toolCall
+          ])
+        ));
+      }
+      await appendMessage({
+        conversation_id: conversationId,
+        role: "user",
+        content: previousRun.status === "awaiting_recovery"
+          ? "[任务恢复] 用户选择不重试上一个失败或中断步骤，请根据现有上下文继续，并避免假定该步骤已经成功。"
+          : "[任务恢复] 用户选择从最近已持久化的消息继续此前失败的任务，请先确认当前上下文再继续。",
+        metadata: { exclude_from_profile: true }
+      });
+      const currentMessages = await listMessages(conversationId);
+      setMessages(currentMessages);
+      const projectHint = conv.getConversationProjectHint();
+      await triggerLlmContinue(conversationId, currentMessages, projectHint, resumed.id);
+    } catch (error) {
+      if (resumedRunId) {
+        await safeFinishAgentRun(resumedRunId, "failed", String(error));
+      }
+      setNotice(`任务恢复失败：${String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleClarificationAnswer(
     messageId: string,
     request: AgentClarificationRequest,
@@ -926,6 +982,8 @@ export function useChat({
     handleSendMessage,
     handleExecuteTool,
     handleRejectTool,
+    handleRetryTool,
+    handleResumeAgentRun,
     handleClarificationAnswer,
     handleCloseConversation,
 

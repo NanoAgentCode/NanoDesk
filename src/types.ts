@@ -558,6 +558,8 @@ export interface AgentToolCall {
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
+  attempt_count: number;
+  max_attempts: number;
 }
 
 export interface AgentToolCallDraft {

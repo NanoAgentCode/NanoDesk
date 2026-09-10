@@ -29,6 +29,25 @@ pub(crate) async fn finish_agent_run(
 }
 
 #[tauri::command]
+pub(crate) async fn resume_agent_run(
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<AgentRun> {
+    let runtime = state.runtime.lock().await;
+    let previous = runtime.get_run(&id)?;
+    let run = runtime.resume_run(&id)?;
+    runtime.record_step(AgentStepDraft {
+        run_id: run.id.clone(),
+        kind: "recovery".to_string(),
+        status: "completed".to_string(),
+        input_summary: Some(previous.status),
+        output_summary: Some("user_resumed".to_string()),
+        metadata_json: Some(serde_json::json!({ "recovery": "manual_resume" }).to_string()),
+    })?;
+    Ok(run)
+}
+
+#[tauri::command]
 pub(crate) async fn list_agent_runs(
     state: State<'_, AppState>,
     conversation_id: String,
@@ -96,6 +115,33 @@ pub(crate) async fn update_agent_tool_call(
         .lock()
         .await
         .update_tool_call(&id, &status, result_summary, error)
+}
+
+#[tauri::command]
+pub(crate) async fn retry_agent_tool_call(
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<AgentToolCall> {
+    let runtime = state.runtime.lock().await;
+    let previous = runtime.get_tool_call(&id)?;
+    let tool_call = runtime.retry_tool_call(&id)?;
+    runtime.record_step(AgentStepDraft {
+        run_id: tool_call.run_id.clone(),
+        kind: "recovery".to_string(),
+        status: "approved".to_string(),
+        input_summary: Some(tool_call.name.clone()),
+        output_summary: Some("user_requested_retry".to_string()),
+        metadata_json: Some(
+            serde_json::json!({
+                "tool_call_id": tool_call.id,
+                "previous_status": previous.status,
+                "next_attempt": tool_call.attempt_count + 1,
+                "max_attempts": tool_call.max_attempts,
+            })
+            .to_string(),
+        ),
+    })?;
+    Ok(tool_call)
 }
 
 #[tauri::command]

@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { Button } from "@mantine/core";
+import { ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 import type { AgentRunTimeline } from "../types";
 import ObservabilityDetailPanel from "./ObservabilityDetailPanel";
 import {
@@ -17,6 +18,8 @@ interface AgentRuntimePanelProps {
   activeTimeline: AgentRunTimeline | null;
   expandedRows: string[];
   onToggleRow: (rowId: string) => void;
+  busy: boolean;
+  onResumeRun: (runId: string) => Promise<void>;
 }
 
 export default function AgentRuntimePanel({
@@ -26,7 +29,9 @@ export default function AgentRuntimePanel({
   timelines,
   activeTimeline,
   expandedRows,
-  onToggleRow
+  onToggleRow,
+  busy,
+  onResumeRun
 }: AgentRuntimePanelProps) {
   const timelineEvents = activeTimeline ? buildAgentTimelineEvents(activeTimeline) : [];
 
@@ -100,6 +105,19 @@ export default function AgentRuntimePanel({
           })}
           {timelineEvents.length === 0 && (
             <div className="empty">该 run 暂无步骤</div>
+          )}
+          {(activeTimeline.run.status === "failed" || activeTimeline.run.status === "awaiting_recovery") && (
+            <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border-color)" }}>
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<RotateCcw size={14} />}
+                disabled={busy}
+                onClick={() => void onResumeRun(activeTimeline.run.id)}
+              >
+                {activeTimeline.run.status === "awaiting_recovery" ? "跳过失败步骤并继续" : "从最近消息继续任务"}
+              </Button>
+            </div>
           )}
         </div>
       ) : activeTimeline ? null : (

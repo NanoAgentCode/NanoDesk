@@ -1,6 +1,7 @@
 import {
   createAgentRun,
   finishAgentRun,
+  resumeAgentRun,
   recordAgentStep,
   resolveAgentModelOutput,
   executeAgentToolCall,
@@ -8,7 +9,8 @@ import {
   resolveAgentToolApproval,
   rejectAgentToolCall,
   createAgentToolCall,
-  updateAgentToolCall
+  updateAgentToolCall,
+  retryAgentToolCall
 } from "../api";
 import type {
   AgentRun,
@@ -40,6 +42,15 @@ export async function safeFinishAgentRun(
     return await finishAgentRun(id, status, error);
   } catch (err) {
     console.error("Failed to finish agent run:", err);
+    return null;
+  }
+}
+
+export async function safeResumeAgentRun(id: string): Promise<AgentRun | null> {
+  try {
+    return await resumeAgentRun(id);
+  } catch (error) {
+    console.error("Failed to resume agent run:", error);
     return null;
   }
 }
@@ -130,6 +141,15 @@ export async function safeUpdateAgentToolCall(
     return await updateAgentToolCall(id, status, resultSummary, error);
   } catch (err) {
     console.error("Failed to update agent tool call:", err);
+    return null;
+  }
+}
+
+export async function safeRetryAgentToolCall(id: string): Promise<AgentToolCall | null> {
+  try {
+    return await retryAgentToolCall(id);
+  } catch (error) {
+    console.error("Failed to retry agent tool call:", error);
     return null;
   }
 }

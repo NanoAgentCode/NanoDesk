@@ -5,8 +5,10 @@ import {
   safeCreateAgentRun,
   safeCreateAgentToolCall,
   safeExecuteAgentToolCall,
+  safeFinishAgentRun,
   safeRecordAgentStep,
   safeRejectAgentToolCall,
+  safeRetryAgentToolCall,
   safeResolveAgentToolApproval,
   safeUpdateAgentToolCall
 } from "../lib/agentSafe";
@@ -159,10 +161,12 @@ export function useAgentToolRuntime({
           setMessageToolCalls((current) => ({ ...current, [messageId]: updatedToolCall }));
         }
       }
+      if (activeRunId) {
+        await safeFinishAgentRun(activeRunId, "awaiting_recovery", String(error));
+      }
       try {
         const projectHint = conversations.getConversationProjectHint();
         const conversationId = await conversations.ensureConversation(projectHint);
-        const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
         await appendMessage({
           conversation_id: conversationId,
           role: "user",
@@ -171,7 +175,7 @@ export function useAgentToolRuntime({
         });
         const updatedMessages = await listMessages(conversationId);
         setMessages(updatedMessages);
-        await onContinue(conversationId, updatedMessages, projectForRequest, activeRunId);
+        setNotice("工具执行失败。你可以重试，或让智能体跳过该步骤继续处理。");
       } catch (appendError) {
         console.error("Failed to append tool error message:", appendError);
       }
@@ -234,6 +238,36 @@ export function useAgentToolRuntime({
     }
   }
 
+  async function handleRetryTool(messageId: string) {
+    if (busy || executingToolMessageId) return;
+    const currentToolCall = messageToolCalls[messageId];
+    const conversationId = conversations.activeConversationId;
+    if (!currentToolCall) {
+      setNotice("找不到可恢复的工具调用记录。");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const retried = await safeRetryAgentToolCall(currentToolCall.id);
+      if (!retried) {
+        setNotice("工具重试准备失败，请查看 Agent Runtime 详情。");
+        return;
+      }
+      autoExecutionIdsRef.current.delete(retried.id);
+      if (conversationId) {
+        setConversationRunIds((current) => ({
+          ...current,
+          [conversationId]: retried.run_id
+        }));
+      }
+      setMessageToolCalls((current) => ({ ...current, [messageId]: retried }));
+      setNotice(`正在进行第 ${retried.attempt_count + 1}/${retried.max_attempts} 次尝试。`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (busy || executingToolMessageId) return;
     const candidate = Object.entries(messageToolCalls).find(([, toolCall]) =>
@@ -259,6 +293,7 @@ export function useAgentToolRuntime({
     setConversationRunIds,
     prepareResolvedToolCall,
     handleExecuteTool,
-    handleRejectTool
+    handleRejectTool,
+    handleRetryTool
   };
 }

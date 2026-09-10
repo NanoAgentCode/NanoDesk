@@ -157,7 +157,9 @@ fn tool_call_event(run: &AgentRun, tool_call: &AgentToolCall) -> AgentEventLogEn
         metadata_json: Some(
             json!({
                 "message_id": tool_call.message_id.clone(),
-                "tool_name": tool_call.name.clone()
+                "tool_name": tool_call.name.clone(),
+                "attempt_count": tool_call.attempt_count,
+                "max_attempts": tool_call.max_attempts
             })
             .to_string(),
         ),
@@ -177,6 +179,7 @@ fn step_event_type(kind: &str) -> &'static str {
         "clarification" => "clarification.answer",
         "memory" => "memory.write",
         "error" => "runtime.error",
+        "recovery" => "runtime.recovery",
         _ => "runtime.step",
     }
 }
@@ -191,6 +194,7 @@ fn step_title(kind: &str) -> &'static str {
         "clarification" => "Clarification answer",
         "memory" => "Memory write",
         "error" => "Runtime error",
+        "recovery" => "Recovery action",
         _ => "Runtime step",
     }
 }

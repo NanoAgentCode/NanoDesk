@@ -158,6 +158,8 @@ function App() {
     handleSendMessage,
     handleExecuteTool,
     handleRejectTool,
+    handleRetryTool,
+    handleResumeAgentRun,
     handleClarificationAnswer,
     handleCloseConversation,
     handleRagFiles,
@@ -717,6 +719,8 @@ function App() {
           handleCloseConversation={handleCloseConversation}
           handleExecuteTool={handleExecuteTool}
           handleRejectTool={handleRejectTool}
+          handleRetryTool={handleRetryTool}
+          handleResumeAgentRun={handleResumeAgentRun}
           handleClarificationAnswer={handleClarificationAnswer}
           handleInputChange={handleInputChange}
           handleChatInputKeyDown={handleChatInputKeyDown}

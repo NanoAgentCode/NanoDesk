@@ -66,6 +66,8 @@ interface ChatPaneProps {
   handleCloseConversation: () => void;
   handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  handleRetryTool: (messageId: string) => Promise<void>;
+  handleResumeAgentRun: (runId: string) => Promise<void>;
   handleClarificationAnswer: (messageId: string, request: AgentClarificationRequest, answers: AgentClarificationAnswer[]) => Promise<void>;
   handleInputChange: (value: string, cursorIndex: number) => Promise<void>;
   handleChatInputKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -154,6 +156,8 @@ export default function ChatPane({
   handleCloseConversation,
   handleExecuteTool,
   handleRejectTool,
+  handleRetryTool,
+  handleResumeAgentRun,
   handleClarificationAnswer,
   handleInputChange,
   handleChatInputKeyDown,
@@ -242,8 +246,14 @@ export default function ChatPane({
     if (status === "failed") {
       return <span style={{ color: "var(--accent-danger)", fontWeight: "bold" }}>执行失败</span>;
     }
+    if (status === "interrupted") {
+      return <span style={{ color: "var(--accent-danger)", fontWeight: "bold" }}>执行被中断，结果未知</span>;
+    }
     if (status === "rejected") {
       return <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>已拒绝</span>;
+    }
+    if (status === "skipped") {
+      return <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>已跳过失败步骤</span>;
     }
     return null;
   }
@@ -321,6 +331,8 @@ export default function ChatPane({
           activeTimeline={obs.activeRunTimeline}
           expandedRows={obs.expandedObservabilityRows}
           onToggleRow={obs.toggleTimelineRow}
+          busy={busy}
+          onResumeRun={handleResumeAgentRun}
         />
       )}
 
@@ -382,6 +394,30 @@ export default function ChatPane({
                       <span style={{ color: "var(--text-secondary)" }}>⏳ 正在执行中...</span>
                     ) : (
                       <span style={{ color: "var(--text-secondary)" }}>等待用户选择...</span>
+                    )}
+                    {(toolStatus === "failed" || toolStatus === "interrupted") && messageToolCalls[message.id] && (
+                      <>
+                        {messageToolCalls[message.id].attempt_count < messageToolCalls[message.id].max_attempts ? (
+                          <Button
+                            size="xs"
+                            variant="light"
+                            disabled={busy}
+                            onClick={() => void handleRetryTool(message.id)}
+                          >
+                            重试（{messageToolCalls[message.id].attempt_count + 1}/{messageToolCalls[message.id].max_attempts}）
+                          </Button>
+                        ) : (
+                          <small style={{ color: "var(--text-secondary)" }}>已达到重试上限</small>
+                        )}
+                        <Button
+                          size="xs"
+                          variant="default"
+                          disabled={busy}
+                          onClick={() => void handleResumeAgentRun(messageToolCalls[message.id].run_id)}
+                        >
+                          跳过并继续
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

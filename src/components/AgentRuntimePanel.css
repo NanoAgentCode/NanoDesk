@@ -23,7 +23,8 @@
   background: rgba(14, 165, 233, 0.12);
 }
 .agent-run-header.awaiting_tool,
-.agent-run-header.awaiting_clarification {
+.agent-run-header.awaiting_clarification,
+.agent-run-header.awaiting_recovery {
   border-color: rgba(245, 158, 11, 0.38);
   background: rgba(245, 158, 11, 0.14);
 }
@@ -38,7 +39,8 @@
   border-color: var(--accent-cyan); background: var(--option-bg-selected);
 }
 .agent-timeline-row.failed,
-.agent-timeline-row.rejected {
+.agent-timeline-row.rejected,
+.agent-timeline-row.interrupted {
   border-color: var(--control-danger-border); background: var(--control-danger-soft-bg);
 }
 .agent-timeline-row {
