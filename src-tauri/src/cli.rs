@@ -264,6 +264,7 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         None => default_app_data_dir()?,
     };
     std::fs::create_dir_all(&data_dir)?;
+    crate::legacy_migration::migrate_legacy_app_data(&data_dir)?;
     let db_path = data_dir.join(brand::MAIN_DATABASE_NAME);
     let db = Database::open(db_path.clone())?;
     let project = match &options.mode {

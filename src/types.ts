@@ -564,6 +564,11 @@ export interface AgentToolCall {
   max_attempts: number;
 }
 
+export interface UploadedFileExtractionRequest {
+  name: string;
+  content_base64: string;
+}
+
 export interface AgentToolCallDraft {
   run_id: string;
   message_id: string;

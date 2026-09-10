@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   getCodeIndexStats,
@@ -7,6 +7,7 @@ import {
   indexProjectCode,
   isDirectoryEmpty,
   listConversations,
+  listConversationProjectPaths,
   listProjectFiles
 } from "../api";
 import { confirmAction } from "../lib/dialogs";
@@ -18,14 +19,10 @@ import type {
   ProjectIndexStats
 } from "../types";
 import { APP_STORAGE_PREFIX } from "../config/brand";
+import { mergeRecoveredProjects, projectNameFromPath } from "../lib/projects";
 
 const projectStorageKey = `${APP_STORAGE_PREFIX}-projects`;
 const activeProjectStorageKey = `${APP_STORAGE_PREFIX}-active-project-id`;
-
-function projectNameFromPath(path: string) {
-  const normalized = path.replace(/[\\/]+$/, "");
-  return normalized.split(/[\\/]/).pop() || normalized || "未命名项目";
-}
 
 function loadSavedProjects() {
   const saved = localStorage.getItem(projectStorageKey);
@@ -145,6 +142,7 @@ export function useProjects(
     conversation: Conversation | null;
     project: ProjectEntry | null;
   }>({ x: 0, y: 0, visible: false, conversation: null, project: null });
+  const restoredProjectsRef = useRef(false);
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) || null,
@@ -155,6 +153,23 @@ export function useProjects(
     () => (activeProject ? getProjectFilesForPath(activeProject.path) : []),
     [activeProject, projectFilesByPath]
   );
+
+  useEffect(() => {
+    if (restoredProjectsRef.current) return;
+    restoredProjectsRef.current = true;
+    void listConversationProjectPaths()
+      .then((paths) => {
+        if (paths.length === 0) return;
+        setProjects((current) =>
+          mergeRecoveredProjects(current, paths, new Date().toISOString())
+        );
+      })
+      .catch((error) => console.error("Failed to restore projects from conversations:", error));
+  }, []);
+
+  useEffect(() => {
+    saveProjects(projects, activeProjectId);
+  }, [projects, activeProjectId]);
 
   useEffect(() => {
     if (projects.length === 0) {

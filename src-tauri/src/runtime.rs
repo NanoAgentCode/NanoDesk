@@ -545,6 +545,15 @@ impl RuntimeStore {
         Ok(runs)
     }
 
+    pub fn delete_runs_for_conversation(&self, conversation_id: &str) -> AppResult<usize> {
+        self.conn
+            .execute(
+                "DELETE FROM agent_runs WHERE conversation_id = ?1",
+                params![conversation_id],
+            )
+            .map_err(AppError::from)
+    }
+
     pub fn list_run_timelines(
         &self,
         conversation_id: &str,
@@ -1106,6 +1115,32 @@ mod tests {
         assert!(tool_call.error.is_none());
         assert_eq!(tool_call.attempt_count, 0);
         assert_eq!(tool_call.max_attempts, 3);
+    }
+
+    #[test]
+    fn deleting_conversation_runs_cascades_steps_and_tool_calls() {
+        let store = test_store();
+        let tool_call = create_tool_call(&store);
+        store
+            .record_step(AgentStepDraft {
+                run_id: tool_call.run_id.clone(),
+                kind: "tool".to_string(),
+                status: "running".to_string(),
+                input_summary: None,
+                output_summary: None,
+                metadata_json: None,
+            })
+            .unwrap();
+
+        assert_eq!(
+            store
+                .delete_runs_for_conversation("conversation-1")
+                .unwrap(),
+            1
+        );
+        assert!(store.list_runs("conversation-1", 20).unwrap().is_empty());
+        assert!(store.list_tool_calls(&tool_call.run_id).unwrap().is_empty());
+        assert!(store.list_steps(&tool_call.run_id).unwrap().is_empty());
     }
 
     #[test]

@@ -33,22 +33,24 @@ pub struct Database {
     project_conn: Connection,
 }
 
+pub(crate) fn register_sqlite_vec_extension() {
+    static REGISTER_SQLITE_VEC: Once = Once::new();
+    REGISTER_SQLITE_VEC.call_once(|| unsafe {
+        type SqliteExtensionEntry = unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *mut c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> c_int;
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute::<
+            *const (),
+            SqliteExtensionEntry,
+        >(sqlite3_vec_init as *const ())));
+    });
+}
+
 impl Database {
     pub fn open(path: PathBuf) -> AppResult<Self> {
-        static REGISTER_SQLITE_VEC: Once = Once::new();
-        REGISTER_SQLITE_VEC.call_once(|| unsafe {
-            type SqliteExtensionEntry = unsafe extern "C" fn(
-                *mut rusqlite::ffi::sqlite3,
-                *mut *mut c_char,
-                *const rusqlite::ffi::sqlite3_api_routines,
-            ) -> c_int;
-            rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute::<
-                *const (),
-                SqliteExtensionEntry,
-            >(
-                sqlite3_vec_init as *const ()
-            )));
-        });
+        register_sqlite_vec_extension();
         let paths = storage::DatabasePaths::from_base_path(&path)?;
         let conn = Connection::open(&paths.conversations)?;
         let config_conn = Connection::open(&paths.config)?;
@@ -1784,5 +1786,23 @@ mod tests {
         assert_eq!(profile.global_preference_count, 0);
         assert_eq!(profile.profile_fact_count, 0);
         assert!(profile.facts.is_empty());
+    }
+
+    #[test]
+    fn project_paths_can_be_recovered_from_persisted_conversations() {
+        let db = Database::open(PathBuf::from(":memory:")).expect("database should open");
+        for project_path in [Some("D:/workspace/one"), Some("D:/workspace/two"), None] {
+            db.create_conversation(ConversationDraft {
+                title: None,
+                model_config_id: None,
+                project_path: project_path.map(str::to_string),
+            })
+            .expect("conversation should be created");
+        }
+
+        assert_eq!(
+            db.list_conversation_project_paths().unwrap(),
+            vec!["D:/workspace/one", "D:/workspace/two"]
+        );
     }
 }

@@ -7,6 +7,7 @@ mod core;
 mod db;
 mod error;
 mod file_content;
+mod legacy_migration;
 mod llm;
 mod logging;
 mod mcp;
@@ -329,6 +330,26 @@ async fn list_mcp_servers(state: State<'_, AppState>) -> AppResult<Vec<McpServer
 }
 
 #[tauri::command]
+async fn restore_mcp_servers(state: State<'_, AppState>) -> AppResult<Vec<McpServerView>> {
+    let configs = state.db.lock().await.list_mcp_servers()?;
+    let mut manager = state.mcp.lock().await;
+    for config in configs.iter().filter(|config| config.enabled) {
+        if let Err(error) = manager.connect(config.clone()).await {
+            logging::warn(
+                "mcp",
+                "failed to restore enabled MCP server",
+                serde_json::json!({
+                    "server_id": config.id,
+                    "server_name": config.name,
+                    "error": error.to_string()
+                }),
+            );
+        }
+    }
+    Ok(manager.list_views(configs))
+}
+
+#[tauri::command]
 async fn save_mcp_server(
     state: State<'_, AppState>,
     draft: McpServerDraft,
@@ -594,6 +615,11 @@ async fn list_archived_conversations(
 }
 
 #[tauri::command]
+async fn list_conversation_project_paths(state: State<'_, AppState>) -> AppResult<Vec<String>> {
+    state.db.lock().await.list_conversation_project_paths()
+}
+
+#[tauri::command]
 async fn create_conversation(
     state: State<'_, AppState>,
     draft: ConversationDraft,
@@ -639,7 +665,16 @@ async fn delete_conversation(state: State<'_, AppState>, id: String) -> AppResul
         },
     )
     .await;
-    let result = state.db.lock().await.delete_conversation(&id);
+    let result = async {
+        state.db.lock().await.delete_conversation(&id)?;
+        state
+            .runtime
+            .lock()
+            .await
+            .delete_runs_for_conversation(&id)?;
+        Ok(())
+    }
+    .await;
     finish_observation(&state, span, &result, Some("deleted=true".to_string())).await;
     result
 }
@@ -1733,7 +1768,15 @@ async fn read_chat_image_attachment(
     const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 
     let normalized = normalize_relative_path(&relative_path)?;
-    if !normalized.starts_with(&format!("{}/", brand::IMAGE_UPLOADS_DIRECTORY)) {
+    let legacy_uploads_directory =
+        format!("{}/uploads/images", brand::LEGACY_PROJECT_DATA_DIRECTORY);
+    if ![
+        brand::IMAGE_UPLOADS_DIRECTORY,
+        legacy_uploads_directory.as_str(),
+    ]
+    .iter()
+    .any(|directory| normalized.starts_with(&format!("{directory}/")))
+    {
         return Err(crate::error::AppError::Message(
             "只能预览对话图片附件".to_string(),
         ));
@@ -2063,12 +2106,14 @@ pub fn run() {
                 .map_err(|err| format!("failed to resolve app data directory: {err}"))?;
             std::fs::create_dir_all(&data_dir)
                 .map_err(|err| format!("failed to create app data directory: {err}"))?;
+            let migration = legacy_migration::migrate_legacy_app_data(&data_dir)
+                .map_err(|err| format!("failed to migrate legacy app data: {err}"))?;
             let log_dir = data_dir.join("logs");
             logging::init_system_logger(log_dir)
                 .map_err(|err| format!("failed to initialize system logger: {err}"))?;
             logging::info(
                 "app",
-                &format!("{} startup", brand::DISPLAY_NAME),
+                format!("{} startup", brand::DISPLAY_NAME),
                 serde_json::json!({}),
             );
             logging::debug(
@@ -2076,6 +2121,16 @@ pub fn run() {
                 "app data directory resolved",
                 serde_json::json!({ "path": data_dir.display().to_string() }),
             );
+            if migration.databases > 0 || migration.files > 0 {
+                logging::info(
+                    "migration",
+                    "legacy NanoAgent data imported",
+                    serde_json::json!({
+                        "databases": migration.databases,
+                        "files": migration.files
+                    }),
+                );
+            }
             let temp_dir = data_dir.join("temp");
             std::fs::create_dir_all(&temp_dir)
                 .map_err(|err| format!("failed to create temp directory: {err}"))?;
@@ -2119,6 +2174,7 @@ pub fn run() {
             save_model_config,
             delete_model_config,
             list_mcp_servers,
+            restore_mcp_servers,
             save_mcp_server,
             delete_mcp_server,
             connect_mcp_server,
@@ -2140,6 +2196,7 @@ pub fn run() {
             test_embedding_connectivity,
             list_conversations,
             list_archived_conversations,
+            list_conversation_project_paths,
             create_conversation,
             delete_conversation,
             archive_conversation,
@@ -2219,6 +2276,7 @@ pub fn run() {
             write_local_file,
             read_local_file,
             file_content::read_absolute_file,
+            file_content::extract_uploaded_file,
             list_observability_spans,
             clear_observability_spans,
             show_app_window,

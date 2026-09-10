@@ -29,6 +29,20 @@ impl Database {
         Ok(rows)
     }
 
+    pub fn list_conversation_project_paths(&self) -> AppResult<Vec<String>> {
+        let mut statement = self.conn.prepare(
+            "SELECT DISTINCT project_path
+             FROM conversations
+             WHERE project_path IS NOT NULL AND TRIM(project_path) <> ''
+             ORDER BY project_path COLLATE NOCASE",
+        )?;
+        let paths = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(AppError::from)?;
+        Ok(paths)
+    }
+
     pub fn list_archived_conversations(
         &self,
         project_path: Option<&str>,

@@ -6,6 +6,7 @@ import {
   chat,
   chatStream,
   createMemory,
+  extractUploadedFile,
   indexRagFile,
   listRelevantMemories,
   getProfileContext,
@@ -18,9 +19,10 @@ import {
 } from "../api";
 import { buildSystemMessage } from "../lib/chatSystemMessage";
 import { loadProjectRetrievalContext } from "../lib/projectRetrieval";
+import { createChatStreamAccumulator } from "../lib/chatStreamAccumulator";
 import { isSupportedRagFile } from "../lib/formatters";
 import { prepareBudgetedContext as prepareContextWithinBudget } from "../lib/contextPreparation";
-import { isSupportedImageAttachmentFile } from "../lib/imageAttachments";
+import { fileToDataUrl, isSupportedImageAttachmentFile } from "../lib/imageAttachments";
 import {
   resolveUserMemoryRoute,
   buildAutomaticClarificationAnswers,
@@ -450,23 +452,21 @@ export function useChat({
       ];
 
       const requestId = crypto.randomUUID();
-      let streamedContent = "";
-      let streamedReasoning = "";
+      const stream = createChatStreamAccumulator(requestId);
       const temporaryAssistantMessage: PersistedMessage = {
         id: requestId, conversation_id: conversationId, role: "assistant", content: "", created_at: new Date().toISOString()
       };
       setMessages([...displayMessages, temporaryAssistantMessage]);
 
       const unlisten = await listen<ChatStreamEvent>("chat-stream", (event) => {
-        if (event.payload.request_id !== requestId) return;
+        const streamed = stream.accept(event.payload);
+        if (!streamed) return;
         if (activeConversationIdRef.current !== conversationId) return;
         if (event.payload.type === "delta") {
-          streamedContent += event.payload.content;
-          setMessages((current) => current.map((m) => m.id === requestId ? { ...m, content: streamedContent } : m));
+          setMessages((current) => current.map((m) => m.id === requestId ? { ...m, content: streamed.content } : m));
         }
         if (event.payload.type === "reasoning_delta") {
-          streamedReasoning += event.payload.content;
-          setMessageReasoning((current) => ({ ...current, [requestId]: streamedReasoning }));
+          setMessageReasoning((current) => ({ ...current, [requestId]: streamed.reasoning }));
         }
         if (event.payload.type === "error") setNotice(event.payload.message);
       });
@@ -478,14 +478,18 @@ export function useChat({
           metadata_json: JSON.stringify({ model_config_id: activeModelId })
         });
       }
-      await chatStream(
-        requestId,
-        activeModelId,
-        modelMessages,
-        conversationId,
-        preparedContext.outputReserve
-      );
-      unlisten();
+      try {
+        await chatStream(
+          requestId,
+          activeModelId,
+          modelMessages,
+          conversationId,
+          preparedContext.outputReserve
+        );
+      } finally {
+        unlisten();
+      }
+      const { content: streamedContent, reasoning: streamedReasoning } = stream.snapshot();
 
       if (!streamedContent.trim()) {
         if (agentRun) {
@@ -590,8 +594,7 @@ export function useChat({
     ];
 
     const requestId = crypto.randomUUID();
-    let streamedContent = "";
-    let streamedReasoning = "";
+    const stream = createChatStreamAccumulator(requestId);
     let streamFailed = false;
     const temporaryAssistantMessage: PersistedMessage = {
       id: requestId, conversation_id: conversationId, role: "assistant", content: "", created_at: new Date().toISOString()
@@ -599,15 +602,14 @@ export function useChat({
     setMessages([...displayMessages, temporaryAssistantMessage]);
 
     const unlisten = await listen<ChatStreamEvent>("chat-stream", (event) => {
-      if (event.payload.request_id !== requestId) return;
+      const streamed = stream.accept(event.payload);
+      if (!streamed) return;
       if (activeConversationIdRef.current !== conversationId) return;
       if (event.payload.type === "delta") {
-        streamedContent += event.payload.content;
-        setMessages((current) => current.map((m) => m.id === requestId ? { ...m, content: streamedContent } : m));
+        setMessages((current) => current.map((m) => m.id === requestId ? { ...m, content: streamed.content } : m));
       }
       if (event.payload.type === "reasoning_delta") {
-        streamedReasoning += event.payload.content;
-        setMessageReasoning((current) => ({ ...current, [requestId]: streamedReasoning }));
+        setMessageReasoning((current) => ({ ...current, [requestId]: streamed.reasoning }));
       }
       if (event.payload.type === "error") { streamFailed = true; setNotice(event.payload.message); }
     });
@@ -642,6 +644,8 @@ export function useChat({
     } finally {
       unlisten();
       setBusy(false);
+      const { content: streamedContent, reasoning: streamedReasoning, error: streamError } = stream.snapshot();
+      streamFailed ||= Boolean(streamError);
       let assistantMessage: PersistedMessage | null = null;
       if (!streamFailed && streamedContent.trim()) {
         assistantMessage = await appendMessage({
@@ -814,10 +818,13 @@ export function useChat({
     try {
       for (const file of selectedFiles) {
         rag.setIndexingRagFileName(file.name);
-        const content = await file.text();
+        const extracted = await extractUploadedFile({
+          name: file.name,
+          content_base64: await fileToDataUrl(file)
+        });
         await indexRagFile({
           conversation_id: conversationId, name: file.name, mime: file.type || "text/plain",
-          size: file.size, content, model_config_id: modelConfigId
+          size: extracted.size, content: extracted.content, model_config_id: modelConfigId
         });
       }
       await rag.refreshRagFiles(conversationId);

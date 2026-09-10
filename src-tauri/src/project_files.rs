@@ -196,7 +196,7 @@ fn open_project_location_with<F>(project_path: &str, open_directory: F) -> AppRe
 where
     F: FnOnce(&Path) -> AppResult<()>,
 {
-    let root = project_root(&project_path)?;
+    let root = project_root(project_path)?;
     open_directory(&root)?;
     Ok(root.to_string_lossy().to_string())
 }

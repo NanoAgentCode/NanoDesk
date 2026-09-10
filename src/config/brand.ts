@@ -6,5 +6,6 @@ export const APP_IDENTIFIER = brandConfig.bundleIdentifier;
 export const APP_STORAGE_PREFIX = brandConfig.storagePrefix;
 export const PROJECT_DATA_DIRECTORY = brandConfig.projectDataDirectory;
 export const APP_PLUGIN_NAMESPACE = brandConfig.pluginNamespace;
+export const LEGACY_PROJECT_DATA_DIRECTORY = brandConfig.legacyProjectDataDirectory;
 
 export default brandConfig;

@@ -1,6 +1,7 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   listMcpServers,
+  restoreMcpServers,
   saveMcpServer,
   deleteMcpServer,
   connectMcpServer,
@@ -51,6 +52,7 @@ export function useMcp(setNotice: (message: string) => void): UseMcpReturn {
   const [stdioCommandLine, setStdioCommandLine] = useState(formatStdioCommandLine(emptyMcpDraft));
   const [selectedMcpServerId, setSelectedMcpServerId] = useState("");
   const [mcpBusyId, setMcpBusyId] = useState("");
+  const restoredOnStartupRef = useRef(false);
 
   const selectedMcpServer = useMemo(
     () => mcpServers.find((server) => server.config.id === selectedMcpServerId) || null,
@@ -82,23 +84,18 @@ export function useMcp(setNotice: (message: string) => void): UseMcpReturn {
 
   // Initial load
   useEffect(() => {
-    void refreshMcpServers();
+    if (restoredOnStartupRef.current) return;
+    restoredOnStartupRef.current = true;
+    void restoreMcpServers()
+      .then((servers) => applyMcpServers(servers))
+      .catch((error) => setNotice(`恢复 MCP 连接失败：${String(error)}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function refreshMcpServers(selectId?: string) {
     try {
       const servers = await listMcpServers();
-      setMcpServers(servers);
-      setSelectedMcpServerId((current) => {
-        if (selectId && servers.some((server) => server.config.id === selectId)) {
-          return selectId;
-        }
-        if (current && servers.some((server) => server.config.id === current)) {
-          return current;
-        }
-        return servers[0]?.config.id || "";
-      });
+      applyMcpServers(servers, selectId);
     } catch (error) {
       setNotice(`加载 MCP 配置失败：${String(error)}`);
     }
@@ -116,6 +113,19 @@ export function useMcp(setNotice: (message: string) => void): UseMcpReturn {
     setSelectedMcpServerId("");
     setMcpDraft(emptyMcpDraft);
     setStdioCommandLine(formatStdioCommandLine(emptyMcpDraft));
+  }
+
+  function applyMcpServers(servers: McpServerView[], selectId?: string) {
+    setMcpServers(servers);
+    setSelectedMcpServerId((current) => {
+      if (selectId && servers.some((server) => server.config.id === selectId)) {
+        return selectId;
+      }
+      if (current && servers.some((server) => server.config.id === current)) {
+        return current;
+      }
+      return servers[0]?.config.id || "";
+    });
   }
 
   function getDraftWithStdioCommandLine() {
@@ -145,7 +155,7 @@ export function useMcp(setNotice: (message: string) => void): UseMcpReturn {
       const draftForSave = getDraftWithStdioCommandLine();
       const saved = await saveMcpServer({
         ...draftForSave,
-        enabled: true
+        enabled: draftForSave.enabled
       });
       await refreshMcpServers(saved.id);
       setNotice("MCP 服务器配置已保存。");

@@ -860,6 +860,7 @@ function App() {
               </button>
               <button
                 className="custom-context-menu-item danger-action"
+                disabled={busy && projects.contextMenu.conversation?.id === activeConversationId}
                 onClick={() => {
                   const conversation = projects.contextMenu.conversation;
                   projects.setContextMenu((prev) => ({ ...prev, visible: false }));

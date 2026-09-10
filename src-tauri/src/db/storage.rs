@@ -2,9 +2,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-#[cfg(test)]
-use rusqlite::OptionalExtension;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::Database;
 use crate::error::{AppError, AppResult};
@@ -98,6 +96,10 @@ impl Database {
         Self::prepare_database(&self.knowledge_conn, KNOWLEDGE_TABLES)?;
         Self::prepare_database(&self.project_conn, PROJECT_INDEX_TABLES)?;
 
+        rebuild_legacy_search_indexes_once(&self.conn, rebuild_conversation_search_indexes)?;
+        rebuild_legacy_search_indexes_once(&self.knowledge_conn, rebuild_knowledge_search_indexes)?;
+        rebuild_legacy_search_indexes_once(&self.project_conn, rebuild_project_search_indexes)?;
+
         self.sync_model_config_references()?;
         self.rebuild_missing_memory_graphs()
             .map_err(|error| AppError::Message(format!("memory graph rebuild failed: {error}")))?;
@@ -130,7 +132,10 @@ impl Database {
                     .strip_prefix("memory_vectors_")
                     .and_then(|value| value.parse::<usize>().ok())
                     .is_some();
-            if !retained.contains(name.as_str()) && !is_memory_vector {
+            if !retained.contains(name.as_str())
+                && !is_memory_vector
+                && name != "storage_migrations"
+            {
                 conn.execute_batch(&format!(
                     "DROP TABLE IF EXISTS {};",
                     quote_identifier(&name)
@@ -186,6 +191,92 @@ impl Database {
     }
 }
 
+fn rebuild_conversation_search_indexes(conn: &Connection) -> AppResult<()> {
+    conn.execute_batch(
+        "DELETE FROM rag_chunks_fts;
+         INSERT INTO rag_chunks_fts (chunk_id, conversation_id, file_id, file_name, text)
+         SELECT c.id, c.conversation_id, c.file_id, f.name, c.text
+         FROM rag_chunks c JOIN rag_files f ON f.id = c.file_id;",
+    )?;
+    Ok(())
+}
+
+fn rebuild_knowledge_search_indexes(conn: &Connection) -> AppResult<()> {
+    conn.execute_batch(
+        "DELETE FROM items_fts;
+         INSERT INTO items_fts (id, title, body, tags)
+         SELECT id, title, body, tags_json FROM items;
+         DELETE FROM memories_fts;
+         INSERT INTO memories_fts (id, title, content, tags)
+         SELECT id, title, content, tags_json FROM memories;
+         DELETE FROM memory_entities_fts;
+         INSERT INTO memory_entities_fts (id, name)
+         SELECT id, name FROM memory_entities;",
+    )?;
+    Ok(())
+}
+
+fn rebuild_project_search_indexes(conn: &Connection) -> AppResult<()> {
+    conn.execute_batch(
+        "DELETE FROM code_chunks_fts;
+         INSERT INTO code_chunks_fts (chunk_id, project_path, file_path, language, text)
+         SELECT id, project_path, file_path, language, text FROM code_chunks;
+         DELETE FROM project_index_chunks_fts;
+         INSERT INTO project_index_chunks_fts
+            (chunk_id, project_path, indexer, file_path, title, text)
+         SELECT id, project_path, indexer, file_path, title, text FROM project_index_chunks;",
+    )?;
+    Ok(())
+}
+
+fn rebuild_legacy_search_indexes_once(
+    conn: &Connection,
+    rebuild: fn(&Connection) -> AppResult<()>,
+) -> AppResult<()> {
+    let has_migration_table = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master
+             WHERE type = 'table' AND name = 'storage_migrations'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !has_migration_table {
+        return Ok(());
+    }
+
+    let legacy_imported = conn
+        .query_row(
+            "SELECT 1 FROM storage_migrations WHERE key = ?1",
+            params![crate::legacy_migration::MIGRATION_KEY],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    let already_rebuilt = conn
+        .query_row(
+            "SELECT 1 FROM storage_migrations WHERE key = ?1",
+            params![crate::legacy_migration::SEARCH_INDEX_REBUILD_KEY],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !legacy_imported || already_rebuilt {
+        return Ok(());
+    }
+
+    rebuild(conn)?;
+    conn.execute(
+        "INSERT INTO storage_migrations (key, applied_at) VALUES (?1, ?2)",
+        params![
+            crate::legacy_migration::SEARCH_INDEX_REBUILD_KEY,
+            chrono::Utc::now().to_rfc3339()
+        ],
+    )?;
+    Ok(())
+}
+
 fn quote_identifier(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
@@ -213,6 +304,11 @@ mod tests {
         .optional()
         .expect("table lookup should succeed")
         .is_some()
+    }
+
+    fn increment_rebuild_count(conn: &Connection) -> AppResult<()> {
+        conn.execute("UPDATE rebuild_count SET value = value + 1", [])?;
+        Ok(())
     }
 
     fn model_draft(id: &str, name: &str) -> ModelConfigDraft {
@@ -261,6 +357,32 @@ mod tests {
         drop(db);
         fs::remove_dir_all(base_path.parent().expect("path should have parent"))
             .expect("temporary directory should be removed");
+    }
+
+    #[test]
+    fn legacy_search_indexes_are_rebuilt_only_once() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE storage_migrations (
+                key TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL
+             );
+             INSERT INTO storage_migrations (key, applied_at)
+             VALUES ('legacy-brand-import-v1', '2026-01-01T00:00:00Z');
+             CREATE TABLE rebuild_count (value INTEGER NOT NULL);
+             INSERT INTO rebuild_count VALUES (0);",
+        )
+        .unwrap();
+
+        rebuild_legacy_search_indexes_once(&conn, increment_rebuild_count).unwrap();
+        rebuild_legacy_search_indexes_once(&conn, increment_rebuild_count).unwrap();
+
+        assert_eq!(
+            conn.query_row("SELECT value FROM rebuild_count", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
     }
 
     #[test]

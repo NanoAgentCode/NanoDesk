@@ -28,6 +28,7 @@ import type {
   OpsServer,
   OpsServerDraft,
   OpsUploadRequest,
+  UploadedFileExtractionRequest,
   PersistedMessage,
   GitHubSkill,
   ProjectFileContent,
@@ -112,6 +113,10 @@ export function listMcpServers() {
   return invoke<McpServerView[]>("list_mcp_servers");
 }
 
+export function restoreMcpServers() {
+  return invoke<McpServerView[]>("restore_mcp_servers");
+}
+
 export function saveMcpServer(draft: McpServerDraft) {
   return invoke<McpServerConfig>("save_mcp_server", { draft });
 }
@@ -186,6 +191,10 @@ export function listConversations(projectPath?: string | null) {
 
 export function listArchivedConversations(projectPath?: string | null) {
   return invoke<Conversation[]>("list_archived_conversations", { projectPath: projectPath || null });
+}
+
+export function listConversationProjectPaths() {
+  return invoke<string[]>("list_conversation_project_paths");
 }
 
 export function createConversation(draft: ConversationDraft) {
@@ -629,6 +638,10 @@ export interface AbsoluteFileContent {
 
 export function readAbsoluteFile(path: string) {
   return invoke<AbsoluteFileContent>("read_absolute_file", { path });
+}
+
+export function extractUploadedFile(request: UploadedFileExtractionRequest) {
+  return invoke<AbsoluteFileContent>("extract_uploaded_file", { request });
 }
 
 export function getAutostart() {
