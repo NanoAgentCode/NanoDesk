@@ -3,6 +3,8 @@ import { Button } from "@mantine/core";
 import { ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 import type { AgentRunTimeline } from "../types";
 import ObservabilityDetailPanel from "./ObservabilityDetailPanel";
+import TaskPlanCard from "./TaskPlanCard";
+import { parseTaskPlan } from "../lib/messageHelpers";
 import {
   buildAgentTimelineEvents,
   formatAgentRunTitle,
@@ -34,6 +36,9 @@ export default function AgentRuntimePanel({
   onResumeRun
 }: AgentRuntimePanelProps) {
   const timelineEvents = activeTimeline ? buildAgentTimelineEvents(activeTimeline) : [];
+  const persistedPlan = activeTimeline?.run.plan_json
+    ? parseTaskPlan(`<task_plan>${activeTimeline.run.plan_json}</task_plan>`)
+    : null;
 
   return (
     <section
@@ -77,6 +82,7 @@ export default function AgentRuntimePanel({
             </div>
             <small>{formatShortTime(activeTimeline.run.created_at)}</small>
           </div>
+          {persistedPlan && <TaskPlanCard plan={persistedPlan} compact />}
           {timelineEvents.map((event) => {
             const rowId = `runtime-${event.id}`;
             const isExpanded = expandedRows.includes(rowId);

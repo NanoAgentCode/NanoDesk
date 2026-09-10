@@ -201,6 +201,50 @@ export function formatClarificationAnswerMessage(
   return `[澄清回答: ${messageId}]${automatic ? "（自动选择）" : ""}\n${lines.join("\n")}`;
 }
 
+const taskPlanStatuses = new Set<AgentTaskPlanStepStatus>([
+  "pending", "in_progress", "completed", "blocked", "skipped"
+]);
+
+export function parseTaskPlan(content: string): AgentTaskPlan | null {
+  if (!content) return null;
+  const match = content.match(/<task_plan>([\s\S]*?)<\/task_plan>/);
+  if (!match) return null;
+
+  try {
+    const value = JSON.parse(match[1].trim()) as Partial<AgentTaskPlan>;
+    if (
+      typeof value.goal !== "string" || !value.goal.trim() ||
+      !Array.isArray(value.steps) || value.steps.length < 2 || value.steps.length > 12
+    ) return null;
+
+    const ids = new Set<string>();
+    let activeCount = 0;
+    const steps = value.steps.map((step) => {
+      if (
+        !step || typeof step.id !== "string" || !step.id.trim() || ids.has(step.id.trim()) ||
+        typeof step.title !== "string" || !step.title.trim() ||
+        typeof step.status !== "string" || !taskPlanStatuses.has(step.status as AgentTaskPlanStepStatus)
+      ) throw new Error("invalid task plan step");
+      ids.add(step.id.trim());
+      if (step.status === "in_progress") activeCount += 1;
+      return {
+        id: step.id.trim(),
+        title: step.title.trim(),
+        status: step.status as AgentTaskPlanStepStatus,
+        detail: typeof step.detail === "string" && step.detail.trim() ? step.detail.trim() : null
+      };
+    });
+    if (activeCount > 1) return null;
+    return { goal: value.goal.trim(), steps };
+  } catch {
+    return null;
+  }
+}
+
+export function stripTaskPlan(content: string) {
+  return content.replace(/<task_plan>[\s\S]*?<\/task_plan>/g, "").trim();
+}
+
 export function buildAutomaticClarificationAnswers(request: AgentClarificationRequest) {
   return request.questions.map((question): AgentClarificationAnswer => ({
     question_id: question.id,
@@ -225,5 +269,7 @@ export function findPendingClarification(messages: PersistedMessage[]) {
 import type {
   AgentClarificationAnswer,
   AgentClarificationRequest,
+  AgentTaskPlan,
+  AgentTaskPlanStepStatus,
   PersistedMessage
 } from "../types";

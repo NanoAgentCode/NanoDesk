@@ -267,14 +267,19 @@ pub(crate) async fn resolve_agent_model_output(
     let parsed_result = match (
         agent_runner::parse_tool_call(&state.plugins, &content),
         agent_runner::parse_clarification(&content),
+        agent_runner::parse_task_plan(&content),
     ) {
-        (Ok(tool_call), Ok(clarification)) if tool_call.is_some() && clarification.is_some() => {
+        (Ok(tool_call), Ok(clarification), Ok(_))
+            if tool_call.is_some() && clarification.is_some() =>
+        {
             Err(crate::error::AppError::Message(
                 "model output cannot request a tool and clarification at the same time".to_string(),
             ))
         }
-        (Ok(tool_call), Ok(clarification)) => Ok((tool_call, clarification)),
-        (Err(err), _) | (_, Err(err)) => Err(err),
+        (Ok(tool_call), Ok(clarification), Ok(task_plan)) => {
+            Ok((tool_call, clarification, task_plan))
+        }
+        (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => Err(err),
     };
     let parsed = match parsed_result {
         Ok(parsed) => parsed,
@@ -303,7 +308,24 @@ pub(crate) async fn resolve_agent_model_output(
         metadata_json: Some(serde_json::json!({ "message_id": message_id }).to_string()),
     })?;
 
-    let (parsed_tool_call, clarification) = parsed;
+    let (parsed_tool_call, clarification, task_plan) = parsed;
+    if let Some(plan) = &task_plan {
+        let plan_json = serde_json::to_string(plan)?;
+        runtime.update_run_plan(&run_id, &plan_json)?;
+        let completed = plan
+            .steps
+            .iter()
+            .filter(|step| matches!(step.status.as_str(), "completed" | "skipped"))
+            .count();
+        runtime.record_step(AgentStepDraft {
+            run_id: run_id.clone(),
+            kind: "planning".to_string(),
+            status: "completed".to_string(),
+            input_summary: Some(plan.goal.clone()),
+            output_summary: Some(format!("progress={completed}/{}", plan.steps.len())),
+            metadata_json: Some(plan_json),
+        })?;
+    }
     let tool_call = if let Some(parsed) = parsed_tool_call {
         let tool_call = runtime.create_tool_call(AgentToolCallDraft {
             run_id: run_id.clone(),
@@ -334,5 +356,6 @@ pub(crate) async fn resolve_agent_model_output(
         status: status.to_string(),
         tool_call,
         clarification,
+        task_plan,
     })
 }

@@ -996,6 +996,47 @@
   text-align: left;
 }
 
+.task-plan-card {
+  margin: 10px 0;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+.task-plan-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(59, 130, 246, 0.08);
+}
+.task-plan-card header strong { font-size: var(--font-size-sm); font-weight: 600; }
+.task-plan-card header span { color: var(--text-secondary); font-size: var(--font-size-xs); }
+.task-plan-card ol { margin: 0; padding: 7px 10px; list-style: none; }
+.task-plan-card li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 2px;
+  color: var(--text-secondary);
+}
+.task-plan-card li + li { margin-top: 0; }
+.task-plan-card li.in_progress { color: var(--text-primary); }
+.task-plan-card li.completed { color: var(--text-secondary); }
+.task-plan-card li.blocked { color: var(--control-danger-text); }
+.task-plan-step-icon { display: flex; margin-top: 2px; }
+.task-plan-card li.in_progress .task-plan-step-icon { color: var(--accent-cyan); }
+.task-plan-card li.completed .task-plan-step-icon { color: #10b981; }
+.task-plan-step-copy { flex: 1; min-width: 0; }
+.task-plan-step-copy > span, .task-plan-step-copy small { display: block; }
+.task-plan-step-copy small, .task-plan-card li > small { color: var(--text-secondary); font-size: var(--font-size-xs); }
+.task-plan-card li > small { white-space: nowrap; }
+.task-plan-card.compact { margin: 0; }
+.task-plan-card.compact header { padding: 7px 9px; }
+.task-plan-card.compact ol { padding: 5px 8px; }
+
 .chat-decision-panel {
   flex: 0 0 auto;
   max-height: min(52vh, 520px);

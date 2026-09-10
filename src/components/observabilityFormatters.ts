@@ -80,6 +80,7 @@ function formatAgentEventTitle(event: AgentEventLogEntry) {
     "memory.write": "记忆写入",
     "runtime.error": "错误",
     "runtime.recovery": "恢复操作",
+    "runtime.planning": "计划更新",
     "runtime.step": "运行步骤"
   };
   return labels[event.event_type] || event.title || event.event_type;
@@ -99,7 +100,8 @@ function formatAgentStepTitle(step: AgentStep) {
     approval: "审批",
     memory: "记忆写入",
     error: "错误",
-    recovery: "恢复操作"
+    recovery: "恢复操作",
+    planning: "计划更新"
   };
   return labels[step.kind] || step.kind;
 }

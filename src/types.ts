@@ -516,6 +516,8 @@ export interface AgentRun {
   updated_at: string;
   completed_at?: string | null;
   error?: string | null;
+  plan_json?: string | null;
+  plan_updated_at?: string | null;
 }
 
 export interface AgentRunDraft {
@@ -602,11 +604,26 @@ export interface AgentClarificationAnswer {
   skipped?: boolean;
 }
 
+export type AgentTaskPlanStepStatus = "pending" | "in_progress" | "completed" | "blocked" | "skipped";
+
+export interface AgentTaskPlanStep {
+  id: string;
+  title: string;
+  status: AgentTaskPlanStepStatus;
+  detail?: string | null;
+}
+
+export interface AgentTaskPlan {
+  goal: string;
+  steps: AgentTaskPlanStep[];
+}
+
 export interface AgentModelOutputResolution {
   run_id: string;
   status: string;
   tool_call?: AgentToolCall | null;
   clarification?: AgentClarificationRequest | null;
+  task_plan?: AgentTaskPlan | null;
 }
 
 export interface AgentToolExecutionRequest {

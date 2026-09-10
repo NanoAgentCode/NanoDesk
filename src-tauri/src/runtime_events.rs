@@ -180,6 +180,7 @@ fn step_event_type(kind: &str) -> &'static str {
         "memory" => "memory.write",
         "error" => "runtime.error",
         "recovery" => "runtime.recovery",
+        "planning" => "runtime.planning",
         _ => "runtime.step",
     }
 }
@@ -195,6 +196,7 @@ fn step_title(kind: &str) -> &'static str {
         "memory" => "Memory write",
         "error" => "Runtime error",
         "recovery" => "Recovery action",
+        "planning" => "Task plan update",
         _ => "Runtime step",
     }
 }

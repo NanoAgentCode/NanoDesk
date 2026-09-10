@@ -5,6 +5,7 @@ import {
   findPendingClarification,
   formatClarificationAnswerMessage,
   parseClarificationRequest,
+  parseTaskPlan,
   resolveUserMemoryRoute
 } from "./messageHelpers";
 
@@ -32,6 +33,24 @@ describe("resolveUserMemoryRoute", () => {
       kind: "auto",
       memoryDraft: null
     });
+  });
+});
+
+describe("task plans", () => {
+  const content = `<task_plan>{"goal":"完成发布","steps":[{"id":"inspect","title":"检查改动","status":"completed"},{"id":"verify","title":"运行验证","status":"in_progress"},{"id":"publish","title":"提交推送","status":"pending"}]}</task_plan>`;
+
+  it("parses a valid structured plan", () => {
+    const plan = parseTaskPlan(content);
+    expect(plan?.goal).toBe("完成发布");
+    expect(plan?.steps).toHaveLength(3);
+    expect(plan?.steps[0]).toMatchObject({ id: "inspect", status: "completed" });
+    expect(plan?.steps[1]).toMatchObject({ id: "verify", status: "in_progress" });
+  });
+
+  it("rejects duplicate ids, unsupported statuses, and multiple active steps", () => {
+    expect(parseTaskPlan(`<task_plan>{"goal":"x","steps":[{"id":"same","title":"A","status":"pending"},{"id":"same","title":"B","status":"pending"}]}</task_plan>`)).toBeNull();
+    expect(parseTaskPlan(`<task_plan>{"goal":"x","steps":[{"id":"a","title":"A","status":"running"},{"id":"b","title":"B","status":"pending"}]}</task_plan>`)).toBeNull();
+    expect(parseTaskPlan(`<task_plan>{"goal":"x","steps":[{"id":"a","title":"A","status":"in_progress"},{"id":"b","title":"B","status":"in_progress"}]}</task_plan>`)).toBeNull();
   });
 });
 

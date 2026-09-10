@@ -12,6 +12,22 @@ pub struct AgentModelOutputResolution {
     pub status: String,
     pub tool_call: Option<crate::runtime::AgentToolCall>,
     pub clarification: Option<AgentClarificationRequest>,
+    pub task_plan: Option<AgentTaskPlan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentTaskPlanStep {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentTaskPlan {
+    pub goal: String,
+    pub steps: Vec<AgentTaskPlanStep>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -118,6 +134,63 @@ pub fn parse_clarification(content: &str) -> AppResult<Option<AgentClarification
             .map_err(|err| AppError::Message(format!("invalid clarification JSON: {err}")))?;
     validate_clarification(&request)?;
     Ok(Some(request))
+}
+
+pub fn parse_task_plan(content: &str) -> AppResult<Option<AgentTaskPlan>> {
+    let Some(open_start) = content.find("<task_plan>") else {
+        return Ok(None);
+    };
+    let body_start = open_start + "<task_plan>".len();
+    let body_end = content[body_start..]
+        .find("</task_plan>")
+        .map(|offset| body_start + offset)
+        .ok_or_else(|| AppError::Message("task_plan closing tag is missing".to_string()))?;
+    let plan: AgentTaskPlan = serde_json::from_str(content[body_start..body_end].trim())
+        .map_err(|err| AppError::Message(format!("invalid task_plan JSON: {err}")))?;
+    validate_task_plan(&plan)?;
+    Ok(Some(plan))
+}
+
+fn validate_task_plan(plan: &AgentTaskPlan) -> AppResult<()> {
+    if plan.goal.trim().is_empty() {
+        return Err(AppError::Message("task_plan goal is required".to_string()));
+    }
+    if plan.steps.len() < 2 || plan.steps.len() > 12 {
+        return Err(AppError::Message(
+            "task_plan must contain between 2 and 12 steps".to_string(),
+        ));
+    }
+    let allowed = ["pending", "in_progress", "completed", "blocked", "skipped"];
+    let mut ids = std::collections::BTreeSet::new();
+    let mut active_count = 0;
+    for step in &plan.steps {
+        let id = step.id.trim();
+        if id.is_empty() || step.title.trim().is_empty() {
+            return Err(AppError::Message(
+                "task_plan step id and title are required".to_string(),
+            ));
+        }
+        if !ids.insert(id) {
+            return Err(AppError::Message(
+                "task_plan step ids must be unique".to_string(),
+            ));
+        }
+        if !allowed.contains(&step.status.as_str()) {
+            return Err(AppError::Message(format!(
+                "invalid task_plan step status: {}",
+                step.status
+            )));
+        }
+        if step.status == "in_progress" {
+            active_count += 1;
+        }
+    }
+    if active_count > 1 {
+        return Err(AppError::Message(
+            "task_plan can contain at most one in_progress step".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_clarification(request: &AgentClarificationRequest) -> AppResult<()> {
@@ -265,5 +338,35 @@ mod tests {
             r#"<clarification>{"questions":[{"id":"theme","prompt":"选择主题？","options":[{"id":"same","label":"A"},{"id":"same","label":"B"}]}]}</clarification>"#,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parses_structured_task_plan() {
+        let parsed = parse_task_plan(
+            r#"<task_plan>{"goal":"完成发布","steps":[{"id":"inspect","title":"检查改动","status":"completed"},{"id":"verify","title":"运行验证","status":"in_progress"},{"id":"publish","title":"提交推送","status":"pending"}]}</task_plan>"#,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(parsed.goal, "完成发布");
+        assert_eq!(parsed.steps[1].status, "in_progress");
+    }
+
+    #[test]
+    fn rejects_invalid_task_plans() {
+        let duplicate_ids = parse_task_plan(
+            r#"<task_plan>{"goal":"x","steps":[{"id":"same","title":"A","status":"pending"},{"id":"same","title":"B","status":"pending"}]}</task_plan>"#,
+        );
+        assert!(duplicate_ids.is_err());
+
+        let multiple_active = parse_task_plan(
+            r#"<task_plan>{"goal":"x","steps":[{"id":"a","title":"A","status":"in_progress"},{"id":"b","title":"B","status":"in_progress"}]}</task_plan>"#,
+        );
+        assert!(multiple_active.is_err());
+
+        let invalid_status = parse_task_plan(
+            r#"<task_plan>{"goal":"x","steps":[{"id":"a","title":"A","status":"running"},{"id":"b","title":"B","status":"pending"}]}</task_plan>"#,
+        );
+        assert!(invalid_status.is_err());
     }
 }

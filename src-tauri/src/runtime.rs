@@ -21,6 +21,8 @@ pub struct AgentRun {
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
     pub error: Option<String>,
+    pub plan_json: Option<String>,
+    pub plan_updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -123,7 +125,9 @@ impl RuntimeStore {
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 completed_at TEXT,
-                error TEXT
+                error TEXT,
+                plan_json TEXT,
+                plan_updated_at TEXT
             );
 
             CREATE TABLE IF NOT EXISTS agent_steps (
@@ -176,6 +180,8 @@ impl RuntimeStore {
             "max_attempts",
             "INTEGER NOT NULL DEFAULT 3",
         )?;
+        self.ensure_column("agent_runs", "plan_json", "TEXT")?;
+        self.ensure_column("agent_runs", "plan_updated_at", "TEXT")?;
         Ok(())
     }
 
@@ -325,7 +331,7 @@ impl RuntimeStore {
         let mut stmt = self.conn.prepare(
             "
             SELECT id, conversation_id, project_path, model_config_id, trigger_message_id,
-                   status, created_at, updated_at, completed_at, error
+                   status, created_at, updated_at, completed_at, error, plan_json, plan_updated_at
             FROM agent_runs
             WHERE status = 'running'
                OR (
@@ -384,6 +390,8 @@ impl RuntimeStore {
             updated_at: now,
             completed_at: None,
             error: None,
+            plan_json: None,
+            plan_updated_at: None,
         };
 
         self.conn.execute(
@@ -407,6 +415,22 @@ impl RuntimeStore {
             ],
         )?;
         Ok(run)
+    }
+
+    pub fn update_run_plan(&self, id: &str, plan_json: &str) -> AppResult<AgentRun> {
+        let now = Utc::now().to_rfc3339();
+        let changed = self.conn.execute(
+            "
+            UPDATE agent_runs
+            SET plan_json = ?2, plan_updated_at = ?3, updated_at = ?3
+            WHERE id = ?1
+            ",
+            params![id, plan_json, now],
+        )?;
+        if changed != 1 {
+            return Err(AppError::Message(format!("agent run not found: {id}")));
+        }
+        self.get_run(id)
     }
 
     pub fn finish_run(&self, id: &str, status: &str, error: Option<String>) -> AppResult<AgentRun> {
@@ -491,7 +515,7 @@ impl RuntimeStore {
             .query_row(
                 "
                 SELECT id, conversation_id, project_path, model_config_id, trigger_message_id,
-                       status, created_at, updated_at, completed_at, error
+                       status, created_at, updated_at, completed_at, error, plan_json, plan_updated_at
                 FROM agent_runs
                 WHERE id = ?1
                 ",
@@ -506,7 +530,7 @@ impl RuntimeStore {
         let mut stmt = self.conn.prepare(
             "
             SELECT id, conversation_id, project_path, model_config_id, trigger_message_id,
-                   status, created_at, updated_at, completed_at, error
+                   status, created_at, updated_at, completed_at, error, plan_json, plan_updated_at
             FROM agent_runs
             WHERE conversation_id = ?1
             ORDER BY created_at DESC
@@ -869,6 +893,7 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
     let created_at: String = row.get(6)?;
     let updated_at: String = row.get(7)?;
     let completed_at: Option<String> = row.get(8)?;
+    let plan_updated_at: Option<String> = row.get(11)?;
     Ok(AgentRun {
         id: row.get(0)?,
         conversation_id: row.get(1)?,
@@ -882,6 +907,10 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
             .map(|value| parse_time_for_row(&value))
             .transpose()?,
         error: row.get(9)?,
+        plan_json: row.get(10)?,
+        plan_updated_at: plan_updated_at
+            .map(|value| parse_time_for_row(&value))
+            .transpose()?,
     })
 }
 
@@ -1404,6 +1433,62 @@ mod tests {
             .unwrap();
         assert!(columns.iter().any(|column| column == "attempt_count"));
         assert!(columns.iter().any(|column| column == "max_attempts"));
+    }
+
+    #[test]
+    fn task_plan_persists_when_runtime_store_reopens() {
+        let path = test_db_path();
+        let run_id = {
+            let store = test_store_at(path.clone());
+            let run = create_run(&store);
+            store
+                .update_run_plan(
+                    &run.id,
+                    r#"{"goal":"验证计划","steps":[{"id":"a","title":"A","status":"in_progress"},{"id":"b","title":"B","status":"pending"}]}"#,
+                )
+                .unwrap();
+            run.id
+        };
+
+        let reopened = test_store_at(path);
+        let run = reopened.get_run(&run_id).unwrap();
+        assert!(run.plan_json.as_deref().unwrap().contains("验证计划"));
+        assert!(run.plan_updated_at.is_some());
+    }
+
+    #[test]
+    fn opening_legacy_agent_runs_table_adds_plan_columns() {
+        let path = test_db_path();
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE agent_runs (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL,
+                    project_path TEXT,
+                    model_config_id TEXT,
+                    trigger_message_id TEXT,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    error TEXT
+                );
+                ",
+            )
+            .unwrap();
+        }
+
+        let store = test_store_at(path);
+        let mut stmt = store.conn.prepare("PRAGMA table_info(agent_runs)").unwrap();
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(columns.iter().any(|column| column == "plan_json"));
+        assert!(columns.iter().any(|column| column == "plan_updated_at"));
     }
 
     #[test]

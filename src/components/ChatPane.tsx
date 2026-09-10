@@ -28,8 +28,9 @@ import MarkdownMessage from "./MarkdownMessage";
 import AgentRuntimePanel from "./AgentRuntimePanel";
 import AccessModeSelector from "./AccessModeSelector";
 import ChatDecisionPanel from "./ChatDecisionPanel";
+import TaskPlanCard from "./TaskPlanCard";
 import { formatWebSearchBadge, renderMessageContent } from "../lib/appHelpers";
-import { findPendingClarification, parseToolCall, parseToolResult } from "../lib/messageHelpers";
+import { findPendingClarification, parseTaskPlan, parseToolCall, parseToolResult } from "../lib/messageHelpers";
 import type { ParsedToolCall } from "../lib/messageHelpers";
 import type { AgentAccessMode, AgentClarificationAnswer, AgentClarificationRequest, AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../types";
 import type { UseObservabilityReturn } from "../hooks/useObservability";
@@ -339,6 +340,7 @@ export default function ChatPane({
       <div className="chat-log">
         {messages.map((message) => {
           const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
+          const taskPlan = message.role === "assistant" ? parseTaskPlan(message.content) : null;
           const webSearchMeta = message.metadata?.web_search;
           const isExecuted = toolCall ? messages.slice(messages.indexOf(message) + 1).some((m) =>
             m.role === "user" && m.content.startsWith(`[工具执行结果: ${toolCall.name}]`)
@@ -369,6 +371,7 @@ export default function ChatPane({
                 </div>
               )}
               {renderMessageContent(message.content, { attachmentProjectPath, projectFiles })}
+              {taskPlan && <TaskPlanCard plan={taskPlan} />}
               
               {toolCall && (
                 <div className="tool-call-card">
