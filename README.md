@@ -131,6 +131,8 @@ temp/                              无项目上下文时的临时工作目录
 
 ## 项目结构
 
+完整运行链路见 [NanoDesk 完整执行流程图](docs/assets/nanodesk-complete-execution-flow.svg)。
+
 ```text
 src/                           React + TypeScript 前端
 src/api.ts                     Tauri command 调用封装

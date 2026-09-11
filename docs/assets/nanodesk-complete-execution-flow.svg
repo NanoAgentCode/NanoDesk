@@ -1,0 +1,398 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="2620" viewBox="0 0 1920 2620" role="img" aria-labelledby="title desc">
+  <title id="title">NanoDesk 完整执行流程图</title>
+  <desc id="desc">展示 NanoDesk 桌面端与 nano CLI 从启动、兼容迁移、状态恢复、上下文组装、模型流式响应、Agent 工具审批到持久化和失败恢复的完整执行流程。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#526173"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <style>
+      text { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif; fill: #172033; }
+      .page { fill: #f7f9fc; }
+      .section { fill: #ffffff; stroke: #d8e0ea; stroke-width: 2; rx: 22; }
+      .section-title { font-size: 24px; font-weight: 700; fill: #26364d; }
+      .section-subtitle { font-size: 15px; fill: #65748b; }
+      .title { font-size: 40px; font-weight: 700; fill: #14213d; }
+      .subtitle { font-size: 18px; fill: #5f6f86; }
+      .node { stroke-width: 2; rx: 14; filter: url(#shadow); }
+      .entry { fill: #e8f1ff; stroke: #4f82d8; }
+      .frontend { fill: #eaf8f5; stroke: #2c927d; }
+      .rust { fill: #fff3df; stroke: #d58a24; }
+      .runtime { fill: #f1ebff; stroke: #8055c7; }
+      .storage { fill: #eef2f7; stroke: #637187; }
+      .external { fill: #fff0f1; stroke: #d45b66; }
+      .success { fill: #eaf8ec; stroke: #3b9b55; }
+      .error { fill: #fff1ea; stroke: #d46a3a; }
+      .decision { fill: #fff9db; stroke: #b99016; stroke-width: 2; }
+      .node-title { font-size: 18px; font-weight: 700; text-anchor: middle; }
+      .node-text { font-size: 14px; text-anchor: middle; fill: #47566d; }
+      .node-code { font-size: 12px; text-anchor: middle; fill: #6b7890; font-family: Consolas, "Cascadia Mono", monospace; }
+      .edge { fill: none; stroke: #526173; stroke-width: 2.4; marker-end: url(#arrow); }
+      .edge-blue { fill: none; stroke: #2563eb; stroke-width: 2.8; marker-end: url(#arrow-blue); }
+      .edge-dashed { fill: none; stroke: #2563eb; stroke-width: 2.4; stroke-dasharray: 9 7; marker-end: url(#arrow-blue); }
+      .edge-soft { fill: none; stroke: #8794a7; stroke-width: 2; marker-end: url(#arrow); }
+      .edge-label { font-size: 13px; fill: #536278; text-anchor: middle; paint-order: stroke; stroke: #f7f9fc; stroke-width: 5; stroke-linejoin: round; }
+      .note { font-size: 13px; fill: #5f6d82; }
+      .legend { font-size: 14px; fill: #425169; }
+      .lane-label { font-size: 14px; font-weight: 700; fill: #69778c; letter-spacing: 1px; }
+    </style>
+  </defs>
+
+  <rect class="page" width="1920" height="2620"/>
+  <text class="title" x="60" y="62">NanoDesk 完整执行流程</text>
+  <text class="subtitle" x="60" y="96">桌面端 + nano CLI · 启动恢复 · 对话上下文 · LLM / Agent · RAG / MCP / OCR · 持久化与故障恢复</text>
+
+  <g aria-label="图例">
+    <rect class="node entry" x="1030" y="35" width="26" height="20" rx="5"/><text class="legend" x="1067" y="51">入口 / UI</text>
+    <rect class="node frontend" x="1160" y="35" width="26" height="20" rx="5"/><text class="legend" x="1197" y="51">前端编排</text>
+    <rect class="node rust" x="1305" y="35" width="26" height="20" rx="5"/><text class="legend" x="1342" y="51">Rust 核心</text>
+    <rect class="node runtime" x="1440" y="35" width="26" height="20" rx="5"/><text class="legend" x="1477" y="51">运行时</text>
+    <rect class="node storage" x="1575" y="35" width="26" height="20" rx="5"/><text class="legend" x="1612" y="51">存储</text>
+    <rect class="node external" x="1695" y="35" width="26" height="20" rx="5"/><text class="legend" x="1732" y="51">外部能力</text>
+  </g>
+
+  <!-- 1. Startup -->
+  <rect class="section" x="30" y="125" width="1860" height="405"/>
+  <text class="section-title" x="60" y="164">1. 入口与初始化</text>
+  <text class="section-subtitle" x="60" y="190">两个入口共享数据库、模型与索引核心；桌面端额外初始化 Runtime、观测、插件、MCP 和后台画像 Worker。</text>
+
+  <text class="lane-label" x="65" y="250">桌面端</text>
+  <rect class="node entry" x="155" y="214" width="220" height="82"/>
+  <text class="node-title" x="265" y="246">启动 NanoDesk</text>
+  <text class="node-text" x="265" y="270">Tauri 单实例 / 托盘</text>
+  <text class="node-code" x="265" y="288">lib.rs::run</text>
+
+  <rect class="node rust" x="430" y="214" width="245" height="82"/>
+  <text class="node-title" x="552" y="244">解析 app data</text>
+  <text class="node-text" x="552" y="268">创建数据目录与 temp</text>
+  <text class="node-code" x="552" y="288">com.nanodesk.desktop</text>
+
+  <rect class="node rust" x="730" y="204" width="275" height="102"/>
+  <text class="node-title" x="868" y="236">旧数据兼容迁移</text>
+  <text class="node-text" x="868" y="260">NanoAgent 单库 / 分库 / 附件</text>
+  <text class="node-text" x="868" y="281">快照、无覆盖合并、幂等标记</text>
+  <text class="node-code" x="868" y="299">legacy_migration.rs</text>
+
+  <rect class="node rust" x="1060" y="204" width="285" height="102"/>
+  <text class="node-title" x="1202" y="236">初始化应用状态</text>
+  <text class="node-text" x="1202" y="260">Database / Runtime / Observability</text>
+  <text class="node-text" x="1202" y="281">插件注册表 / MCP manager</text>
+  <text class="node-code" x="1202" y="299">AppState</text>
+
+  <rect class="node runtime" x="1400" y="214" width="220" height="82"/>
+  <text class="node-title" x="1510" y="246">后台任务</text>
+  <text class="node-text" x="1510" y="270">启动用户画像 Worker</text>
+  <text class="node-code" x="1510" y="288">profile::start_worker</text>
+
+  <rect class="node success" x="1675" y="214" width="165" height="82"/>
+  <text class="node-title" x="1758" y="248">进入桌面 UI</text>
+  <text class="node-text" x="1758" y="273">React 挂载</text>
+
+  <path class="edge" d="M 375 255 H 430"/><path class="edge" d="M 675 255 H 730"/><path class="edge" d="M 1005 255 H 1060"/><path class="edge" d="M 1345 255 H 1400"/><path class="edge" d="M 1620 255 H 1675"/>
+
+  <text class="lane-label" x="65" y="407">CLI</text>
+  <rect class="node entry" x="155" y="365" width="220" height="82"/>
+  <text class="node-title" x="265" y="397">启动 nano CLI</text>
+  <text class="node-text" x="265" y="421">解析参数并创建 Tokio runtime</text>
+  <text class="node-code" x="265" y="439">cli.rs::run</text>
+
+  <rect class="node rust" x="430" y="365" width="245" height="82"/>
+  <text class="node-title" x="552" y="397">数据目录与迁移</text>
+  <text class="node-text" x="552" y="421">默认桌面目录或 --data-dir</text>
+  <text class="node-code" x="552" y="439">run_session</text>
+
+  <polygon class="decision" points="850,353 975,406 850,459 725,406"/>
+  <text class="node-title" x="850" y="401">运行模式</text>
+  <text class="node-text" x="850" y="423">项目 / 临时 / 查看</text>
+
+  <rect class="node rust" x="1030" y="365" width="300" height="82"/>
+  <text class="node-title" x="1180" y="397">共享核心对话</text>
+  <text class="node-text" x="1180" y="421">项目索引 / 历史恢复 / LLM</text>
+  <text class="node-code" x="1180" y="439">Database + llm.rs</text>
+
+  <rect class="node storage" x="1400" y="365" width="440" height="82"/>
+  <text class="node-title" x="1620" y="397">CLI 能力边界</text>
+  <text class="node-text" x="1620" y="421">临时会话不落库；无桌面 Agent / MCP / RAG 附件 / Ops</text>
+  <text class="node-code" x="1620" y="439">项目会话写 conversations / messages</text>
+
+  <path class="edge" d="M 375 406 H 430"/><path class="edge" d="M 675 406 H 725"/><path class="edge" d="M 975 406 H 1030"/><path class="edge" d="M 1330 406 H 1400"/>
+
+  <!-- 2. Restore -->
+  <rect class="section" x="30" y="555" width="1860" height="285"/>
+  <text class="section-title" x="60" y="594">2. 桌面端状态恢复</text>
+  <text class="section-subtitle" x="60" y="620">React Hooks 并行恢复入口状态；Runtime 打开时把结果未知的运行中工具转为 interrupted，禁止自动重放副作用。</text>
+
+  <rect class="node frontend" x="75" y="665" width="230" height="86"/>
+  <text class="node-title" x="190" y="698">React Hooks 挂载</text>
+  <text class="node-text" x="190" y="723">加载本地 UI 状态</text>
+  <text class="node-code" x="190" y="742">src/hooks/*</text>
+
+  <rect class="node frontend" x="385" y="650" width="285" height="116"/>
+  <text class="node-title" x="528" y="682">恢复项目与会话</text>
+  <text class="node-text" x="528" y="706">localStorage + project_path 反查</text>
+  <text class="node-text" x="528" y="729">加载 messages / 文件树 / 归档</text>
+  <text class="node-code" x="528" y="751">useProjects / useChat</text>
+
+  <rect class="node runtime" x="750" y="650" width="285" height="116"/>
+  <text class="node-title" x="892" y="682">恢复 Agent Runtime</text>
+  <text class="node-text" x="892" y="706">run / step / tool call 时间线</text>
+  <text class="node-text" x="892" y="729">running tool → interrupted</text>
+  <text class="node-code" x="892" y="751">awaiting_recovery</text>
+
+  <rect class="node external" x="1115" y="650" width="285" height="116"/>
+  <text class="node-title" x="1258" y="682">恢复 MCP</text>
+  <text class="node-text" x="1258" y="706">逐个连接 enabled server</text>
+  <text class="node-text" x="1258" y="729">失败隔离，成功后 tools/list</text>
+  <text class="node-code" x="1258" y="751">restore_mcp_servers</text>
+
+  <rect class="node success" x="1480" y="665" width="350" height="86"/>
+  <text class="node-title" x="1655" y="698">工作台可操作</text>
+  <text class="node-text" x="1655" y="723">恢复待审批 / 待澄清 / 待恢复状态</text>
+  <text class="node-code" x="1655" y="742">UI ready</text>
+
+  <path class="edge-soft" d="M 305 708 H 340 V 635 H 1258"/>
+  <path class="edge" d="M 528 635 V 650"/>
+  <path class="edge" d="M 892 635 V 650"/>
+  <path class="edge" d="M 1258 635 V 650"/>
+  <path class="edge-soft" d="M 528 766 V 796 H 1445 V 694 H 1480"/>
+  <path class="edge-soft" d="M 892 766 V 784 H 1457 V 708 H 1480"/>
+  <path class="edge-soft" d="M 1258 766 V 772 H 1469 V 722 H 1480"/>
+
+  <!-- 3. Request and model -->
+  <rect class="section" x="30" y="865" width="1860" height="665"/>
+  <text class="section-title" x="60" y="904">3. 一次桌面对话请求</text>
+  <text class="section-subtitle" x="60" y="930">请求上下文在前端统一编排，Rust 负责权威存储、安全边界、模型访问和流式事件。</text>
+
+  <rect class="node entry" x="70" y="975" width="220" height="90"/>
+  <text class="node-title" x="180" y="1008">用户输入</text>
+  <text class="node-text" x="180" y="1032">文字 / 粘贴 / 拖放附件</text>
+  <text class="node-code" x="180" y="1052">handleSendMessage</text>
+
+  <rect class="node frontend" x="350" y="965" width="260" height="110"/>
+  <text class="node-title" x="480" y="998">确定请求作用域</text>
+  <text class="node-text" x="480" y="1022">普通会话或 project_path</text>
+  <text class="node-text" x="480" y="1045">创建会话并写用户消息</text>
+  <text class="node-code" x="480" y="1064">append_message</text>
+
+  <rect class="node frontend" x="670" y="950" width="335" height="140"/>
+  <text class="node-title" x="838" y="982">并行检索运行上下文</text>
+  <text class="node-text" x="838" y="1007">历史消息 + 滚动摘要</text>
+  <text class="node-text" x="838" y="1030">长期记忆 + 用户画像 + RAG</text>
+  <text class="node-text" x="838" y="1053">项目文件/代码/文档索引</text>
+  <text class="node-text" x="838" y="1076">Skills + MCP 工具定义</text>
+
+  <rect class="node frontend" x="1065" y="950" width="310" height="140"/>
+  <text class="node-title" x="1220" y="982">组装并控制上下文</text>
+  <text class="node-text" x="1220" y="1007">buildSystemMessage</text>
+  <text class="node-text" x="1220" y="1030">估算 token 与输出预留</text>
+  <text class="node-text" x="1220" y="1053">必要时生成无损滚动摘要</text>
+  <text class="node-code" x="1220" y="1076">contextPreparation</text>
+
+  <rect class="node rust" x="1435" y="965" width="330" height="110"/>
+  <text class="node-title" x="1600" y="998">发起流式模型请求</text>
+  <text class="node-text" x="1600" y="1022">加载模型配置并调用 provider</text>
+  <text class="node-text" x="1600" y="1045">OpenAI-compatible / Anthropic</text>
+  <text class="node-code" x="1600" y="1064">chat_stream → llm.rs</text>
+
+  <path class="edge-blue" d="M 290 1020 H 350"/><path class="edge-blue" d="M 610 1020 H 670"/><path class="edge-blue" d="M 1005 1020 H 1065"/><path class="edge-blue" d="M 1375 1020 H 1435"/>
+
+  <rect class="node external" x="1435" y="1140" width="330" height="96"/>
+  <text class="node-title" x="1600" y="1174">外部 LLM API</text>
+  <text class="node-text" x="1600" y="1198">文本 / reasoning / error 数据流</text>
+  <text class="node-code" x="1600" y="1218">HTTP streaming</text>
+
+  <rect class="node rust" x="1065" y="1140" width="310" height="96"/>
+  <text class="node-title" x="1220" y="1174">Tauri 流式事件</text>
+  <text class="node-text" x="1220" y="1198">delta / reasoning_delta / error</text>
+  <text class="node-code" x="1220" y="1218">chat-stream</text>
+
+  <rect class="node frontend" x="670" y="1140" width="335" height="96"/>
+  <text class="node-title" x="838" y="1174">请求级流式累积</text>
+  <text class="node-text" x="838" y="1198">切换会话仍完整收集，UI 仅更新当前会话</text>
+  <text class="node-code" x="838" y="1218">chatStreamAccumulator</text>
+
+  <rect class="node frontend" x="350" y="1140" width="260" height="96"/>
+  <text class="node-title" x="480" y="1174">临时消息渲染</text>
+  <text class="node-text" x="480" y="1198">Markdown / KaTeX / 文件链接</text>
+  <text class="node-code" x="480" y="1218">setMessages</text>
+
+  <rect class="node storage" x="70" y="1140" width="220" height="96"/>
+  <text class="node-title" x="180" y="1174">完成后持久化</text>
+  <text class="node-text" x="180" y="1198">assistant message + reasoning</text>
+  <text class="node-code" x="180" y="1218">append_message</text>
+
+  <path class="edge" d="M 1600 1075 V 1140"/>
+  <path class="edge" d="M 1435 1188 H 1375"/><path class="edge" d="M 1065 1188 H 1005"/><path class="edge" d="M 670 1188 H 610"/><path class="edge" d="M 350 1188 H 290"/>
+
+  <rect class="node runtime" x="70" y="1290" width="220" height="96"/>
+  <text class="node-title" x="180" y="1324">解析模型输出</text>
+  <text class="node-text" x="180" y="1348">普通文本 / clarification / tool_call</text>
+  <text class="node-code" x="180" y="1368">resolve_agent_model_output</text>
+
+  <polygon class="decision" points="475,1278 605,1338 475,1398 345,1338"/>
+  <text class="node-title" x="475" y="1333">输出类型</text>
+  <text class="node-text" x="475" y="1355">结束 / 澄清 / 工具 / 错误</text>
+  <path class="edge" d="M 180 1236 V 1290"/><path class="edge" d="M 290 1338 H 345"/>
+
+  <text class="lane-label" x="690" y="1295">附件旁路（在发送前完成）</text>
+  <polygon class="decision" points="805,1310 910,1360 805,1410 700,1360"/>
+  <text class="node-title" x="805" y="1355">文件类型</text>
+  <text class="node-text" x="805" y="1376">图片 / 文档</text>
+
+  <rect class="node rust" x="980" y="1278" width="330" height="105"/>
+  <text class="node-title" x="1145" y="1310">图片附件</text>
+  <text class="node-text" x="1145" y="1334">校验根目录 / 后缀 / 大小</text>
+  <text class="node-text" x="1145" y="1357">保存相对路径；按需调用 OCR</text>
+  <text class="node-code" x="1145" y="1376">.nanodesk/uploads/images</text>
+
+  <rect class="node rust" x="980" y="1410" width="330" height="90"/>
+  <text class="node-title" x="1145" y="1442">RAG 文档</text>
+  <text class="node-text" x="1145" y="1466">Rust 抽取 PDF / Office / 文本</text>
+  <text class="node-code" x="1145" y="1485">extract_uploaded_file</text>
+
+  <rect class="node storage" x="1400" y="1390" width="365" height="110"/>
+  <text class="node-title" x="1582" y="1422">分块、Embedding、索引</text>
+  <text class="node-text" x="1582" y="1446">rag_files / chunks / embeddings / FTS</text>
+  <text class="node-text" x="1582" y="1469">发送前 search_rag_context 召回</text>
+  <text class="node-code" x="1582" y="1488">conversations DB</text>
+
+  <path class="edge-soft" d="M 70 1020 H 45 V 1510 H 650 V 1360 H 700"/>
+  <path class="edge" d="M 910 1360 H 945 V 1330 H 980"/><text class="edge-label" x="946" y="1315">图片</text>
+  <path class="edge" d="M 805 1410 V 1455 H 980"/><text class="edge-label" x="885" y="1445">文档</text>
+  <path class="edge" d="M 1310 1455 H 1400"/>
+  <path class="edge-dashed" d="M 1582 1390 V 1105 H 838 V 1090"/><text class="edge-label" x="1430" y="1124">召回结果进入上下文</text>
+
+  <!-- 4. Agent -->
+  <rect class="section" x="30" y="1555" width="1860" height="610"/>
+  <text class="section-title" x="60" y="1594">4. Agent 决策、审批与续写循环</text>
+  <text class="section-subtitle" x="60" y="1620">所有工具都经过后端权威策略；自动模式只能自动批准允许的风险，不能绕过路径、命令、MCP scope 等硬限制。</text>
+
+  <rect class="node success" x="70" y="1665" width="240" height="90"/>
+  <text class="node-title" x="190" y="1699">普通完成</text>
+  <text class="node-text" x="190" y="1723">run → completed</text>
+  <text class="node-code" x="190" y="1743">finish_agent_run</text>
+
+  <rect class="node runtime" x="380" y="1665" width="265" height="90"/>
+  <text class="node-title" x="512" y="1699">结构化澄清</text>
+  <text class="node-text" x="512" y="1723">校验后 awaiting_clarification</text>
+  <text class="node-code" x="512" y="1743">1–3 个问题</text>
+
+  <rect class="node entry" x="710" y="1665" width="265" height="90"/>
+  <text class="node-title" x="842" y="1699">收集答案</text>
+  <text class="node-text" x="842" y="1723">人工选择或自动选推荐项</text>
+  <text class="node-code" x="842" y="1743">append_message</text>
+
+  <rect class="node frontend" x="1040" y="1665" width="265" height="90"/>
+  <text class="node-title" x="1172" y="1699">统一续写入口</text>
+  <text class="node-text" x="1172" y="1723">重新检索并控制上下文</text>
+  <text class="node-code" x="1172" y="1743">triggerLlmContinue</text>
+
+  <path class="edge" d="M 410 1382 V 1518 H 190 V 1665"/><text class="edge-label" x="280" y="1507">无后续动作</text>
+  <path class="edge" d="M 475 1398 V 1618 H 512 V 1665"/><text class="edge-label" x="506" y="1607">clarification</text>
+  <path class="edge" d="M 645 1710 H 710"/><path class="edge" d="M 975 1710 H 1040"/>
+  <path class="edge-dashed" d="M 1172 1665 V 1575 H 1850 V 1020 H 1765"/><text class="edge-label" x="1790" y="1557">回到 chat_stream</text>
+
+  <rect class="node runtime" x="380" y="1815" width="265" height="100"/>
+  <text class="node-title" x="512" y="1848">登记工具调用</text>
+  <text class="node-text" x="512" y="1872">pending_approval + 参数校验</text>
+  <text class="node-code" x="512" y="1893">agent_tool_calls</text>
+
+  <rect class="node rust" x="710" y="1815" width="265" height="100"/>
+  <text class="node-title" x="842" y="1848">权威工具策略</text>
+  <text class="node-text" x="842" y="1872">风险 / 路径 / 命令 / MCP scope</text>
+  <text class="node-code" x="842" y="1893">tool_policy.rs</text>
+
+  <polygon class="decision" points="1165,1800 1305,1865 1165,1930 1025,1865"/>
+  <text class="node-title" x="1165" y="1858">审批结果</text>
+  <text class="node-text" x="1165" y="1880">批准 / 等待 / 拒绝</text>
+
+  <rect class="node rust" x="1370" y="1800" width="410" height="130"/>
+  <text class="node-title" x="1575" y="1832">执行已授权工具</text>
+  <text class="node-text" x="1575" y="1856">项目/本地文件 · 命令 · OCR</text>
+  <text class="node-text" x="1575" y="1879">MCP call · Web search 等插件能力</text>
+  <text class="node-text" x="1575" y="1902">结果写入 tool call 与对话消息</text>
+  <text class="node-code" x="1575" y="1920">execute_agent_tool_call</text>
+
+  <path class="edge" d="M 560 1375 H 680 V 1785 H 350 V 1865 H 380"/><text class="edge-label" x="638" y="1774">tool_call</text>
+  <path class="edge" d="M 645 1865 H 710"/><path class="edge" d="M 975 1865 H 1025"/>
+  <path class="edge" d="M 1305 1865 H 1370"/><text class="edge-label" x="1338" y="1852">批准</text>
+  <path class="edge-dashed" d="M 1575 1930 V 1970 H 1000 V 1710 H 1040"/><text class="edge-label" x="1430" y="1960">工具结果 → 继续模型</text>
+  <path class="edge-soft" d="M 1165 1930 V 1985"/><text class="edge-label" x="1215" y="1974">等待 / 拒绝</text>
+
+  <rect class="node error" x="380" y="2005" width="265" height="105"/>
+  <text class="node-title" x="512" y="2038">模型或工具失败</text>
+  <text class="node-text" x="512" y="2062">failed / awaiting_recovery</text>
+  <text class="node-code" x="512" y="2084">保留可审计状态</text>
+
+  <rect class="node entry" x="710" y="2005" width="265" height="105"/>
+  <text class="node-title" x="842" y="2038">显式恢复操作</text>
+  <text class="node-text" x="842" y="2062">继续模型 / 重试工具 / 跳过</text>
+  <text class="node-code" x="842" y="2084">attempt_count ≤ 3</text>
+
+  <rect class="node runtime" x="1040" y="2005" width="265" height="105"/>
+  <text class="node-title" x="1172" y="2038">重启保护</text>
+  <text class="node-text" x="1172" y="2062">running tool → interrupted</text>
+  <text class="node-code" x="1172" y="2084">不自动重复副作用</text>
+
+  <rect class="node storage" x="1370" y="2005" width="410" height="105"/>
+  <text class="node-title" x="1575" y="2038">运行状态机持久化</text>
+  <text class="node-text" x="1575" y="2062">run / step / tool call；终态拒绝迟到覆盖</text>
+  <text class="node-code" x="1575" y="2084">nanodesk-runtime.sqlite3</text>
+
+  <path class="edge" d="M 390 1375 H 330 V 2058 H 380"/><text class="edge-label" x="357" y="1992">error</text>
+  <path class="edge" d="M 645 2058 H 710"/><path class="edge-dashed" d="M 842 2005 V 1960 H 1000 V 1740 H 1040"/>
+  <path class="edge" d="M 1305 2058 H 1370"/>
+  <path class="edge-soft" d="M 1575 1930 V 2005"/>
+
+  <!-- 5. Storage and integrations -->
+  <rect class="section" x="30" y="2190" width="1860" height="370"/>
+  <text class="section-title" x="60" y="2229">5. 持久化、扩展能力与可观测闭环</text>
+  <text class="section-subtitle" x="60" y="2255">数据库按领域隔离；command、LLM、MCP、Ops 和关键工具操作统一写观测 span，系统操作另写 7 天滚动日志。</text>
+
+  <rect class="node storage" x="65" y="2300" width="250" height="92"/>
+  <text class="node-title" x="190" y="2333">config DB</text>
+  <text class="node-text" x="190" y="2357">模型 / MCP / Ops 配置</text>
+  <text class="node-code" x="190" y="2377">nanodesk-config</text>
+
+  <rect class="node storage" x="350" y="2300" width="250" height="92"/>
+  <text class="node-title" x="475" y="2333">conversations DB</text>
+  <text class="node-text" x="475" y="2357">会话 / 消息 / RAG / 画像队列</text>
+  <text class="node-code" x="475" y="2377">nanodesk-conversations</text>
+
+  <rect class="node storage" x="635" y="2300" width="250" height="92"/>
+  <text class="node-title" x="760" y="2333">knowledge DB</text>
+  <text class="node-text" x="760" y="2357">条目 / 记忆 / 向量 / 图谱</text>
+  <text class="node-code" x="760" y="2377">nanodesk-knowledge</text>
+
+  <rect class="node storage" x="920" y="2300" width="250" height="92"/>
+  <text class="node-title" x="1045" y="2333">project-index DB</text>
+  <text class="node-text" x="1045" y="2357">代码块 / 文档块 / FTS</text>
+  <text class="node-code" x="1045" y="2377">nanodesk-project-index</text>
+
+  <rect class="node runtime" x="1205" y="2300" width="250" height="92"/>
+  <text class="node-title" x="1330" y="2333">runtime DB</text>
+  <text class="node-text" x="1330" y="2357">run / step / tool call</text>
+  <text class="node-code" x="1330" y="2377">nanodesk-runtime</text>
+
+  <rect class="node runtime" x="1490" y="2300" width="345" height="92"/>
+  <text class="node-title" x="1662" y="2333">observability DB + logs</text>
+  <text class="node-text" x="1662" y="2357">trace / span / 状态 / 耗时 / 错误</text>
+  <text class="node-code" x="1662" y="2377">nanodesk-observability + logs/</text>
+
+  <rect class="node external" x="65" y="2440" width="1770" height="80"/>
+  <text class="node-title" x="950" y="2472">外部与本地扩展边界</text>
+  <text class="node-text" x="950" y="2498">LLM / Embedding API　·　MCP stdio / SSE / streamable HTTP　·　PaddleOCR CLI　·　SSH / SCP / SFTP　·　Skills 本地目录 / GitHub</text>
+
+  <path class="edge-soft" d="M 190 2392 V 2415 H 950 V 2440"/>
+  <path class="edge-soft" d="M 760 2392 V 2415"/>
+  <path class="edge-soft" d="M 1045 2392 V 2415"/>
+  <path class="edge-soft" d="M 1662 2392 V 2415 H 950"/>
+
+  <text class="note" x="60" y="2590">阅读方式：蓝色实线为一次请求主链路；蓝色虚线为 Agent / RAG 续写回环；灰色箭头为状态、存储或扩展能力连接。图中 command 名称与当前源码保持一致。</text>
+</svg>
