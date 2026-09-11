@@ -1,5 +1,5 @@
 use std::env;
-use std::io::{self, BufRead, IsTerminal, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 #[cfg(not(test))]
 use std::thread;
@@ -316,7 +316,7 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         None => Vec::new(),
     };
 
-    let models = ensure_chat_models(&db, configure_initial_model)?;
+    let mut models = ensure_chat_models(&db, configure_initial_model)?;
     let saved_model_id = resumed_conversation
         .as_ref()
         .and_then(|conversation| conversation.model_config_id.as_deref());
@@ -361,16 +361,15 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         project.as_deref(),
         resumed_conversation.as_ref(),
     );
-    let stdin = io::stdin();
-    let mut lines = stdin.lock().lines();
     loop {
         print!("{} ", CliTheme::stdout().prompt("nano>"));
         io::stdout().flush()?;
-        let Some(line) = lines.next() else {
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line)? == 0 {
             println!();
             break;
-        };
-        let input = line?.trim().to_string();
+        }
+        let input = line.trim().to_string();
         if input.is_empty() {
             continue;
         }
@@ -393,6 +392,22 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         }
         if input == "/model" {
             print_models(&models, &active_model);
+            continue;
+        }
+        if input == "/model add" {
+            match add_chat_model(&db, &mut models, configure_additional_model) {
+                Ok(model) => {
+                    active_model = model;
+                    if let Some(id) = conversation_id.as_deref() {
+                        db.update_conversation_model(id, Some(&active_model.id))?;
+                    }
+                    print_success(&format!(
+                        "已新增并切换到 {} ({})",
+                        active_model.name, active_model.model
+                    ));
+                }
+                Err(err) => print_error(&err.to_string()),
+            }
             continue;
         }
         if let Some(selector) = input.strip_prefix("/model ") {
@@ -548,24 +563,28 @@ where
 }
 
 fn configure_initial_model(db: &Database) -> AppResult<ModelConfig> {
+    configure_model(
+        db,
+        format!("◆ {} 首次配置", brand::DISPLAY_NAME),
+        "尚未发现聊天模型。完成下面几项配置后即可开始使用。",
+    )
+}
+
+fn configure_additional_model(db: &Database) -> AppResult<ModelConfig> {
+    configure_model(db, "◆ 新增聊天模型".to_string(), "填写新的模型配置。")
+}
+
+fn configure_model(db: &Database, title: String, description: &str) -> AppResult<ModelConfig> {
     if !io::stdin().is_terminal() {
-        return Err(AppError::Message(
-            format!(
-                "尚未配置聊天模型。请在交互式终端运行 nano 完成首次配置，或在 {} 桌面端的“设置 > 模型”中添加模型",
-                brand::DISPLAY_NAME
-            ),
-        ));
+        return Err(AppError::Message(format!(
+            "模型配置需要交互式终端。请直接运行 nano，或在 {} 桌面端的“设置 > 模型”中添加模型",
+            brand::DISPLAY_NAME
+        )));
     }
 
     let theme = CliTheme::stdout();
-    println!(
-        "{}",
-        theme.brand(format!("◆ {} 首次配置", brand::DISPLAY_NAME))
-    );
-    println!(
-        "{}",
-        theme.muted("尚未发现聊天模型。完成下面几项配置后即可开始使用。")
-    );
+    println!("{}", theme.brand(title));
+    println!("{}", theme.muted(description));
     println!();
 
     let provider_choice = loop {
@@ -653,7 +672,7 @@ fn prompt_line(theme: &CliTheme, label: &str, default: Option<&str>) -> AppResul
     let mut value = String::new();
     let read = io::stdin().read_line(&mut value)?;
     if read == 0 {
-        return Err(AppError::Message("首次配置已取消".to_string()));
+        return Err(AppError::Message("模型配置已取消".to_string()));
     }
     let value = value.trim();
     if value.is_empty() {
@@ -663,6 +682,19 @@ fn prompt_line(theme: &CliTheme, label: &str, default: Option<&str>) -> AppResul
     } else {
         Ok(value.to_string())
     }
+}
+
+fn add_chat_model<F>(
+    db: &Database,
+    models: &mut Vec<ModelConfig>,
+    configure: F,
+) -> AppResult<ModelConfig>
+where
+    F: FnOnce(&Database) -> AppResult<ModelConfig>,
+{
+    let added = configure(db)?;
+    *models = chat_models(db)?;
+    resolve_model(models, Some(&added.id))
 }
 
 fn resolve_model(models: &[ModelConfig], selector: Option<&str>) -> AppResult<ModelConfig> {
@@ -1138,6 +1170,7 @@ fn print_interactive_help() {
         ("/help", "显示交互命令"),
         ("/clear", "结束当前项目会话或清空临时上下文"),
         ("/model", "查看可用模型"),
+        ("/model add", "新增模型并立即切换"),
         ("/model <名称>", "按配置名称、模型名或 ID 切换模型"),
         ("/exit", "退出 nano"),
     ] {
@@ -1398,6 +1431,63 @@ mod tests {
         })
         .expect("existing model should be reused");
         assert_eq!(existing.len(), 1);
+
+        drop(db);
+        std::fs::remove_dir_all(root).expect("temporary directory should be removed");
+    }
+
+    #[test]
+    fn adds_model_refreshes_list_and_supports_switch_selectors() {
+        let root = env::temp_dir().join(format!("nano-cli-add-model-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("temporary directory should be created");
+        let db = Database::open(root.join("nano-test.sqlite3")).expect("database should open");
+        let save_model = |id: &str, name: &str, model: &str| {
+            db.save_model_config(ModelConfigDraft {
+                id: Some(id.to_string()),
+                name: name.to_string(),
+                provider: "openai-compatible".to_string(),
+                base_url: "http://localhost:11434/v1".to_string(),
+                model: model.to_string(),
+                api_key: String::new(),
+                temperature: 0.4,
+                max_tokens: None,
+                context_window: 32_768,
+                top_p: None,
+                reasoning_effort: String::new(),
+                embedding_provider: String::new(),
+                embedding_base_url: String::new(),
+                embedding_model: String::new(),
+                embedding_api_key: String::new(),
+            })
+        };
+        save_model("first-model", "First", "model-a").expect("first model should save");
+        let mut models = chat_models(&db).expect("models should load");
+
+        let added = add_chat_model(&db, &mut models, |_| {
+            save_model("second-model", "Second", "model-b")
+        })
+        .expect("second model should be added and selected");
+
+        assert_eq!(models.len(), 2);
+        assert_eq!(added.id, "second-model");
+        assert_eq!(
+            resolve_model(&models, Some("Second"))
+                .expect("configuration name should select")
+                .id,
+            "second-model"
+        );
+        assert_eq!(
+            resolve_model(&models, Some("model-a"))
+                .expect("model name should select")
+                .id,
+            "first-model"
+        );
+        assert_eq!(
+            resolve_model(&models, Some("first-model"))
+                .expect("id should select")
+                .id,
+            "first-model"
+        );
 
         drop(db);
         std::fs::remove_dir_all(root).expect("temporary directory should be removed");
