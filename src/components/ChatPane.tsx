@@ -28,9 +28,10 @@ import MarkdownMessage from "./MarkdownMessage";
 import AgentRuntimePanel from "./AgentRuntimePanel";
 import AccessModeSelector from "./AccessModeSelector";
 import ChatDecisionPanel from "./ChatDecisionPanel";
+import AssistantResponseActions from "./AssistantResponseActions";
 import TaskPlanCard from "./TaskPlanCard";
 import { formatWebSearchBadge, renderMessageContent } from "../lib/appHelpers";
-import { findPendingClarification, parseTaskPlan, parseToolCall, parseToolResult } from "../lib/messageHelpers";
+import { findPendingClarification, parseClarificationRequest, parseTaskPlan, parseToolCall, parseToolResult } from "../lib/messageHelpers";
 import type { ParsedToolCall } from "../lib/messageHelpers";
 import type { AgentAccessMode, AgentClarificationAnswer, AgentClarificationRequest, AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../types";
 import type { UseObservabilityReturn } from "../hooks/useObservability";
@@ -55,6 +56,8 @@ interface ChatPaneProps {
   executingToolMessageId: string | null;
   messageToolCalls: Record<string, AgentToolCall>;
   clarificationFallbackIds: string[];
+  activeStreamRequestId: string | null;
+  interruptingGeneration: boolean;
   attachmentProjectPath: string;
   project: ProjectEntry | null;
   projectFiles: ProjectFileEntry[];
@@ -63,6 +66,8 @@ interface ChatPaneProps {
   accessMode: AgentAccessMode;
   onAccessModeChange: (mode: AgentAccessMode) => void;
   handleSendMessage: () => Promise<void>;
+  handleInterruptGeneration: () => Promise<void>;
+  handleRegenerateLastResponse: (messageId: string) => Promise<void>;
   handleNewConversation: () => Promise<void>;
   handleCloseConversation: () => void;
   handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
@@ -145,6 +150,8 @@ export default function ChatPane({
   executingToolMessageId,
   messageToolCalls,
   clarificationFallbackIds,
+  activeStreamRequestId,
+  interruptingGeneration,
   attachmentProjectPath,
   project,
   projectFiles,
@@ -153,6 +160,8 @@ export default function ChatPane({
   accessMode,
   onAccessModeChange,
   handleSendMessage,
+  handleInterruptGeneration,
+  handleRegenerateLastResponse,
   handleNewConversation,
   handleCloseConversation,
   handleExecuteTool,
@@ -341,6 +350,9 @@ export default function ChatPane({
         {messages.map((message) => {
           const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
           const taskPlan = message.role === "assistant" ? parseTaskPlan(message.content) : null;
+          const clarification = message.role === "assistant" ? parseClarificationRequest(message.content) : null;
+          const isLatestAssistant = message.role === "assistant" && messages[messages.length - 1]?.id === message.id;
+          const isStreamingResponse = isLatestAssistant && activeStreamRequestId === message.id;
           const webSearchMeta = message.metadata?.web_search;
           const isExecuted = toolCall ? messages.slice(messages.indexOf(message) + 1).some((m) =>
             m.role === "user" && m.content.startsWith(`[工具执行结果: ${toolCall.name}]`)
@@ -424,6 +436,16 @@ export default function ChatPane({
                     )}
                   </div>
                 </div>
+              )}
+              {message.role === "assistant" && (
+                <AssistantResponseActions
+                  interrupted={message.metadata?.generation_status === "interrupted"}
+                  streaming={isStreamingResponse}
+                  canRegenerate={isLatestAssistant && !busy && !toolCall && !clarification}
+                  interrupting={interruptingGeneration}
+                  onInterrupt={() => void handleInterruptGeneration()}
+                  onRegenerate={() => void handleRegenerateLastResponse(message.id)}
+                />
               )}
             </div>
           );

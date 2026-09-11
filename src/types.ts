@@ -240,6 +240,7 @@ export type ChatStreamEvent =
   | { type: "delta"; request_id: string; content: string }
   | { type: "reasoning_delta"; request_id: string; content: string }
   | { type: "done"; request_id: string }
+  | { type: "interrupted"; request_id: string }
   | { type: "error"; request_id: string; message: string };
 
 export interface WebSearchResult {
@@ -263,6 +264,7 @@ export interface MessageMetadata {
   web_search?: MessageWebSearchMetadata | null;
   exclude_from_profile?: boolean | null;
   context_summary?: ContextSummaryMetadata | null;
+  generation_status?: "interrupted" | null;
 }
 
 export interface AvailableModelInfo {

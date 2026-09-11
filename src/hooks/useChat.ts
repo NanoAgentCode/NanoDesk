@@ -6,8 +6,10 @@ import {
   chat,
   chatStream,
   createMemory,
+  deleteMessages,
   extractUploadedFile,
   indexRagFile,
+  interruptChatStream,
   listRelevantMemories,
   getProfileContext,
   listAgentRunTimelines,
@@ -28,6 +30,7 @@ import {
   buildAutomaticClarificationAnswers,
   findPendingClarification,
   formatClarificationAnswerMessage,
+  getLastResponseRegenerationContext,
   type ParsedToolCall
 } from "../lib/messageHelpers";
 import {
@@ -92,6 +95,8 @@ export interface UseChatReturn {
   conversationRunIds: Record<string, string>;
   setConversationRunIds: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   clarificationFallbackIds: string[];
+  activeStreamRequestId: string | null;
+  interruptingGeneration: boolean;
   uploadingImageAttachment: boolean;
   pendingImageAttachments: ChatImageAttachment[];
   removePendingImageAttachment: (relativePath: string) => void;
@@ -113,6 +118,8 @@ export interface UseChatReturn {
   handleContextArchiveConversation: (conversation: Conversation) => Promise<void>;
   handleContextDeleteConversation: (conversation: Conversation) => Promise<void>;
   handleSendMessage: () => Promise<void>;
+  handleInterruptGeneration: () => Promise<void>;
+  handleRegenerateLastResponse: (messageId: string) => Promise<void>;
   handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRetryTool: (messageId: string) => Promise<void>;
@@ -178,6 +185,8 @@ export function useChat({
   const [messageReasoning, setMessageReasoning] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [clarificationFallbackIds, setClarificationFallbackIds] = useState<string[]>([]);
+  const [activeStreamRequestId, setActiveStreamRequestId] = useState<string | null>(null);
+  const [interruptingGeneration, setInterruptingGeneration] = useState(false);
   const {
     executingToolMessageId,
     setExecutingToolMessageId,
@@ -468,8 +477,14 @@ export function useChat({
         if (event.payload.type === "reasoning_delta") {
           setMessageReasoning((current) => ({ ...current, [requestId]: streamed.reasoning }));
         }
+        if (event.payload.type === "interrupted") {
+          setMessages((current) => current.map((message) => message.id === requestId
+            ? { ...message, metadata: { ...message.metadata, generation_status: "interrupted" } }
+            : message));
+        }
         if (event.payload.type === "error") setNotice(event.payload.message);
       });
+      setActiveStreamRequestId(requestId);
 
       if (agentRun) {
         void safeRecordAgentStep({
@@ -488,10 +503,12 @@ export function useChat({
         );
       } finally {
         unlisten();
+        setActiveStreamRequestId((current) => current === requestId ? null : current);
+        setInterruptingGeneration(false);
       }
-      const { content: streamedContent, reasoning: streamedReasoning } = stream.snapshot();
+      const { content: streamedContent, reasoning: streamedReasoning, interrupted } = stream.snapshot();
 
-      if (!streamedContent.trim()) {
+      if (!streamedContent.trim() && !interrupted) {
         if (agentRun) {
           void safeRecordAgentStep({
             run_id: agentRun.id, kind: "model", status: "failed",
@@ -505,18 +522,26 @@ export function useChat({
       }
 
       const assistantMessage = await appendMessage({
-        conversation_id: conversationId, role: "assistant", content: streamedContent
+        conversation_id: conversationId,
+        role: "assistant",
+        content: streamedContent,
+        metadata: interrupted ? { generation_status: "interrupted" } : undefined
       });
       if (agentRun) {
-        const resolution = await safeResolveAgentModelOutput(agentRun.id, assistantMessage.id, streamedContent, "model", `messages=${modelMessages.length}`);
-        if (resolution?.tool_call) {
-          const prepared = await prepareResolvedToolCall(
-            resolution.tool_call as AgentToolCall,
-            projectForRequest?.path || skills.tempDir
-          );
-          setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: prepared }));
-        } else if (resolution?.status === "completed") {
+        if (interrupted) {
+          void safeFinishAgentRun(agentRun.id, "cancelled", "user_interrupted");
           setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
+        } else {
+          const resolution = await safeResolveAgentModelOutput(agentRun.id, assistantMessage.id, streamedContent, "model", `messages=${modelMessages.length}`);
+          if (resolution?.tool_call) {
+            const prepared = await prepareResolvedToolCall(
+              resolution.tool_call as AgentToolCall,
+              projectForRequest?.path || skills.tempDir
+            );
+            setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: prepared }));
+          } else if (resolution?.status === "completed") {
+            setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
+          }
         }
       }
 
@@ -545,12 +570,84 @@ export function useChat({
     }
   }
 
+  async function handleInterruptGeneration() {
+    if (!activeStreamRequestId || interruptingGeneration) return;
+    setInterruptingGeneration(true);
+    try {
+      const interrupted = await interruptChatStream(activeStreamRequestId);
+      if (!interrupted) {
+        setInterruptingGeneration(false);
+        setNotice("当前回复已经结束，无需打断。");
+      }
+    } catch (error) {
+      setInterruptingGeneration(false);
+      setNotice(`打断模型输出失败：${String(error)}`);
+    }
+  }
+
+  async function handleRegenerateLastResponse(messageId: string) {
+    if (busy) return;
+    const conversationId = conv.activeConversationId;
+    const modelConfigId = conv.resolveConversationModelId(conversationId);
+    if (!conversationId || !modelConfigId) {
+      setNotice("当前会话没有可用模型，无法重新生成。");
+      return;
+    }
+
+    setBusy(true);
+    let regenerationRunId: string | null = null;
+    try {
+      const persistedMessages = await listMessages(conversationId);
+      const regeneration = getLastResponseRegenerationContext(persistedMessages, messageId);
+      if (!regeneration) {
+        setNotice("只能重新生成最后一条助手回答。");
+        return;
+      }
+      const { previousMessages, triggerMessage } = regeneration;
+
+      setMessages(previousMessages);
+      setMessageReasoning((current) => {
+        const { [messageId]: _, ...rest } = current;
+        return rest;
+      });
+      const projectHint = conv.getConversationProjectHint();
+      const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
+      const agentRun = await safeCreateAgentRun({
+        conversation_id: conversationId,
+        project_path: projectForRequest?.path || null,
+        model_config_id: modelConfigId,
+        trigger_message_id: triggerMessage.id
+      });
+      regenerationRunId = agentRun?.id || null;
+      if (agentRun) {
+        setConversationRunIds((current) => ({ ...current, [conversationId]: agentRun.id }));
+      }
+      await triggerLlmContinue(
+        conversationId,
+        previousMessages,
+        projectHint,
+        agentRun?.id,
+        messageId
+      );
+    } catch (error) {
+      if (regenerationRunId) {
+        await safeFinishAgentRun(regenerationRunId, "failed", String(error));
+        setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
+      }
+      setMessages(await listMessages(conversationId).catch(() => messages));
+      setNotice(`重新生成失败：${String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // ── Continue LLM after tool execution ──
   async function triggerLlmContinue(
     conversationId: string,
     currentMessages: PersistedMessage[],
     projectHint: ProjectEntry | null = null,
-    runId?: string | null
+    runId?: string | null,
+    replaceMessageId?: string | null
   ) {
     const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
     const modelConfigId = conv.resolveConversationModelId(conversationId);
@@ -611,8 +708,14 @@ export function useChat({
       if (event.payload.type === "reasoning_delta") {
         setMessageReasoning((current) => ({ ...current, [requestId]: streamed.reasoning }));
       }
+      if (event.payload.type === "interrupted") {
+        setMessages((current) => current.map((message) => message.id === requestId
+          ? { ...message, metadata: { ...message.metadata, generation_status: "interrupted" } }
+          : message));
+      }
       if (event.payload.type === "error") { streamFailed = true; setNotice(event.payload.message); }
     });
+    setActiveStreamRequestId(requestId);
 
     try {
       setBusy(true);
@@ -644,36 +747,46 @@ export function useChat({
     } finally {
       unlisten();
       setBusy(false);
-      const { content: streamedContent, reasoning: streamedReasoning, error: streamError } = stream.snapshot();
+      setActiveStreamRequestId((current) => current === requestId ? null : current);
+      setInterruptingGeneration(false);
+      const { content: streamedContent, reasoning: streamedReasoning, error: streamError, interrupted } = stream.snapshot();
       streamFailed ||= Boolean(streamError);
       let assistantMessage: PersistedMessage | null = null;
-      if (!streamFailed && streamedContent.trim()) {
+      if (!streamFailed && (streamedContent.trim() || interrupted)) {
         assistantMessage = await appendMessage({
-          conversation_id: conversationId, role: "assistant", content: streamedContent
+          conversation_id: conversationId,
+          role: "assistant",
+          content: streamedContent,
+          metadata: interrupted ? { generation_status: "interrupted" } : undefined
         });
+        if (replaceMessageId) await deleteMessages([replaceMessageId]);
       }
       if (runId && assistantMessage) {
-        const resolution = await safeResolveAgentModelOutput(runId, assistantMessage.id, streamedContent, "model_continue", `messages=${modelMessages.length}`);
-        if (resolution?.tool_call) {
-          const prepared = await prepareResolvedToolCall(
-            resolution.tool_call as AgentToolCall,
-            projectForRequest?.path || skills.tempDir
-          );
-          setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: prepared }));
-        } else if (resolution?.status === "completed") {
+        if (interrupted) {
+          void safeFinishAgentRun(runId, "cancelled", "user_interrupted");
           setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
+        } else {
+          const resolution = await safeResolveAgentModelOutput(runId, assistantMessage.id, streamedContent, "model_continue", `messages=${modelMessages.length}`);
+          if (resolution?.tool_call) {
+            const prepared = await prepareResolvedToolCall(
+              resolution.tool_call as AgentToolCall,
+              projectForRequest?.path || skills.tempDir
+            );
+            setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: prepared }));
+          } else if (resolution?.status === "completed") {
+            setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
+          }
         }
       }
       const finalMessages = await listMessages(conversationId);
       setMessages(finalMessages);
-      if (assistantMessage && streamedReasoning.trim()) {
-        setMessageReasoning((current) => {
-          const { [requestId]: _, ...rest } = current;
-          return { ...rest, [assistantMessage.id]: streamedReasoning };
-        });
-      } else {
-        setMessageReasoning((current) => { const { [requestId]: _, ...rest } = current; return rest; });
-      }
+      setMessageReasoning((current) => {
+        const next = { ...current };
+        delete next[requestId];
+        if (replaceMessageId) delete next[replaceMessageId];
+        if (assistantMessage && streamedReasoning.trim()) next[assistantMessage.id] = streamedReasoning;
+        return next;
+      });
       if (projectForRequest) await projects.refreshProjectConversationMap();
       else await conv.refreshConversations(conversationId);
     }
@@ -963,6 +1076,8 @@ export function useChat({
     messageToolCalls, setMessageToolCalls,
     conversationRunIds, setConversationRunIds,
     clarificationFallbackIds,
+    activeStreamRequestId,
+    interruptingGeneration,
     uploadingImageAttachment: attachments.uploadingImageAttachment,
     pendingImageAttachments: attachments.pendingImageAttachments,
     removePendingImageAttachment: attachments.removePendingImageAttachment,
@@ -987,6 +1102,8 @@ export function useChat({
     // Message / tool handlers
     loadMessages,
     handleSendMessage,
+    handleInterruptGeneration,
+    handleRegenerateLastResponse,
     handleExecuteTool,
     handleRejectTool,
     handleRetryTool,

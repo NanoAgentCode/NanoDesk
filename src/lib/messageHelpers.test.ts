@@ -4,6 +4,7 @@ import {
   buildAutomaticClarificationAnswers,
   findPendingClarification,
   formatClarificationAnswerMessage,
+  getLastResponseRegenerationContext,
   parseClarificationRequest,
   parseTaskPlan,
   resolveUserMemoryRoute,
@@ -97,5 +98,24 @@ describe("clarification messages", () => {
       { question_id: "with-recommendation", option_id: "best" },
       { question_id: "without-recommendation", option_id: "fallback" }
     ]);
+  });
+});
+
+describe("response regeneration", () => {
+  const messages = [
+    { id: "u1", conversation_id: "c1", role: "user" as const, content: "问题", created_at: "2026-09-11T00:00:00Z" },
+    { id: "a1", conversation_id: "c1", role: "assistant" as const, content: "回答", created_at: "2026-09-11T00:00:01Z" }
+  ];
+
+  it("uses the history before the latest assistant answer", () => {
+    expect(getLastResponseRegenerationContext(messages, "a1")).toEqual({
+      previousMessages: [messages[0]],
+      triggerMessage: messages[0]
+    });
+  });
+
+  it("rejects non-latest or non-assistant targets", () => {
+    expect(getLastResponseRegenerationContext(messages, "u1")).toBeNull();
+    expect(getLastResponseRegenerationContext([...messages, { ...messages[0], id: "u2" }], "a1")).toBeNull();
   });
 });

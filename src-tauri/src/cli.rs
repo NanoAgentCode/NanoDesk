@@ -789,7 +789,9 @@ async fn ask(
                     answer.push_str(&content);
                 }
                 ChatStreamEvent::Error { message, .. } => stream_error = Some(message),
-                ChatStreamEvent::ReasoningDelta { .. } | ChatStreamEvent::Done { .. } => {}
+                ChatStreamEvent::ReasoningDelta { .. }
+                | ChatStreamEvent::Done { .. }
+                | ChatStreamEvent::Interrupted { .. } => {}
             }
             Ok(())
         });

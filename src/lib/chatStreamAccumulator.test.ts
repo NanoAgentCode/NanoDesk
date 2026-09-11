@@ -14,7 +14,8 @@ describe("chat stream accumulator", () => {
       content: "前半后半",
       reasoning: "思考",
       error: null,
-      done: true
+      done: true,
+      interrupted: false
     });
   });
 
@@ -22,5 +23,13 @@ describe("chat stream accumulator", () => {
     const stream = createChatStreamAccumulator("request-1");
     expect(stream.accept({ type: "delta", request_id: "request-2", content: "wrong" })).toBeNull();
     expect(stream.snapshot().content).toBe("");
+  });
+
+  it("marks an interrupted stream without discarding partial content", () => {
+    const stream = createChatStreamAccumulator("request-3");
+    stream.accept({ type: "delta", request_id: "request-3", content: "已生成部分" });
+    const snapshot = stream.accept({ type: "interrupted", request_id: "request-3" });
+
+    expect(snapshot).toMatchObject({ content: "已生成部分", interrupted: true, error: null });
   });
 });

@@ -62,9 +62,9 @@ use skills::{sync_anthropic_skills as fetch_anthropic_skills, GitHubSkill};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, State,
+    AppHandle, Emitter, Manager, State,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 use tokio::time::timeout;
 
 const AGENT_TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(150);
@@ -76,6 +76,30 @@ pub(crate) struct AppState {
     mcp: Mutex<McpClientManager>,
     plugins: PluginRegistry,
     ops_ssh_sessions: Mutex<HashMap<String, ops::OpsSshSessionHandle>>,
+    chat_stream_interrupts: Mutex<ChatStreamInterrupts>,
+}
+
+#[derive(Default)]
+struct ChatStreamInterrupts {
+    senders: HashMap<String, watch::Sender<bool>>,
+}
+
+impl ChatStreamInterrupts {
+    fn register(&mut self, request_id: &str) -> watch::Receiver<bool> {
+        let (sender, receiver) = watch::channel(false);
+        self.senders.insert(request_id.to_string(), sender);
+        receiver
+    }
+
+    fn interrupt(&self, request_id: &str) -> bool {
+        self.senders
+            .get(request_id)
+            .is_some_and(|sender| sender.send(true).is_ok())
+    }
+
+    fn remove(&mut self, request_id: &str) {
+        self.senders.remove(request_id);
+    }
 }
 
 struct OperationContext {
@@ -841,6 +865,7 @@ async fn chat_stream(
     state: State<'_, AppState>,
     request: ChatStreamRequest,
 ) -> AppResult<()> {
+    let request_id = request.request_id.clone();
     let model_config_id = request.model_config_id.clone();
     let trace_id = request
         .trace_id
@@ -865,23 +890,46 @@ async fn chat_stream(
         db.start_profile_foreground_lease(&lease_owner, 30)?;
         db.get_model_config(&model_config_id)
     };
-    let result = match config_result {
+    let mut interrupt_receiver = state
+        .chat_stream_interrupts
+        .lock()
+        .await
+        .register(&request_id);
+    let (mut result, interrupted) = match config_result {
         Ok(config) => {
-            let future = send_chat_completion_stream(app, config, request);
+            let future = send_chat_completion_stream(app.clone(), config, request);
             tokio::pin!(future);
             loop {
-                match tokio::time::timeout(Duration::from_secs(10), &mut future).await {
-                    Ok(result) => break result,
-                    Err(_) => state
-                        .db
-                        .lock()
-                        .await
-                        .start_profile_foreground_lease(&lease_owner, 30)?,
+                tokio::select! {
+                    stream_result = &mut future => break (stream_result, false),
+                    changed = interrupt_receiver.changed() => {
+                        if changed.is_ok() && *interrupt_receiver.borrow() {
+                            break (Ok(()), true);
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                        if let Err(error) = state.db.lock().await.start_profile_foreground_lease(&lease_owner, 30) {
+                            break (Err(error), false);
+                        }
+                    }
                 }
             }
         }
-        Err(err) => Err(err),
+        Err(err) => (Err(err), false),
     };
+    state
+        .chat_stream_interrupts
+        .lock()
+        .await
+        .remove(&request_id);
+    if interrupted {
+        if let Err(error) = app.emit(
+            "chat-stream",
+            crate::models::ChatStreamEvent::Interrupted { request_id },
+        ) {
+            result = Err(crate::error::AppError::Message(error.to_string()));
+        }
+    }
     state
         .db
         .lock()
@@ -889,6 +937,15 @@ async fn chat_stream(
         .finish_profile_foreground_lease(&lease_owner)?;
     finish_observation(&state, span, &result, None).await;
     result
+}
+
+#[tauri::command]
+async fn interrupt_chat_stream(state: State<'_, AppState>, request_id: String) -> AppResult<bool> {
+    Ok(state
+        .chat_stream_interrupts
+        .lock()
+        .await
+        .interrupt(&request_id))
 }
 
 #[tauri::command]
@@ -2160,6 +2217,7 @@ pub fn run() {
                 mcp: Mutex::new(McpClientManager::default()),
                 plugins,
                 ops_ssh_sessions: Mutex::new(HashMap::new()),
+                chat_stream_interrupts: Mutex::new(ChatStreamInterrupts::default()),
             });
             profile::start_worker(app.handle().clone());
             Ok(())
@@ -2242,6 +2300,7 @@ pub fn run() {
             settings::save_tavily_api_key,
             chat,
             chat_stream,
+            interrupt_chat_stream,
             agent_commands::create_agent_run,
             agent_commands::finish_agent_run,
             agent_commands::resume_agent_run,
@@ -2291,4 +2350,22 @@ pub fn run() {
 
 pub fn run_cli() -> i32 {
     cli::run()
+}
+
+#[cfg(test)]
+mod chat_stream_interrupt_tests {
+    use super::ChatStreamInterrupts;
+
+    #[test]
+    fn registered_stream_can_be_interrupted_and_removed() {
+        let mut interrupts = ChatStreamInterrupts::default();
+        let mut receiver = interrupts.register("request-1");
+
+        assert!(interrupts.interrupt("request-1"));
+        assert!(receiver.has_changed().unwrap());
+        assert!(*receiver.borrow_and_update());
+
+        interrupts.remove("request-1");
+        assert!(!interrupts.interrupt("request-1"));
+    }
 }

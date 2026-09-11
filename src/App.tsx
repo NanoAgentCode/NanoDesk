@@ -149,6 +149,8 @@ function App() {
     executingToolMessageId,
     messageToolCalls,
     clarificationFallbackIds,
+    activeStreamRequestId,
+    interruptingGeneration,
     activeConversation,
     handleNewConversation,
     handleNewProjectConversation,
@@ -156,6 +158,8 @@ function App() {
     handleContextArchiveConversation,
     handleContextDeleteConversation,
     handleSendMessage,
+    handleInterruptGeneration,
+    handleRegenerateLastResponse,
     handleExecuteTool,
     handleRejectTool,
     handleRetryTool,
@@ -707,6 +711,8 @@ function App() {
           executingToolMessageId={executingToolMessageId}
           messageToolCalls={messageToolCalls}
           clarificationFallbackIds={clarificationFallbackIds}
+          activeStreamRequestId={activeStreamRequestId}
+          interruptingGeneration={interruptingGeneration}
           attachmentProjectPath={attachmentProjectPath}
           project={activeConversation ? projects.findConversationProject(activeConversation) : projects.activeProject}
           projectFiles={projectFiles}
@@ -715,6 +721,8 @@ function App() {
           accessMode={accessMode}
           onAccessModeChange={handleAccessModeChange}
           handleSendMessage={handleSendMessage}
+          handleInterruptGeneration={handleInterruptGeneration}
+          handleRegenerateLastResponse={handleRegenerateLastResponse}
           handleNewConversation={handleNewConversation}
           handleCloseConversation={handleCloseConversation}
           handleExecuteTool={handleExecuteTool}

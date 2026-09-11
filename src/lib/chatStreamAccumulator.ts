@@ -5,6 +5,7 @@ export interface ChatStreamSnapshot {
   reasoning: string;
   error: string | null;
   done: boolean;
+  interrupted: boolean;
 }
 
 export function createChatStreamAccumulator(requestId: string) {
@@ -12,7 +13,8 @@ export function createChatStreamAccumulator(requestId: string) {
     content: "",
     reasoning: "",
     error: null,
-    done: false
+    done: false,
+    interrupted: false
   };
 
   return {
@@ -22,6 +24,7 @@ export function createChatStreamAccumulator(requestId: string) {
       if (event.type === "reasoning_delta") snapshot.reasoning += event.content;
       if (event.type === "error") snapshot.error = event.message;
       if (event.type === "done") snapshot.done = true;
+      if (event.type === "interrupted") snapshot.interrupted = true;
       return { ...snapshot };
     },
     snapshot(): ChatStreamSnapshot {

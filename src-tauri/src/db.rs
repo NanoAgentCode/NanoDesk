@@ -1541,7 +1541,7 @@ mod tests {
     }
 
     #[test]
-    fn context_summary_metadata_round_trips_without_removing_original_messages() {
+    fn message_metadata_round_trips_without_removing_original_messages() {
         let db = Database::open(PathBuf::from(":memory:")).expect("database should open");
         let conversation = db
             .create_conversation(ConversationDraft {
@@ -1562,7 +1562,12 @@ mod tests {
             conversation_id: conversation.id.clone(),
             role: "assistant".to_string(),
             content: "second".to_string(),
-            metadata: None,
+            metadata: Some(MessageMetadata {
+                web_search: None,
+                exclude_from_profile: None,
+                context_summary: None,
+                generation_status: Some("interrupted".to_string()),
+            }),
         })
         .expect("second message should persist");
         db.append_message(MessageDraft {
@@ -1577,6 +1582,7 @@ mod tests {
                     covered_through_message_id: first.id.clone(),
                     covered_message_count: 1,
                 }),
+                generation_status: None,
             }),
         })
         .expect("summary should persist");
@@ -1585,6 +1591,13 @@ mod tests {
             .list_messages(&conversation.id)
             .expect("messages should load");
         assert_eq!(messages.len(), 3);
+        assert_eq!(
+            messages[1]
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.generation_status.as_deref()),
+            Some("interrupted")
+        );
         let metadata = messages[2]
             .metadata
             .as_ref()

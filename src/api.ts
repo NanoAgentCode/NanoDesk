@@ -225,6 +225,10 @@ export function appendMessage(draft: MessageDraft) {
   return invoke<PersistedMessage>("append_message", { draft });
 }
 
+export function deleteMessages(ids: string[]) {
+  return invoke<void>("delete_messages", { ids });
+}
+
 export function listMemories() {
   return invoke<Memory[]>("list_memories");
 }
@@ -380,6 +384,10 @@ export function chatStream(
       trace_id: traceId || null
     }
   });
+}
+
+export function interruptChatStream(requestId: string) {
+  return invoke<boolean>("interrupt_chat_stream", { requestId });
 }
 
 export function listRagFiles(conversationId: string) {

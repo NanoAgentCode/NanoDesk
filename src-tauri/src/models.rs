@@ -292,6 +292,7 @@ pub enum ChatStreamEvent {
     Delta { request_id: String, content: String },
     ReasoningDelta { request_id: String, content: String },
     Done { request_id: String },
+    Interrupted { request_id: String },
     Error { request_id: String, message: String },
 }
 
@@ -302,6 +303,8 @@ pub struct MessageMetadata {
     pub exclude_from_profile: Option<bool>,
     #[serde(default)]
     pub context_summary: Option<ContextSummaryMetadata>,
+    #[serde(default)]
+    pub generation_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

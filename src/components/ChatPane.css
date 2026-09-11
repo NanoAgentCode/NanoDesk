@@ -394,6 +394,29 @@
 .chat-message.assistant::before {
   content: none;
 }
+.assistant-response-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  margin-top: 8px;
+  color: var(--text-muted);
+}
+.assistant-response-actions .mantine-Button-root {
+  min-height: 24px;
+  padding-inline: 7px;
+  border-radius: 6px;
+  font-size: var(--font-size-xs);
+}
+.assistant-response-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+}
+.assistant-response-status.interrupted {
+  color: var(--control-danger-text);
+}
 .chat-message.system {
   align-self: center;
   background: rgba(255,255,255,0.015);

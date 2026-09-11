@@ -270,6 +270,18 @@ export function findPendingClarification(messages: PersistedMessage[]) {
   }
   return null;
 }
+
+export function getLastResponseRegenerationContext(
+  messages: PersistedMessage[],
+  messageId: string
+) {
+  const targetIndex = messages.findIndex((message) => message.id === messageId);
+  const target = messages[targetIndex];
+  if (!target || target.role !== "assistant" || targetIndex !== messages.length - 1) return null;
+  const previousMessages = messages.slice(0, targetIndex);
+  const triggerMessage = [...previousMessages].reverse().find((message) => message.role === "user");
+  return triggerMessage ? { previousMessages, triggerMessage } : null;
+}
 import type {
   AgentClarificationAnswer,
   AgentClarificationRequest,
