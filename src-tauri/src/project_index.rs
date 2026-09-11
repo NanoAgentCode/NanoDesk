@@ -5,6 +5,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::brand;
+use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::llm::create_embeddings;
 use crate::models::{
@@ -42,19 +43,17 @@ pub async fn index_project_documents(
 ) -> AppResult<ProjectIndexRun> {
     let root = project_root(&project_path)?;
     let canonical_project_path = root.to_string_lossy().to_string();
-    let indexed = build_document_index(&root, &canonical_project_path)?;
-    let document_embeddings = build_optional_embeddings(&state, &indexed.chunks).await;
-    let embedding_refs = document_embeddings
-        .as_ref()
-        .map(|(embeddings, model)| (embeddings.as_slice(), model.as_str()));
-
-    state.db.lock().await.replace_project_index(
-        &canonical_project_path,
-        DOCUMENT_INDEXER,
-        indexed.file_count,
-        &indexed.chunks,
-        embedding_refs,
-    )
+    let embedding_config = state
+        .db
+        .lock()
+        .await
+        .get_model_config("embedding-config")
+        .ok();
+    let prepared =
+        prepare_project_document_index(&root, &canonical_project_path, embedding_config.as_ref())
+            .await?;
+    let db = state.db.lock().await;
+    persist_project_document_index(&db, &canonical_project_path, &prepared)
 }
 
 #[tauri::command]
@@ -94,6 +93,39 @@ pub async fn search_project_index(
 pub(crate) struct DocumentIndex {
     pub(crate) file_count: i64,
     pub(crate) chunks: Vec<ProjectIndexChunk>,
+}
+
+pub(crate) struct PreparedProjectDocumentIndex {
+    index: DocumentIndex,
+    embeddings: Option<(Vec<Vec<f32>>, String)>,
+}
+
+pub(crate) async fn prepare_project_document_index(
+    root: &Path,
+    project_path: &str,
+    embedding_config: Option<&crate::models::ModelConfig>,
+) -> AppResult<PreparedProjectDocumentIndex> {
+    let index = build_document_index(root, project_path)?;
+    let embeddings = build_optional_embeddings(embedding_config, &index.chunks).await;
+    Ok(PreparedProjectDocumentIndex { index, embeddings })
+}
+
+pub(crate) fn persist_project_document_index(
+    db: &Database,
+    project_path: &str,
+    prepared: &PreparedProjectDocumentIndex,
+) -> AppResult<ProjectIndexRun> {
+    let embedding_refs = prepared
+        .embeddings
+        .as_ref()
+        .map(|(embeddings, model)| (embeddings.as_slice(), model.as_str()));
+    db.replace_project_index(
+        project_path,
+        DOCUMENT_INDEXER,
+        prepared.index.file_count,
+        &prepared.index.chunks,
+        embedding_refs,
+    )
 }
 
 pub(crate) fn build_document_index(root: &Path, project_path: &str) -> AppResult<DocumentIndex> {
@@ -225,18 +257,13 @@ fn chunk_document(
 }
 
 async fn build_optional_embeddings(
-    state: &State<'_, AppState>,
+    config: Option<&crate::models::ModelConfig>,
     chunks: &[ProjectIndexChunk],
 ) -> Option<(Vec<Vec<f32>>, String)> {
     if chunks.is_empty() || chunks.len() > MAX_EMBEDDED_DOCUMENT_CHUNKS {
         return None;
     }
-    let config = state
-        .db
-        .lock()
-        .await
-        .get_model_config("embedding-config")
-        .ok()?;
+    let config = config?;
     let embedding_model = if config.embedding_model.trim().is_empty() {
         "text-embedding-3-small".to_string()
     } else {
@@ -246,7 +273,7 @@ async fn build_optional_embeddings(
         .iter()
         .map(|chunk| chunk.text.clone())
         .collect::<Vec<_>>();
-    match create_embeddings(&config, texts).await {
+    match create_embeddings(config, texts).await {
         Ok(embeddings) if embeddings.len() == chunks.len() => Some((embeddings, embedding_model)),
         Ok(_) | Err(_) => None,
     }

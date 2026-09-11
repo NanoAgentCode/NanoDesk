@@ -612,6 +612,49 @@ pub struct ProjectIndexSearchResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectRetrievalContext {
+    pub code_matches: Vec<CodeSearchResult>,
+    pub project_index_matches: Vec<ProjectIndexSearchResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BaseContextBundle {
+    pub profile_context: Option<String>,
+    pub memories: Vec<Memory>,
+    pub project_files: Vec<ProjectFileEntry>,
+    pub code_matches: Vec<CodeSearchResult>,
+    pub project_index_matches: Vec<ProjectIndexSearchResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextPreparationRequest {
+    pub history: Vec<Message>,
+    pub system_message: ChatMessage,
+    pub context_window: u32,
+    pub max_tokens: Option<u32>,
+    pub latest_user_content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSummaryPlan {
+    pub batches: Vec<Vec<Message>>,
+    pub recent_messages: Vec<Message>,
+    pub covered_through_message_id: String,
+    pub covered_message_count: usize,
+    pub version: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextPreparationPlan {
+    pub context_messages: Vec<Message>,
+    pub summary_plan: Option<ContextSummaryPlan>,
+    pub system_message: ChatMessage,
+    pub output_reserve: u32,
+    pub conversation_budget: u32,
+    pub system_trimmed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectFileEntry {
     pub path: String,
     pub is_dir: bool,

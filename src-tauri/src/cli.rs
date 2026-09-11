@@ -7,21 +7,29 @@ use std::thread;
 use uuid::Uuid;
 
 use crate::brand;
-use crate::code_index::build_project_code_index;
+use crate::code_index::{persist_project_code_index, prepare_project_code_index};
+use crate::context::load_base_context_for_db;
+use crate::context_budget::{
+    build_summary_prompt, fit_context_messages, prepare_context_plan, SUMMARY_OUTPUT_TOKENS,
+};
+use crate::conversation_service::{
+    append_conversation_message, bind_conversation_model, create_conversation,
+    load_conversation_history as service_load_conversation_history,
+};
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
-use crate::llm::stream_chat_completion;
+use crate::llm::{send_chat_completion, stream_chat_completion};
 use crate::models::{
-    ChatMessage, ChatStreamEvent, ChatStreamRequest, Conversation, ConversationDraft, Message,
-    MessageDraft, ModelConfig, ModelConfigDraft, ProjectFileEntry,
+    ChatMessage, ChatRequest, ChatStreamEvent, ChatStreamRequest, ContextPreparationRequest,
+    ContextSummaryMetadata, Conversation, ConversationDraft, Message, MessageDraft,
+    MessageMetadata, ModelConfig, ModelConfigDraft, ProjectFileEntry,
 };
 use crate::project_files::{list_project_files, project_root};
-use crate::project_index::{build_document_index, DOCUMENT_INDEXER};
+#[cfg(test)]
+use crate::project_index::DOCUMENT_INDEXER;
+use crate::project_index::{persist_project_document_index, prepare_project_document_index};
 
 const EMBEDDING_CONFIG_ID: &str = "embedding-config";
-const CODE_MATCH_LIMIT: i64 = 8;
-const DOCUMENT_MATCH_LIMIT: i64 = 6;
-const MAX_HISTORY_MESSAGES: usize = 20;
 
 const ANSI_RESET: &str = "\x1b[0m";
 const ANSI_BOLD_CYAN: &str = "\x1b[1;36m";
@@ -324,13 +332,13 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         resolve_session_model(&models, options.model.as_deref(), saved_model_id)?;
     if let Some(id) = conversation_id.as_deref() {
         if options.model.is_some() || saved_model_id != Some(active_model.id.as_str()) {
-            db.update_conversation_model(id, Some(&active_model.id))?;
+            bind_conversation_model(&db, id, Some(&active_model.id))?;
         }
     }
 
     if let Some(root) = project.as_deref() {
         if options.rebuild_index {
-            rebuild_project_indexes(&db, root)?;
+            rebuild_project_indexes(&db, root).await?;
         }
     }
     start_profile_worker(db_path);
@@ -399,7 +407,7 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
                 Ok(model) => {
                     active_model = model;
                     if let Some(id) = conversation_id.as_deref() {
-                        db.update_conversation_model(id, Some(&active_model.id))?;
+                        bind_conversation_model(&db, id, Some(&active_model.id))?;
                     }
                     print_success(&format!(
                         "已新增并切换到 {} ({})",
@@ -415,7 +423,7 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
                 Ok(model) => {
                     active_model = model;
                     if let Some(id) = conversation_id.as_deref() {
-                        db.update_conversation_model(id, Some(&active_model.id))?;
+                        bind_conversation_model(&db, id, Some(&active_model.id))?;
                     }
                     print_success(&format!(
                         "已切换到 {} ({})",
@@ -529,17 +537,8 @@ fn resolve_requested_conversation(
     }
 }
 
-fn load_conversation_history(db: &Database, conversation_id: &str) -> AppResult<Vec<ChatMessage>> {
-    let messages = db.list_messages(conversation_id)?;
-    let skip = messages.len().saturating_sub(MAX_HISTORY_MESSAGES);
-    Ok(messages
-        .into_iter()
-        .skip(skip)
-        .map(|message| ChatMessage {
-            role: message.role,
-            content: message.content,
-        })
-        .collect())
+fn load_conversation_history(db: &Database, conversation_id: &str) -> AppResult<Vec<Message>> {
+    service_load_conversation_history(db, conversation_id)
 }
 
 fn chat_models(db: &Database) -> AppResult<Vec<ModelConfig>> {
@@ -733,26 +732,15 @@ fn resolve_session_model(
     resolve_model(models, None)
 }
 
-fn rebuild_project_indexes(db: &Database, root: &Path) -> AppResult<()> {
+async fn rebuild_project_indexes(db: &Database, root: &Path) -> AppResult<()> {
     let canonical = root.to_string_lossy().to_string();
     print_status(&format!("正在索引项目 {}", display_project_path(root)));
-    let code = build_project_code_index(root, &canonical)?;
-    db.replace_code_index(
-        &canonical,
-        code.file_count,
-        &code.entities,
-        &code.relations,
-        &code.chunks,
-        None,
-    )?;
-    let documents = build_document_index(root, &canonical)?;
-    db.replace_project_index(
-        &canonical,
-        DOCUMENT_INDEXER,
-        documents.file_count,
-        &documents.chunks,
-        None,
-    )?;
+    let embedding_config = db.get_model_config(EMBEDDING_CONFIG_ID).ok();
+    let code = prepare_project_code_index(root, &canonical, embedding_config.as_ref()).await?;
+    persist_project_code_index(db, &canonical, &code)?;
+    let documents =
+        prepare_project_document_index(root, &canonical, embedding_config.as_ref()).await?;
+    persist_project_document_index(db, &canonical, &documents)?;
     print_status("项目索引已就绪");
     Ok(())
 }
@@ -763,7 +751,7 @@ async fn ask(
     project: Option<&Path>,
     project_session_path: Option<&str>,
     conversation_id: &mut Option<String>,
-    history: &mut Vec<ChatMessage>,
+    history: &mut Vec<Message>,
     input: &str,
 ) -> AppResult<()> {
     let system = build_system_message(db, project, input).await?;
@@ -771,29 +759,47 @@ async fn ask(
         role: "user".to_string(),
         content: input.to_string(),
     };
-    if let Some(project_session_path) = project_session_path {
+    let user_history_message = if let Some(project_session_path) = project_session_path {
         if conversation_id.is_none() {
-            let conversation = db.create_conversation(ConversationDraft {
-                title: Some("New chat".to_string()),
-                model_config_id: Some(model.id.clone()),
-                project_path: Some(project_session_path.to_string()),
-            })?;
+            let conversation = create_conversation(
+                db,
+                ConversationDraft {
+                    title: Some("New chat".to_string()),
+                    model_config_id: Some(model.id.clone()),
+                    project_path: Some(project_session_path.to_string()),
+                },
+            )?;
             *conversation_id = Some(conversation.id);
         }
         let persistent_id = conversation_id
             .as_deref()
             .ok_or_else(|| AppError::Message("创建项目会话后未获得会话 ID".to_string()))?;
-        db.append_message(MessageDraft {
-            conversation_id: persistent_id.to_string(),
-            role: user_message.role.clone(),
-            content: user_message.content.clone(),
-            metadata: None,
-        })?;
-    }
-    let mut messages = Vec::with_capacity(history.len() + 2);
-    messages.push(system);
-    messages.extend(history.iter().cloned());
-    messages.push(user_message.clone());
+        append_conversation_message(
+            db,
+            MessageDraft {
+                conversation_id: persistent_id.to_string(),
+                role: user_message.role.clone(),
+                content: user_message.content.clone(),
+                metadata: None,
+            },
+        )?
+    } else {
+        transient_message(&user_message.role, &user_message.content)
+    };
+    let mut planning_history = history.clone();
+    planning_history.push(user_history_message.clone());
+    let prepared = prepare_cli_context(
+        db,
+        model,
+        conversation_id.as_deref(),
+        system,
+        &planning_history,
+        input,
+    )
+    .await?;
+    let mut messages = Vec::with_capacity(prepared.context_messages.len() + 1);
+    messages.push(prepared.system_message);
+    messages.extend(prepared.context_messages.iter().map(message_to_chat));
 
     let request_id = Uuid::new_v4().to_string();
     let lease_owner = format!("cli-chat-{request_id}");
@@ -803,7 +809,7 @@ async fn ask(
         messages,
         temperature: None,
         trace_id: None,
-        max_tokens: None,
+        max_tokens: Some(prepared.output_reserve),
         top_p: None,
         reasoning_effort: None,
     };
@@ -848,24 +854,167 @@ async fn ask(
         role: "assistant".to_string(),
         content: answer,
     };
-    if project_session_path.is_some() {
+    let assistant_history_message = if project_session_path.is_some() {
         let persistent_id = conversation_id
             .as_deref()
             .ok_or_else(|| AppError::Message("保存项目会话时缺少会话 ID".to_string()))?;
-        db.append_message(MessageDraft {
-            conversation_id: persistent_id.to_string(),
-            role: assistant_message.role.clone(),
-            content: assistant_message.content.clone(),
-            metadata: None,
-        })?;
+        append_conversation_message(
+            db,
+            MessageDraft {
+                conversation_id: persistent_id.to_string(),
+                role: assistant_message.role.clone(),
+                content: assistant_message.content.clone(),
+                metadata: None,
+            },
+        )?
+    } else {
+        transient_message(&assistant_message.role, &assistant_message.content)
+    };
+    history.push(user_history_message);
+    if let Some(summary) = prepared.created_summary {
+        history.push(summary);
     }
-    history.push(user_message);
-    history.push(assistant_message);
-    if history.len() > MAX_HISTORY_MESSAGES {
-        let drain_count = history.len() - MAX_HISTORY_MESSAGES;
-        history.drain(0..drain_count);
-    }
+    history.push(assistant_history_message);
     Ok(())
+}
+
+struct PreparedCliContext {
+    context_messages: Vec<Message>,
+    created_summary: Option<Message>,
+    system_message: ChatMessage,
+    output_reserve: u32,
+}
+
+async fn prepare_cli_context(
+    db: &Database,
+    model: &ModelConfig,
+    conversation_id: Option<&str>,
+    system_message: ChatMessage,
+    history: &[Message],
+    latest_user_content: &str,
+) -> AppResult<PreparedCliContext> {
+    let plan = prepare_context_plan(ContextPreparationRequest {
+        history: history.to_vec(),
+        system_message,
+        context_window: model.context_window,
+        max_tokens: model.max_tokens,
+        latest_user_content: latest_user_content.to_string(),
+    })?;
+    let mut context_messages = plan.context_messages;
+    let mut created_summary = None;
+    if let Some(summary_plan) = plan.summary_plan {
+        let summary_result = async {
+            let mut rolling_summary: Option<Message> = None;
+            for (index, batch) in summary_plan.batches.iter().enumerate() {
+                let source = rolling_summary
+                    .iter()
+                    .cloned()
+                    .chain(batch.iter().cloned())
+                    .collect::<Vec<_>>();
+                let response = send_chat_completion(
+                    model.clone(),
+                    ChatRequest {
+                        model_config_id: model.id.clone(),
+                        messages: vec![ChatMessage {
+                            role: "user".to_string(),
+                            content: build_summary_prompt(&source),
+                        }],
+                        temperature: Some(0.1),
+                        trace_id: conversation_id.map(str::to_string),
+                        max_tokens: Some(SUMMARY_OUTPUT_TOKENS),
+                        top_p: None,
+                        reasoning_effort: None,
+                    },
+                )
+                .await?;
+                if response.content.trim().is_empty() {
+                    return Err(AppError::Message("模型返回了空摘要".to_string()));
+                }
+                rolling_summary = Some(Message {
+                    id: format!("rolling-summary-{}", index + 1),
+                    conversation_id: conversation_id.unwrap_or_default().to_string(),
+                    role: "system".to_string(),
+                    content: response.content,
+                    metadata: None,
+                    created_at: chrono::Utc::now(),
+                });
+            }
+            let rolling_summary = rolling_summary
+                .ok_or_else(|| AppError::Message("没有可摘要的历史消息".to_string()))?;
+            let metadata = MessageMetadata {
+                web_search: None,
+                exclude_from_profile: Some(true),
+                context_summary: Some(ContextSummaryMetadata {
+                    version: summary_plan.version,
+                    covered_through_message_id: summary_plan.covered_through_message_id.clone(),
+                    covered_message_count: summary_plan.covered_message_count,
+                }),
+                generation_status: None,
+            };
+            let content = format!(
+                "【结构化上下文摘要 v{}】\n{}",
+                summary_plan.version, rolling_summary.content
+            );
+            let summary = match conversation_id {
+                Some(conversation_id) => append_conversation_message(
+                    db,
+                    MessageDraft {
+                        conversation_id: conversation_id.to_string(),
+                        role: "system".to_string(),
+                        content,
+                        metadata: Some(metadata),
+                    },
+                )?,
+                None => Message {
+                    id: Uuid::new_v4().to_string(),
+                    conversation_id: String::new(),
+                    role: "system".to_string(),
+                    content,
+                    metadata: Some(metadata),
+                    created_at: chrono::Utc::now(),
+                },
+            };
+            let fitted = fit_context_messages(
+                std::iter::once(summary.clone())
+                    .chain(summary_plan.recent_messages.clone())
+                    .collect(),
+                plan.conversation_budget,
+            );
+            Ok::<(Vec<Message>, Message), AppError>((fitted, summary))
+        }
+        .await;
+        match summary_result {
+            Ok((messages, summary)) => {
+                context_messages = messages;
+                created_summary = Some(summary);
+            }
+            Err(error) => print_warning(&format!("上下文摘要失败，本次使用最近历史：{error}")),
+        }
+    }
+    Ok(PreparedCliContext {
+        context_messages,
+        created_summary,
+        system_message: plan.system_message,
+        output_reserve: plan.output_reserve,
+    })
+}
+
+fn transient_message(role: &str, content: &str) -> Message {
+    Message {
+        id: Uuid::new_v4().to_string(),
+        conversation_id: String::new(),
+        role: role.to_string(),
+        content: content.to_string(),
+        metadata: None,
+        created_at: chrono::Utc::now(),
+    }
+}
+
+fn message_to_chat(message: &Message) -> ChatMessage {
+    ChatMessage {
+        role: message.role.clone(),
+        content: message.content.clone(),
+    }
 }
 
 async fn build_system_message(
@@ -873,8 +1022,9 @@ async fn build_system_message(
     project: Option<&Path>,
     query: &str,
 ) -> AppResult<ChatMessage> {
-    let memories = crate::memory::retrieve_for_cli(db, query, 8).await?;
-    let memory_context = memories
+    let base_context = load_base_context_for_db(db, project, query).await?;
+    let memory_context = base_context
+        .memories
         .iter()
         .map(|memory| format!("- {}: {}", memory.title, memory.content))
         .collect::<Vec<_>>()
@@ -892,7 +1042,7 @@ async fn build_system_message(
         )
     };
     let mut sections = vec![session_instruction];
-    if let Some(profile_context) = crate::profile::load_profile_context(db)? {
+    if let Some(profile_context) = base_context.profile_context {
         sections.push(profile_context);
     }
     if !memory_context.is_empty() {
@@ -902,9 +1052,8 @@ async fn build_system_message(
     }
 
     if let Some(root) = project {
-        let canonical = root.to_string_lossy().to_string();
-        let files = list_project_files(canonical.clone()).await?;
-        let file_context = files
+        let file_context = base_context
+            .project_files
             .iter()
             .take(160)
             .map(|entry| {
@@ -916,8 +1065,8 @@ async fn build_system_message(
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let code_matches = db.search_code_index(&canonical, query, None, CODE_MATCH_LIMIT)?;
-        let code_context = code_matches
+        let code_context = base_context
+            .code_matches
             .iter()
             .map(|item| {
                 format!(
@@ -932,14 +1081,8 @@ async fn build_system_message(
             })
             .collect::<Vec<_>>()
             .join("\n\n");
-        let document_matches = db.search_project_index(
-            &canonical,
-            Some(DOCUMENT_INDEXER),
-            query,
-            None,
-            DOCUMENT_MATCH_LIMIT,
-        )?;
-        let document_context = document_matches
+        let document_context = base_context
+            .project_index_matches
             .iter()
             .map(|item| {
                 format!(
@@ -1554,18 +1697,42 @@ mod tests {
     fn project_ask_creates_and_persists_a_restorable_conversation() {
         use std::io::{Read as _, Write as _};
         use std::net::TcpListener;
+        use std::sync::mpsc;
 
         let root = env::temp_dir().join(format!("nano-cli-ask-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root).expect("temporary project should be created");
         let db = Database::open(root.join("nano-test.sqlite3")).expect("database should open");
         let listener = TcpListener::bind("127.0.0.1:0").expect("mock server should bind");
         let address = listener.local_addr().expect("mock address should resolve");
+        let (request_sender, request_receiver) = mpsc::channel();
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("mock request should arrive");
-            let mut request = [0u8; 8192];
-            let _ = stream
-                .read(&mut request)
-                .expect("request should be readable");
+            let mut request = Vec::new();
+            loop {
+                let mut chunk = [0u8; 4096];
+                let read = stream.read(&mut chunk).expect("request should be readable");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&chunk[..read]);
+                let Some(header_end) = request.windows(4).position(|item| item == b"\r\n\r\n")
+                else {
+                    continue;
+                };
+                let headers = String::from_utf8_lossy(&request[..header_end]);
+                let content_length = headers.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                });
+                if content_length.is_none_or(|length| request.len() >= header_end + 4 + length) {
+                    break;
+                }
+            }
+            request_sender
+                .send(String::from_utf8_lossy(&request).to_string())
+                .expect("request should be captured");
             let body = concat!(
                 "data: {\"choices\":[{\"delta\":{\"content\":\"saved answer\"}}]}\n\n",
                 "data: [DONE]\n\n"
@@ -1637,6 +1804,9 @@ mod tests {
             ))
             .expect("project question should complete");
         server.join().expect("mock server should finish");
+        let captured_request = request_receiver
+            .recv()
+            .expect("captured request should be available");
 
         let conversation_id = conversation_id.expect("conversation should be created");
         let messages = db
@@ -1646,6 +1816,7 @@ mod tests {
         assert_eq!(messages[0].content, "first question");
         assert_eq!(messages[1].content, "saved answer");
         assert_eq!(history.len(), 2);
+        assert_eq!(captured_request.matches("first question").count(), 1);
         drop(db);
         std::fs::remove_dir_all(root).expect("temporary project should be removed");
     }
@@ -1664,7 +1835,13 @@ mod tests {
             .expect("readme should be written");
         let db = Database::open(root.join("nano-test.sqlite3")).expect("database should open");
 
-        rebuild_project_indexes(&db, &root).expect("indexes should rebuild");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+        runtime
+            .block_on(rebuild_project_indexes(&db, &root))
+            .expect("indexes should rebuild");
         let canonical = root.to_string_lossy().to_string();
         let code = db
             .search_code_index(&canonical, "greet_user", None, 8)

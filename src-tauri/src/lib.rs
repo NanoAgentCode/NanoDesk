@@ -3,6 +3,9 @@ mod agent_runner;
 mod brand;
 mod cli;
 mod code_index;
+mod context;
+mod context_budget;
+mod conversation_service;
 mod core;
 mod db;
 mod error;
@@ -19,6 +22,7 @@ mod plugins;
 mod profile;
 mod project_files;
 mod project_index;
+mod project_retrieval;
 mod rag;
 mod runtime;
 mod runtime_events;
@@ -665,7 +669,10 @@ async fn create_conversation(
         },
     )
     .await;
-    let result = state.db.lock().await.create_conversation(draft);
+    let result = {
+        let db = state.db.lock().await;
+        conversation_service::create_conversation(&db, draft)
+    };
     let output = result
         .as_ref()
         .ok()
@@ -718,11 +725,8 @@ async fn update_conversation_model(
     id: String,
     model_config_id: Option<String>,
 ) -> AppResult<()> {
-    state
-        .db
-        .lock()
-        .await
-        .update_conversation_model(&id, model_config_id.as_deref())
+    let db = state.db.lock().await;
+    conversation_service::bind_conversation_model(&db, &id, model_config_id.as_deref())
 }
 
 #[tauri::command]
@@ -752,7 +756,10 @@ async fn list_messages(
         },
     )
     .await;
-    let result = state.db.lock().await.list_messages(&conversation_id);
+    let result = {
+        let db = state.db.lock().await;
+        conversation_service::load_conversation_history(&db, &conversation_id)
+    };
     let output = result.as_ref().ok().map(|messages| count_summary(messages));
     finish_observation(&state, span, &result, output).await;
     result
@@ -773,7 +780,10 @@ async fn append_message(state: State<'_, AppState>, draft: MessageDraft) -> AppR
         },
     )
     .await;
-    let result = state.db.lock().await.append_message(draft);
+    let result = {
+        let db = state.db.lock().await;
+        conversation_service::append_conversation_message(&db, draft)
+    };
     let output = result.as_ref().ok().map(|message| {
         format!(
             "message_id={}, conversation_id={}",
@@ -2273,6 +2283,9 @@ pub fn run() {
             project_index::index_project_documents,
             project_index::get_project_index_stats,
             project_index::search_project_index,
+            context::load_base_context,
+            context_budget::plan_context_preparation,
+            context_budget::fit_context_messages,
             memory::list_memories,
             memory::list_enabled_memories,
             profile::get_user_profile,

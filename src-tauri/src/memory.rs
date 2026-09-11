@@ -26,39 +26,13 @@ pub async fn list_relevant_memories(
 ) -> AppResult<Vec<Memory>> {
     let limit = limit.unwrap_or(DEFAULT_MEMORY_LIMIT).clamp(1, 30);
     let query = query.trim().to_string();
-    if query.is_empty() {
-        let mut memories = state.db.lock().await.list_enabled_memories()?;
-        memories.truncate(limit as usize);
-        return Ok(memories);
-    }
-    if state.db.lock().await.list_enabled_memories()?.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let embedding_config = state
-        .db
-        .lock()
-        .await
-        .get_model_config("embedding-config")
-        .ok();
-    if let Some(config) = embedding_config.as_ref() {
-        lazy_backfill_embeddings(&state, config).await;
-    }
-
-    let query_embedding = match embedding_config.as_ref() {
-        Some(config) => create_embeddings(config, vec![query.clone()])
-            .await
-            .ok()
-            .and_then(|mut embeddings| embeddings.pop()),
-        None => None,
+    let plan = {
+        let db = state.db.lock().await;
+        plan_memory_retrieval(&db, &query, limit)?
     };
-
-    state.db.lock().await.search_hybrid_memories(
-        &query,
-        query_embedding.as_deref(),
-        embedding_config.as_ref().map(embedding_model),
-        limit,
-    )
+    let prepared = prepare_memory_retrieval(plan).await;
+    let db = state.db.lock().await;
+    finish_memory_retrieval(&db, prepared)
 }
 
 #[tauri::command]
@@ -85,82 +59,109 @@ pub async fn delete_memory(state: State<'_, AppState>, id: String) -> AppResult<
     state.db.lock().await.delete_memory(&id)
 }
 
-pub(crate) async fn retrieve_for_cli(
+pub(crate) struct MemoryRetrievalPlan {
+    query: String,
+    limit: i64,
+    has_memories: bool,
+    config: Option<ModelConfig>,
+    missing: Vec<Memory>,
+}
+
+pub(crate) struct PreparedMemoryRetrieval {
+    plan: MemoryRetrievalPlan,
+    missing_embeddings: Option<Vec<Vec<f32>>>,
+    query_embedding: Option<Vec<f32>>,
+}
+
+impl PreparedMemoryRetrieval {
+    pub(crate) fn query_embedding(&self) -> Option<&[f32]> {
+        self.query_embedding.as_deref()
+    }
+}
+
+pub(crate) fn plan_memory_retrieval(
     db: &crate::db::Database,
     query: &str,
     limit: i64,
-) -> AppResult<Vec<Memory>> {
-    if db.list_enabled_memories()?.is_empty() {
-        return Ok(Vec::new());
-    }
-    let config = db.get_model_config("embedding-config").ok();
-    if let Some(config) = config.as_ref() {
-        let missing =
-            db.list_memories_missing_embedding(embedding_model(config), MAX_LAZY_BACKFILL)?;
-        if !missing.is_empty() {
-            if let Ok(embeddings) = embed_memory_batch(config, &missing).await {
-                for (memory, embedding) in missing.iter().zip(embeddings.iter()) {
-                    db.upsert_memory_embedding(memory, embedding_model(config), embedding)?;
-                }
-            }
+) -> AppResult<MemoryRetrievalPlan> {
+    let has_memories = !db.list_enabled_memories()?.is_empty();
+    let config = if has_memories && !query.is_empty() {
+        db.get_model_config("embedding-config").ok()
+    } else {
+        None
+    };
+    let missing = match config.as_ref() {
+        Some(config) => {
+            db.list_memories_missing_embedding(embedding_model(config), MAX_LAZY_BACKFILL)?
         }
-    }
-    let query_embedding = match config.as_ref() {
-        Some(config) => create_embeddings(config, vec![query.to_string()])
+        None => Vec::new(),
+    };
+    Ok(MemoryRetrievalPlan {
+        query: query.to_string(),
+        limit,
+        has_memories,
+        config,
+        missing,
+    })
+}
+
+pub(crate) async fn prepare_memory_retrieval(plan: MemoryRetrievalPlan) -> PreparedMemoryRetrieval {
+    let missing_embeddings = match plan.config.as_ref() {
+        Some(config) if !plan.missing.is_empty() => {
+            embed_memory_batch(config, &plan.missing).await.ok()
+        }
+        _ => None,
+    };
+    let query_embedding = match plan.config.as_ref() {
+        Some(config) => create_embeddings(config, vec![plan.query.clone()])
             .await
             .ok()
             .and_then(|mut embeddings| embeddings.pop()),
         None => None,
     };
-    db.search_hybrid_memories(
-        query,
-        query_embedding.as_deref(),
-        config.as_ref().map(embedding_model),
-        limit,
-    )
+    PreparedMemoryRetrieval {
+        plan,
+        missing_embeddings,
+        query_embedding,
+    }
 }
 
-async fn lazy_backfill_embeddings(state: &State<'_, AppState>, config: &ModelConfig) {
-    let model = embedding_model(config).to_string();
-    let missing = match state
-        .db
-        .lock()
-        .await
-        .list_memories_missing_embedding(&model, MAX_LAZY_BACKFILL)
-    {
-        Ok(memories) => memories,
-        Err(error) => {
-            crate::logging::warn(
-                "memory",
-                "failed to inspect memory vector index",
-                serde_json::json!({ "error": error.to_string() }),
-            );
-            return;
-        }
-    };
-    if missing.is_empty() {
-        return;
+pub(crate) fn finish_memory_retrieval(
+    db: &crate::db::Database,
+    prepared: PreparedMemoryRetrieval,
+) -> AppResult<Vec<Memory>> {
+    let PreparedMemoryRetrieval {
+        plan,
+        missing_embeddings,
+        query_embedding,
+    } = prepared;
+    if !plan.has_memories {
+        return Ok(Vec::new());
     }
-
-    match embed_memory_batch(config, &missing).await {
-        Ok(embeddings) => {
-            let db = state.db.lock().await;
-            for (memory, embedding) in missing.iter().zip(embeddings.iter()) {
-                if let Err(error) = db.upsert_memory_embedding(memory, &model, embedding) {
-                    crate::logging::warn(
-                        "memory",
-                        "failed to persist memory embedding",
-                        serde_json::json!({ "memory_id": memory.id, "error": error.to_string() }),
-                    );
-                }
+    if plan.query.is_empty() {
+        let mut memories = db.list_enabled_memories()?;
+        memories.truncate(plan.limit as usize);
+        return Ok(memories);
+    }
+    if let (Some(config), Some(embeddings)) = (plan.config.as_ref(), missing_embeddings.as_ref()) {
+        for (memory, embedding) in plan.missing.iter().zip(embeddings.iter()) {
+            if let Err(error) =
+                db.upsert_memory_embedding(memory, embedding_model(config), embedding)
+            {
+                crate::logging::warn(
+                    "memory",
+                    "failed to persist memory embedding",
+                    serde_json::json!({ "memory_id": memory.id, "error": error.to_string() }),
+                );
             }
         }
-        Err(error) => crate::logging::warn(
-            "memory",
-            "memory embedding backfill skipped",
-            serde_json::json!({ "error": error.to_string() }),
-        ),
     }
+    db.search_hybrid_memories(
+        &plan.query,
+        query_embedding.as_deref(),
+        plan.config.as_ref().map(embedding_model),
+        plan.limit,
+    )
 }
 
 async fn index_memory_embedding(state: &State<'_, AppState>, memory: &Memory) {

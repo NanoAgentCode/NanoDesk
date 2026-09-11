@@ -10,17 +10,16 @@ import {
   extractUploadedFile,
   indexRagFile,
   interruptChatStream,
-  listRelevantMemories,
-  getProfileContext,
+  loadBaseContext,
+  planContextPreparation,
+  fitContextMessages,
   listAgentRunTimelines,
   listAgentRuns,
   listMessages,
-  listProjectFiles,
   listRagFiles,
   readAbsoluteFile
 } from "../api";
 import { buildSystemMessage } from "../lib/chatSystemMessage";
-import { loadProjectRetrievalContext } from "../lib/projectRetrieval";
 import { createChatStreamAccumulator } from "../lib/chatStreamAccumulator";
 import { isSupportedRagFile } from "../lib/formatters";
 import { prepareBudgetedContext as prepareContextWithinBudget } from "../lib/contextPreparation";
@@ -318,6 +317,8 @@ export function useChat({
       conversationId,
       latestUserContent
     }, {
+      planContext: planContextPreparation,
+      fitContext: fitContextMessages,
       generateSummary: async (prompt, maxTokens) => {
         const response = await chat(
           modelConfigId,
@@ -416,32 +417,18 @@ export function useChat({
         attachments.clearPendingImageAttachments();
       }
 
-      const [relevantMemories, profileContext] = await Promise.all([
-        listRelevantMemories(content, 8),
-        getProfileContext()
-      ]);
-      let projectFiles: import("../types").ProjectFileEntry[] = [];
-      if (projectForRequest?.path) {
-        try {
-          projectFiles = await listProjectFiles(projectForRequest.path);
-        } catch (error) {
-          console.error("Failed to list project files:", error);
-          setNotice(`无法读取当前项目文件列表：${String(error)}`);
-        }
-      }
-
+      const baseContext = await loadBaseContext(projectForRequest?.path || null, content);
       const ragMatches = await rag.loadRagMatches(conversationId, content, activeModelId);
-      const projectRetrieval = await loadProjectRetrievalContext(projectForRequest?.path, content);
       const requestSystemMessage = buildSystemMessage(
-        relevantMemories,
-        profileContext,
+        baseContext.memories,
+        baseContext.profile_context || null,
         projectForRequest,
-        projectFiles,
+        baseContext.project_files,
         skills.skills,
         mcp.mcpServers,
         ragMatches,
-        projectRetrieval.codeMatches,
-        projectRetrieval.projectIndexMatches,
+        baseContext.code_matches,
+        baseContext.project_index_matches,
         skills.tempDir
       );
       const preparedContext = await prepareBudgetedContext(
@@ -651,28 +638,19 @@ export function useChat({
   ) {
     const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
     const modelConfigId = conv.resolveConversationModelId(conversationId);
-    let projectFiles: import("../types").ProjectFileEntry[] = [];
-    if (projectForRequest?.path) {
-      try { projectFiles = await listProjectFiles(projectForRequest.path); }
-      catch (error) { console.error("Failed to list project files:", error); }
-    }
     const retrievalQuery = [...currentMessages].reverse().find((message) => message.role === "user")?.content || "";
-    const [relevantMemories, profileContext] = await Promise.all([
-      listRelevantMemories(retrievalQuery, 8),
-      getProfileContext()
-    ]);
+    const baseContext = await loadBaseContext(projectForRequest?.path || null, retrievalQuery);
     const ragMatches = await rag.loadRagMatches(conversationId, retrievalQuery, modelConfigId);
-    const projectRetrieval = await loadProjectRetrievalContext(projectForRequest?.path, retrievalQuery);
     const requestSystemMessage = buildSystemMessage(
-      relevantMemories,
-      profileContext,
+      baseContext.memories,
+      baseContext.profile_context || null,
       projectForRequest,
-      projectFiles,
+      baseContext.project_files,
       skills.skills,
       mcp.mcpServers,
       ragMatches,
-      projectRetrieval.codeMatches,
-      projectRetrieval.projectIndexMatches,
+      baseContext.code_matches,
+      baseContext.project_index_matches,
       skills.tempDir
     );
     const preparedContext = await prepareBudgetedContext(

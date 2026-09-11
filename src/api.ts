@@ -57,6 +57,9 @@ import type {
   ProjectIndexRun,
   ProjectIndexStats,
   ProjectIndexSearchResult,
+  BaseContextBundle,
+  ContextPreparationPlan,
+  ContextPreparationRequest,
   RagChunkMatch,
   RagFile,
   RagFileDraft,
@@ -448,6 +451,18 @@ export function searchProjectIndex(
     query,
     limit
   });
+}
+
+export function loadBaseContext(projectPath: string | null, query: string) {
+  return invoke<BaseContextBundle>("load_base_context", { projectPath, query });
+}
+
+export function planContextPreparation(request: ContextPreparationRequest) {
+  return invoke<ContextPreparationPlan>("plan_context_preparation", { request });
+}
+
+export function fitContextMessages(messages: PersistedMessage[], budget: number) {
+  return invoke<PersistedMessage[]>("fit_context_messages", { messages, budget });
 }
 
 export function checkEnv(nodePath?: string, pythonPath?: string) {

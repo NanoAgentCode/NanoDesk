@@ -6,6 +6,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::brand;
+use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::llm::create_embeddings;
 use crate::models::{
@@ -42,7 +43,6 @@ pub async fn index_project_code(
 ) -> AppResult<CodeIndexRun> {
     let root = project_root(&project_path)?;
     let canonical_project_path = root.to_string_lossy().to_string();
-    let indexed = build_project_code_index(&root, &canonical_project_path)?;
     let embedding_config = {
         state
             .db
@@ -51,41 +51,11 @@ pub async fn index_project_code(
             .get_model_config("embedding-config")
             .ok()
     };
-    let code_embeddings = if let Some(config) = embedding_config {
-        if indexed.chunks.len() > MAX_EMBEDDED_CODE_CHUNKS {
-            None
-        } else {
-            let embedding_model = if config.embedding_model.trim().is_empty() {
-                "text-embedding-3-small".to_string()
-            } else {
-                config.embedding_model.trim().to_string()
-            };
-            let texts = indexed
-                .chunks
-                .iter()
-                .map(|chunk| chunk.text.clone())
-                .collect::<Vec<_>>();
-            match create_embeddings(&config, texts).await {
-                Ok(embeddings) if embeddings.len() == indexed.chunks.len() => {
-                    Some((embeddings, embedding_model))
-                }
-                Ok(_) | Err(_) => None,
-            }
-        }
-    } else {
-        None
-    };
-    let embedding_refs = code_embeddings
-        .as_ref()
-        .map(|(embeddings, model)| (embeddings.as_slice(), model.as_str()));
-    state.db.lock().await.replace_code_index(
-        &canonical_project_path,
-        indexed.file_count,
-        &indexed.entities,
-        &indexed.relations,
-        &indexed.chunks,
-        embedding_refs,
-    )
+    let prepared =
+        prepare_project_code_index(&root, &canonical_project_path, embedding_config.as_ref())
+            .await?;
+    let db = state.db.lock().await;
+    persist_project_code_index(&db, &canonical_project_path, &prepared)
 }
 
 #[tauri::command]
@@ -144,6 +114,59 @@ pub(crate) struct ProjectCodeIndex {
     pub(crate) entities: Vec<CodeEntity>,
     pub(crate) relations: Vec<CodeRelation>,
     pub(crate) chunks: Vec<CodeChunk>,
+}
+
+pub(crate) struct PreparedProjectCodeIndex {
+    index: ProjectCodeIndex,
+    embeddings: Option<(Vec<Vec<f32>>, String)>,
+}
+
+pub(crate) async fn prepare_project_code_index(
+    root: &Path,
+    project_path: &str,
+    embedding_config: Option<&crate::models::ModelConfig>,
+) -> AppResult<PreparedProjectCodeIndex> {
+    let index = build_project_code_index(root, project_path)?;
+    let embeddings = if index.chunks.is_empty() || index.chunks.len() > MAX_EMBEDDED_CODE_CHUNKS {
+        None
+    } else if let Some(config) = embedding_config {
+        let embedding_model = if config.embedding_model.trim().is_empty() {
+            "text-embedding-3-small".to_string()
+        } else {
+            config.embedding_model.trim().to_string()
+        };
+        let texts = index
+            .chunks
+            .iter()
+            .map(|chunk| chunk.text.clone())
+            .collect::<Vec<_>>();
+        match create_embeddings(config, texts).await {
+            Ok(values) if values.len() == index.chunks.len() => Some((values, embedding_model)),
+            Ok(_) | Err(_) => None,
+        }
+    } else {
+        None
+    };
+    Ok(PreparedProjectCodeIndex { index, embeddings })
+}
+
+pub(crate) fn persist_project_code_index(
+    db: &Database,
+    project_path: &str,
+    prepared: &PreparedProjectCodeIndex,
+) -> AppResult<CodeIndexRun> {
+    let embedding_refs = prepared
+        .embeddings
+        .as_ref()
+        .map(|(embeddings, model)| (embeddings.as_slice(), model.as_str()));
+    db.replace_code_index(
+        project_path,
+        prepared.index.file_count,
+        &prepared.index.entities,
+        &prepared.index.relations,
+        &prepared.index.chunks,
+        embedding_refs,
+    )
 }
 
 #[derive(Debug, Clone)]

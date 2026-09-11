@@ -428,6 +428,39 @@ export interface ProjectIndexSearchResult {
   score: number;
 }
 
+export interface BaseContextBundle {
+  profile_context?: string | null;
+  memories: Memory[];
+  project_files: ProjectFileEntry[];
+  code_matches: CodeSearchResult[];
+  project_index_matches: ProjectIndexSearchResult[];
+}
+
+export interface ContextPreparationRequest {
+  history: PersistedMessage[];
+  system_message: ChatMessage;
+  context_window: number;
+  max_tokens?: number | null;
+  latest_user_content: string;
+}
+
+export interface ContextSummaryPlan {
+  batches: PersistedMessage[][];
+  recent_messages: PersistedMessage[];
+  covered_through_message_id: string;
+  covered_message_count: number;
+  version: number;
+}
+
+export interface ContextPreparationPlan {
+  context_messages: PersistedMessage[];
+  summary_plan?: ContextSummaryPlan | null;
+  system_message: ChatMessage;
+  output_reserve: number;
+  conversation_budget: number;
+  system_trimmed: boolean;
+}
+
 export interface GitHubSkill {
   slug: string;
   name: string;
