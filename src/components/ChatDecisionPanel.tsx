@@ -1,6 +1,6 @@
 import { Button, TextInput } from "@mantine/core";
 import { Check, CircleHelp, Hammer, SkipForward } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AgentClarificationAnswer,
   AgentClarificationRequest
@@ -30,6 +30,18 @@ interface ChatDecisionPanelProps {
   ) => Promise<void>;
 }
 
+export function collectCompletedClarificationAnswers(
+  request: AgentClarificationRequest,
+  answers: Record<string, AgentClarificationAnswer>,
+  answer: AgentClarificationAnswer
+) {
+  const nextAnswers = { ...answers, [answer.question_id]: answer };
+  const completedAnswers = request.questions.every((question) => nextAnswers[question.id])
+    ? request.questions.map((question) => nextAnswers[question.id])
+    : null;
+  return { nextAnswers, completedAnswers };
+}
+
 export default function ChatDecisionPanel({
   tool,
   clarification,
@@ -43,19 +55,17 @@ export default function ChatDecisionPanel({
   const [customQuestionId, setCustomQuestionId] = useState<string | null>(null);
   const [customText, setCustomText] = useState("");
   const panelRef = useRef<HTMLElement | null>(null);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     setQuestionIndex(0);
     setAnswers({});
     setCustomQuestionId(null);
     setCustomText("");
+    submittingRef.current = false;
   }, [clarification?.messageId]);
 
   const question = clarification?.request.questions[questionIndex];
-  const answeredCount = useMemo(() => Object.keys(answers).length, [answers]);
-  const allAnswered = Boolean(
-    clarification && answeredCount === clarification.request.questions.length
-  );
 
   useEffect(() => {
     if (!question || disabled) return;
@@ -65,10 +75,7 @@ export default function ChatDecisionPanel({
       const option = question.options[numericIndex];
       if (!option) return;
       event.preventDefault();
-      setAnswers((current) => ({
-        ...current,
-        [question.id]: { question_id: question.id, option_id: option.id }
-      }));
+      completeCurrentQuestion({ question_id: question.id, option_id: option.id });
       setCustomQuestionId(null);
       setCustomText("");
     };
@@ -115,11 +122,33 @@ export default function ChatDecisionPanel({
   const selectedAnswer = answers[activeQuestion.id];
   const isCustom = customQuestionId === activeQuestion.id;
 
+  function answerQuestion(answer: AgentClarificationAnswer) {
+    const { nextAnswers, completedAnswers } = collectCompletedClarificationAnswers(
+      activeClarification.request,
+      answers,
+      answer
+    );
+    setAnswers(nextAnswers);
+    if (!completedAnswers || submittingRef.current) return;
+    submittingRef.current = true;
+    void onSubmitClarification(
+      activeClarification.messageId,
+      activeClarification.request,
+      completedAnswers
+    ).finally(() => {
+      submittingRef.current = false;
+    });
+  }
+
+  function completeCurrentQuestion(answer: AgentClarificationAnswer) {
+    answerQuestion(answer);
+    if (questionIndex < activeClarification.request.questions.length - 1) {
+      setQuestionIndex(questionIndex + 1);
+    }
+  }
+
   function selectOption(optionId: string) {
-    setAnswers((current) => ({
-      ...current,
-      [activeQuestion.id]: { question_id: activeQuestion.id, option_id: optionId }
-    }));
+    completeCurrentQuestion({ question_id: activeQuestion.id, option_id: optionId });
     setCustomQuestionId(null);
     setCustomText("");
   }
@@ -145,16 +174,9 @@ export default function ChatDecisionPanel({
   }
 
   function skipQuestion() {
-    const nextAnswers = {
-      ...answers,
-      [activeQuestion.id]: { question_id: activeQuestion.id, skipped: true }
-    };
-    setAnswers(nextAnswers);
+    completeCurrentQuestion({ question_id: activeQuestion.id, skipped: true });
     setCustomQuestionId(null);
     setCustomText("");
-    if (questionIndex < activeClarification.request.questions.length - 1) {
-      setQuestionIndex(questionIndex + 1);
-    }
   }
 
   return (
@@ -202,41 +224,30 @@ export default function ChatDecisionPanel({
           </button>
         )}
         {isCustom && (
-          <TextInput
-            autoFocus
-            value={customText}
-            disabled={disabled}
-            onChange={(event) => saveCustom(event.currentTarget.value)}
-            placeholder="输入你的答案"
-            aria-label="自定义澄清答案"
-          />
+          <form
+            className="chat-decision-custom-form"
+            aria-label="提交自定义澄清答案"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const normalized = customText.trim();
+              if (!normalized || disabled) return;
+              completeCurrentQuestion({ question_id: activeQuestion.id, custom_text: normalized });
+            }}
+          >
+            <TextInput
+              autoFocus
+              value={customText}
+              disabled={disabled}
+              onChange={(event) => saveCustom(event.currentTarget.value)}
+              placeholder="输入答案，按 Enter 确认"
+              aria-label="自定义澄清答案"
+            />
+          </form>
         )}
       </div>
       <footer>
-        <div className="chat-decision-question-nav">
-          {clarification.request.questions.length > 1 && (
-            <>
-              <Button variant="subtle" disabled={disabled || questionIndex === 0} onClick={() => setQuestionIndex(questionIndex - 1)}>
-                上一题
-              </Button>
-              <Button variant="subtle" disabled={disabled || questionIndex >= clarification.request.questions.length - 1} onClick={() => setQuestionIndex(questionIndex + 1)}>
-                下一题
-              </Button>
-            </>
-          )}
-        </div>
         <Button variant="default" leftSection={<SkipForward size={15} />} disabled={disabled} onClick={skipQuestion}>
           跳过本题
-        </Button>
-        <Button
-          disabled={disabled || !allAnswered}
-          onClick={() => void onSubmitClarification(
-            clarification.messageId,
-            clarification.request,
-            clarification.request.questions.map((item) => answers[item.id])
-          )}
-        >
-          提交
         </Button>
       </footer>
     </section>
