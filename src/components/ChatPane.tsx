@@ -560,8 +560,20 @@ export default function ChatPane({
             ))}
           </div>
         )}
-        <div className="chat-composer-meta">
-          <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行</span>
+        <div className="chat-composer-meta" aria-label="快捷键：Enter 发送，Shift 加 Enter 换行">
+          <span className="chat-shortcut">
+            <kbd>Enter</kbd>
+            <span className="chat-shortcut-label">发送</span>
+          </span>
+          <span className="chat-shortcut-divider" aria-hidden="true" />
+          <span className="chat-shortcut">
+            <span className="chat-shortcut-keys">
+              <kbd>Shift</kbd>
+              <span className="chat-shortcut-plus" aria-hidden="true">+</span>
+              <kbd>Enter</kbd>
+            </span>
+            <span className="chat-shortcut-label">换行</span>
+          </span>
         </div>
         <Textarea
           id="chat-composer"
