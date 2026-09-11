@@ -6,7 +6,8 @@ import {
   formatClarificationAnswerMessage,
   parseClarificationRequest,
   parseTaskPlan,
-  resolveUserMemoryRoute
+  resolveUserMemoryRoute,
+  stripClarificationRequest
 } from "./messageHelpers";
 
 describe("resolveUserMemoryRoute", () => {
@@ -64,6 +65,12 @@ describe("clarification messages", () => {
         options: [{ id: "gallery", recommended: true }, { id: "keep", recommended: false }]
       }]
     });
+  });
+
+  it("removes the structured payload while preserving surrounding assistant text", () => {
+    expect(stripClarificationRequest(`先确认两个问题：\n\n${content}\n\n请选择最符合的一项。`))
+      .toBe("先确认两个问题：\n\n请选择最符合的一项。");
+    expect(stripClarificationRequest(content)).toBe("");
   });
 
   it("rejects malformed or ambiguous option payloads", () => {

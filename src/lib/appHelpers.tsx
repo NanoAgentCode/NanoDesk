@@ -1,5 +1,5 @@
 import type { ItemKind, ProjectFileEntry, WebSearchStatus, WorkspaceView, ThemeMode } from "../types";
-import { parseToolResult, stripTaskPlan } from "./messageHelpers";
+import { parseToolResult, stripClarificationRequest, stripTaskPlan } from "./messageHelpers";
 import ImageAttachmentMessage from "../components/ImageAttachmentMessage";
 import ToolResultMessage from "../components/ToolResultMessage";
 
@@ -50,7 +50,7 @@ export function renderMessageContent(content: string, options: RenderMessageCont
   if (toolResult) {
     return <ToolResultMessage result={toolResult} />;
   }
-  const visibleContent = stripTaskPlan(content);
+  const visibleContent = stripClarificationRequest(stripTaskPlan(content));
   if (!visibleContent) return null;
   return (
     <ImageAttachmentMessage

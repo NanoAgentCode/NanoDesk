@@ -245,6 +245,10 @@ export function stripTaskPlan(content: string) {
   return content.replace(/<task_plan>[\s\S]*?<\/task_plan>/g, "").trim();
 }
 
+export function stripClarificationRequest(content: string) {
+  return content.replace(/\s*<clarification>[\s\S]*?<\/clarification>\s*/g, "\n\n").trim();
+}
+
 export function buildAutomaticClarificationAnswers(request: AgentClarificationRequest) {
   return request.questions.map((question): AgentClarificationAnswer => ({
     question_id: question.id,
