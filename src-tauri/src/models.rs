@@ -45,6 +45,12 @@ pub struct ModelConfig {
     pub context_window: u32,
     pub top_p: Option<f32>,
     pub reasoning_effort: String,
+    pub routing_group: String,
+    pub routing_enabled: bool,
+    pub routing_cost: u8,
+    pub routing_quality: u8,
+    pub routing_speed: u8,
+    pub routing_tasks: Vec<String>,
     pub embedding_provider: String,
     pub embedding_base_url: String,
     pub embedding_model: String,
@@ -71,6 +77,18 @@ pub struct ModelConfigDraft {
     pub top_p: Option<f32>,
     #[serde(default)]
     pub reasoning_effort: String,
+    #[serde(default = "default_routing_group")]
+    pub routing_group: String,
+    #[serde(default = "default_routing_enabled")]
+    pub routing_enabled: bool,
+    #[serde(default = "default_routing_score")]
+    pub routing_cost: u8,
+    #[serde(default = "default_routing_score")]
+    pub routing_quality: u8,
+    #[serde(default = "default_routing_score")]
+    pub routing_speed: u8,
+    #[serde(default)]
+    pub routing_tasks: Vec<String>,
     #[serde(default)]
     pub embedding_provider: String,
     #[serde(default)]
@@ -277,6 +295,16 @@ fn default_model_temperature() -> f32 {
 
 fn default_model_context_window() -> u32 {
     32_768
+}
+
+fn default_routing_group() -> String {
+    "默认组".to_string()
+}
+fn default_routing_enabled() -> bool {
+    true
+}
+fn default_routing_score() -> u8 {
+    3
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

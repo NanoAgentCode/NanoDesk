@@ -601,6 +601,25 @@ export default function ChatPane({
           <div className="chat-input-left">
             <AccessModeSelector value={accessMode} onChange={onAccessModeChange} disabled={busy || decisionPending} />
             <Select
+              className="chat-routing-select"
+              aria-label="模型路由模式"
+              value={model.routingEnabled ? model.routingStrategy : "manual"}
+              data={[
+                { value: "manual", label: "手动选模" },
+                { value: "balanced", label: "智能·均衡" },
+                { value: "quality", label: "智能·质量" },
+                { value: "speed", label: "智能·速度" },
+                { value: "cost", label: "智能·成本" }
+              ]}
+              onChange={(value) => {
+                if (!value || value === "manual") model.setRoutingEnabled(false);
+                else { model.setRoutingEnabled(true); model.setRoutingStrategy(value as "balanced" | "quality" | "speed" | "cost"); }
+              }}
+              allowDeselect={false}
+              size="xs"
+              disabled={busy || decisionPending}
+            />
+            <Select
               className="chat-model-select"
               aria-label="当前对话模型"
               placeholder="选择模型"

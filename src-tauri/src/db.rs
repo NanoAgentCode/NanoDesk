@@ -102,6 +102,12 @@ impl Database {
                 context_window INTEGER NOT NULL DEFAULT 32768,
                 top_p REAL,
                 reasoning_effort TEXT NOT NULL DEFAULT '',
+                routing_group TEXT NOT NULL DEFAULT '默认组',
+                routing_enabled INTEGER NOT NULL DEFAULT 1,
+                routing_cost INTEGER NOT NULL DEFAULT 3,
+                routing_quality INTEGER NOT NULL DEFAULT 3,
+                routing_speed INTEGER NOT NULL DEFAULT 3,
+                routing_tasks_json TEXT NOT NULL DEFAULT '[]',
                 embedding_provider TEXT NOT NULL DEFAULT 'openai-compatible',
                 embedding_base_url TEXT NOT NULL DEFAULT '',
                 embedding_model TEXT NOT NULL DEFAULT '',
@@ -645,6 +651,42 @@ impl Database {
         )?;
         Self::ensure_column(
             conn,
+            "model_configs",
+            "routing_group",
+            "TEXT NOT NULL DEFAULT '默认组'",
+        )?;
+        Self::ensure_column(
+            conn,
+            "model_configs",
+            "routing_enabled",
+            "INTEGER NOT NULL DEFAULT 1",
+        )?;
+        Self::ensure_column(
+            conn,
+            "model_configs",
+            "routing_cost",
+            "INTEGER NOT NULL DEFAULT 3",
+        )?;
+        Self::ensure_column(
+            conn,
+            "model_configs",
+            "routing_quality",
+            "INTEGER NOT NULL DEFAULT 3",
+        )?;
+        Self::ensure_column(
+            conn,
+            "model_configs",
+            "routing_speed",
+            "INTEGER NOT NULL DEFAULT 3",
+        )?;
+        Self::ensure_column(
+            conn,
+            "model_configs",
+            "routing_tasks_json",
+            "TEXT NOT NULL DEFAULT '[]'",
+        )?;
+        Self::ensure_column(
+            conn,
             "mcp_servers",
             "transport",
             "TEXT NOT NULL DEFAULT 'stdio'",
@@ -878,8 +920,9 @@ impl Database {
     }
 
     fn row_to_model_config(row: &rusqlite::Row<'_>) -> rusqlite::Result<ModelConfig> {
-        let created_at: String = row.get(15)?;
-        let updated_at: String = row.get(16)?;
+        let routing_tasks_json: String = row.get(16)?;
+        let created_at: String = row.get(21)?;
+        let updated_at: String = row.get(22)?;
 
         Ok(ModelConfig {
             id: row.get(0)?,
@@ -893,10 +936,16 @@ impl Database {
             context_window: row.get(8)?,
             top_p: row.get(9)?,
             reasoning_effort: row.get(10)?,
-            embedding_provider: row.get(11)?,
-            embedding_base_url: row.get(12)?,
-            embedding_model: row.get(13)?,
-            embedding_api_key: row.get(14)?,
+            routing_group: row.get(11)?,
+            routing_enabled: row.get::<_, i64>(12)? != 0,
+            routing_cost: row.get(13)?,
+            routing_quality: row.get(14)?,
+            routing_speed: row.get(15)?,
+            routing_tasks: serde_json::from_str(&routing_tasks_json).unwrap_or_default(),
+            embedding_provider: row.get(17)?,
+            embedding_base_url: row.get(18)?,
+            embedding_model: row.get(19)?,
+            embedding_api_key: row.get(20)?,
             created_at: parse_time_for_row(&created_at)?,
             updated_at: parse_time_for_row(&updated_at)?,
         })
@@ -1467,6 +1516,12 @@ mod tests {
                 context_window: 65_536,
                 top_p: Some(0.9),
                 reasoning_effort: "high".to_string(),
+                routing_group: "高质量组".to_string(),
+                routing_enabled: true,
+                routing_cost: 5,
+                routing_quality: 5,
+                routing_speed: 2,
+                routing_tasks: vec!["coding".to_string(), "reasoning".to_string()],
                 embedding_provider: String::new(),
                 embedding_base_url: String::new(),
                 embedding_model: String::new(),
@@ -1479,6 +1534,8 @@ mod tests {
         assert_eq!(loaded.max_tokens, Some(3072));
         assert_eq!(loaded.context_window, 65_536);
         assert_eq!(loaded.top_p, Some(0.9));
+        assert_eq!(loaded.routing_group, "高质量组");
+        assert_eq!(loaded.routing_tasks, vec!["coding", "reasoning"]);
         assert_eq!(loaded.reasoning_effort, "high");
     }
 
@@ -1528,6 +1585,12 @@ mod tests {
         assert_eq!(loaded.context_window, 32_768);
         assert_eq!(loaded.top_p, None);
         assert_eq!(loaded.reasoning_effort, "");
+        assert_eq!(loaded.routing_group, "默认组");
+        assert!(loaded.routing_enabled);
+        assert_eq!(loaded.routing_cost, 3);
+        assert_eq!(loaded.routing_quality, 3);
+        assert_eq!(loaded.routing_speed, 3);
+        assert!(loaded.routing_tasks.is_empty());
 
         drop(db);
         for split_path in [

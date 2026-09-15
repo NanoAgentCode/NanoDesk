@@ -41,6 +41,12 @@ export interface ModelConfig {
   context_window: number;
   top_p: number | null;
   reasoning_effort: string;
+  routing_group: string;
+  routing_enabled: boolean;
+  routing_cost: number;
+  routing_quality: number;
+  routing_speed: number;
+  routing_tasks: string[];
   embedding_provider: string;
   embedding_base_url: string;
   embedding_model: string;
@@ -61,6 +67,12 @@ export interface ModelConfigDraft {
   context_window: number;
   top_p: number | null;
   reasoning_effort: string;
+  routing_group: string;
+  routing_enabled: boolean;
+  routing_cost: number;
+  routing_quality: number;
+  routing_speed: number;
+  routing_tasks: string[];
   embedding_provider: string;
   embedding_base_url: string;
   embedding_model: string;

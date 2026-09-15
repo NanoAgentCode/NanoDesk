@@ -18,6 +18,7 @@ impl Database {
             "
             SELECT id, name, provider, base_url, model, api_key,
                    temperature, max_tokens, context_window, top_p, reasoning_effort,
+                   routing_group, routing_enabled, routing_cost, routing_quality, routing_speed, routing_tasks_json,
                    embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                    created_at, updated_at
             FROM model_configs
@@ -39,6 +40,7 @@ impl Database {
                 "
                 SELECT id, name, provider, base_url, model, api_key,
                        temperature, max_tokens, context_window, top_p, reasoning_effort,
+                       routing_group, routing_enabled, routing_cost, routing_quality, routing_speed, routing_tasks_json,
                        embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                        created_at, updated_at
                 FROM model_configs WHERE id = ?1
@@ -77,6 +79,12 @@ impl Database {
             context_window: validate_context_window(draft.context_window, draft.max_tokens)?,
             top_p: validate_top_p(draft.top_p)?,
             reasoning_effort: validate_reasoning_effort(draft.reasoning_effort)?,
+            routing_group: clean_or_default(draft.routing_group, "默认组"),
+            routing_enabled: draft.routing_enabled,
+            routing_cost: validate_routing_score(draft.routing_cost)?,
+            routing_quality: validate_routing_score(draft.routing_quality)?,
+            routing_speed: validate_routing_score(draft.routing_speed)?,
+            routing_tasks: validate_routing_tasks(draft.routing_tasks)?,
             embedding_provider: clean_or_default(draft.embedding_provider, "openai-compatible"),
             embedding_base_url: clean_optional_string(draft.embedding_base_url),
             embedding_model: clean_or_default(draft.embedding_model, "text-embedding-3-small"),
@@ -90,9 +98,10 @@ impl Database {
             INSERT INTO model_configs
                 (id, name, provider, base_url, model, api_key,
                  temperature, max_tokens, context_window, top_p, reasoning_effort,
+                 routing_group, routing_enabled, routing_cost, routing_quality, routing_speed, routing_tasks_json,
                  embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                  created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 provider = excluded.provider,
@@ -104,6 +113,12 @@ impl Database {
                 context_window = excluded.context_window,
                 top_p = excluded.top_p,
                 reasoning_effort = excluded.reasoning_effort,
+                routing_group = excluded.routing_group,
+                routing_enabled = excluded.routing_enabled,
+                routing_cost = excluded.routing_cost,
+                routing_quality = excluded.routing_quality,
+                routing_speed = excluded.routing_speed,
+                routing_tasks_json = excluded.routing_tasks_json,
                 embedding_provider = excluded.embedding_provider,
                 embedding_base_url = excluded.embedding_base_url,
                 embedding_model = excluded.embedding_model,
@@ -122,6 +137,12 @@ impl Database {
                 config.context_window,
                 config.top_p,
                 config.reasoning_effort,
+                config.routing_group,
+                if config.routing_enabled { 1 } else { 0 },
+                config.routing_cost,
+                config.routing_quality,
+                config.routing_speed,
+                serde_json::to_string(&config.routing_tasks)?,
                 config.embedding_provider,
                 config.embedding_base_url,
                 config.embedding_model,
@@ -427,4 +448,35 @@ fn validate_reasoning_effort(value: String) -> AppResult<String> {
             "Reasoning Effort 必须为空、low、medium 或 high".to_string(),
         ))
     }
+}
+
+fn validate_routing_score(value: u8) -> AppResult<u8> {
+    if (1..=5).contains(&value) {
+        Ok(value)
+    } else {
+        Err(AppError::Message("路由评分必须在 1 到 5 之间".to_string()))
+    }
+}
+
+fn validate_routing_tasks(values: Vec<String>) -> AppResult<Vec<String>> {
+    const ALLOWED: &[&str] = &[
+        "general",
+        "coding",
+        "reasoning",
+        "writing",
+        "translation",
+        "summary",
+        "vision",
+    ];
+    let mut result = Vec::new();
+    for value in values {
+        let value = value.trim().to_lowercase();
+        if !ALLOWED.contains(&value.as_str()) {
+            return Err(AppError::Message(format!("不支持的路由任务类型：{value}")));
+        }
+        if !result.contains(&value) {
+            result.push(value);
+        }
+    }
+    Ok(result)
 }

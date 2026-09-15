@@ -17,7 +17,8 @@ import {
   listAgentRuns,
   listMessages,
   listRagFiles,
-  readAbsoluteFile
+  readAbsoluteFile,
+  updateConversationModel
 } from "../api";
 import { buildSystemMessage } from "../lib/chatSystemMessage";
 import { createChatStreamAccumulator } from "../lib/chatStreamAccumulator";
@@ -352,7 +353,10 @@ export function useChat({
     const explicitProfileInstruction = memoryRoute.kind === "profile";
     const memoryDraft = memoryRoute.memoryDraft;
     const effectiveModelId = conv.resolveConversationModelId(conv.activeConversationId);
-    const activeModelId = effectiveModelId;
+    const routingDecision = model.routingEnabled && !memoryDraft
+      ? model.resolveRoutedModel(textContent || content, attachments.pendingImageAttachments.length > 0)
+      : null;
+    const activeModelId = routingDecision?.modelId || effectiveModelId;
 
     if ((!textContent && attachments.pendingImageAttachments.length === 0) || (!activeModelId && !memoryDraft)) {
       setNotice(activeModelId ? "" : "请先保存并选择一个模型");
@@ -366,13 +370,21 @@ export function useChat({
     try {
       const projectHint = conv.getConversationProjectHint();
       const conversationId = await conv.ensureConversation(projectHint);
+      if (routingDecision && activeModelId !== effectiveModelId) {
+        await updateConversationModel(conversationId, activeModelId);
+        model.setActiveModelId(activeModelId);
+      }
+      if (routingDecision) setNotice(`智能路由：${routingDecision.reason}`);
       const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
       const persistedMessages = await listMessages(conversationId);
       const userMessage = await appendMessage({
         conversation_id: conversationId,
         role: "user",
         content,
-        metadata: memoryRoute.kind === "memory" ? { exclude_from_profile: true } : undefined
+        metadata: {
+          ...(memoryRoute.kind === "memory" ? { exclude_from_profile: true } : {}),
+          ...(routingDecision ? { model_routing: routingDecision } : {})
+        }
       });
       agentRun = await safeCreateAgentRun({
         conversation_id: conversationId,
