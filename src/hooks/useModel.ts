@@ -10,11 +10,8 @@ import {
 } from "../api";
 import { confirmAction } from "../lib/dialogs";
 import type { AvailableModelInfo, ModelConfig, ModelConfigDraft, Conversation } from "../types";
-import { routeModel, type ModelRoutingDecision, type RoutingStrategy } from "../lib/modelRouting";
-import { APP_STORAGE_PREFIX } from "../config/brand";
-
-const ROUTING_ENABLED_KEY = `${APP_STORAGE_PREFIX}-smart-routing-enabled`;
-const ROUTING_STRATEGY_KEY = `${APP_STORAGE_PREFIX}-smart-routing-strategy`;
+import { DEFAULT_MODEL_ROUTING_PROFILE, normalizeRoutingProfile } from "../lib/modelRouting";
+import { useModelRouting, type UseModelRoutingReturn } from "./useModelRouting";
 
 export const emptyModelDraft: ModelConfigDraft = {
   name: "OpenAI",
@@ -27,12 +24,7 @@ export const emptyModelDraft: ModelConfigDraft = {
   context_window: 32_768,
   top_p: null,
   reasoning_effort: "",
-  routing_group: "默认组",
-  routing_enabled: true,
-  routing_cost: 3,
-  routing_quality: 3,
-  routing_speed: 3,
-  routing_tasks: [],
+  ...DEFAULT_MODEL_ROUTING_PROFILE,
   embedding_provider: "openai-compatible",
   embedding_base_url: "https://api.openai.com/v1",
   embedding_model: "text-embedding-3-small",
@@ -51,12 +43,8 @@ export const emptyEmbeddingDraft: ModelConfigDraft = {
   context_window: 32_768,
   top_p: null,
   reasoning_effort: "",
-  routing_group: "默认组",
+  ...DEFAULT_MODEL_ROUTING_PROFILE,
   routing_enabled: false,
-  routing_cost: 3,
-  routing_quality: 3,
-  routing_speed: 3,
-  routing_tasks: [],
   embedding_provider: "openai-compatible",
   embedding_base_url: "https://api.openai.com/v1",
   embedding_model: "text-embedding-3-small",
@@ -89,12 +77,7 @@ export function normalizeModelDraft(model: ModelConfig | ModelConfigDraft): Mode
     context_window: model.context_window || 32_768,
     top_p: model.top_p ?? null,
     reasoning_effort: model.reasoning_effort || "",
-    routing_group: model.routing_group || "默认组",
-    routing_enabled: model.routing_enabled ?? true,
-    routing_cost: model.routing_cost || 3,
-    routing_quality: model.routing_quality || 3,
-    routing_speed: model.routing_speed || 3,
-    routing_tasks: model.routing_tasks || [],
+    ...normalizeRoutingProfile(model),
     embedding_provider: model.embedding_provider || "openai-compatible",
     embedding_base_url: model.embedding_base_url || "https://api.openai.com/v1",
     embedding_model: model.embedding_model || "text-embedding-3-small",
@@ -109,11 +92,7 @@ export interface UseModelReturn {
   setModelDraft: React.Dispatch<React.SetStateAction<ModelConfigDraft>>;
   activeModelId: string;
   setActiveModelId: React.Dispatch<React.SetStateAction<string>>;
-  routingEnabled: boolean;
-  setRoutingEnabled: (enabled: boolean) => void;
-  routingStrategy: RoutingStrategy;
-  setRoutingStrategy: (strategy: RoutingStrategy) => void;
-  resolveRoutedModel: (content: string, hasImages?: boolean) => ModelRoutingDecision | null;
+  routing: UseModelRoutingReturn;
   embeddingDraft: ModelConfigDraft;
   setEmbeddingDraft: React.Dispatch<React.SetStateAction<ModelConfigDraft>>;
   llmTestStatus: { status: "idle" | "testing" | "success" | "error"; message?: string };
@@ -149,11 +128,7 @@ export function useModel(
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [modelDraft, setModelDraft] = useState<ModelConfigDraft>(emptyModelDraft);
   const [activeModelId, setActiveModelId] = useState("");
-  const [routingEnabledState, setRoutingEnabledState] = useState(() => localStorage.getItem(ROUTING_ENABLED_KEY) === "true");
-  const [routingStrategyState, setRoutingStrategyState] = useState<RoutingStrategy>(() => {
-    const value = localStorage.getItem(ROUTING_STRATEGY_KEY);
-    return value === "cost" || value === "quality" || value === "speed" ? value : "balanced";
-  });
+  const routing = useModelRouting(models, activeModelId);
   const [embeddingDraft, setEmbeddingDraft] = useState<ModelConfigDraft>(emptyEmbeddingDraft);
   const [availableModels, setAvailableModels] = useState<AvailableModelInfo[]>([]);
   const [modelListStatus, setModelListStatus] = useState<{
@@ -494,20 +469,6 @@ export function useModel(
     }
   }
 
-  function setRoutingEnabled(enabled: boolean) {
-    setRoutingEnabledState(enabled);
-    localStorage.setItem(ROUTING_ENABLED_KEY, String(enabled));
-  }
-
-  function setRoutingStrategy(strategy: RoutingStrategy) {
-    setRoutingStrategyState(strategy);
-    localStorage.setItem(ROUTING_STRATEGY_KEY, strategy);
-  }
-
-  function resolveRoutedModel(content: string, hasImages = false) {
-    return routeModel(models, content, routingStrategyState, activeModelId, hasImages);
-  }
-
   return {
     models,
     setModels,
@@ -515,11 +476,7 @@ export function useModel(
     setModelDraft,
     activeModelId,
     setActiveModelId,
-    routingEnabled: routingEnabledState,
-    setRoutingEnabled,
-    routingStrategy: routingStrategyState,
-    setRoutingStrategy,
-    resolveRoutedModel,
+    routing,
     embeddingDraft,
     setEmbeddingDraft,
     llmTestStatus,

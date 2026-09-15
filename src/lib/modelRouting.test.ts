@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelConfig } from "../types";
-import { classifyRoutingTask, routeModel } from "./modelRouting";
+import { classifyRoutingTask, isRoutingStrategy, normalizeRoutingProfile, routeModel } from "./modelRouting";
 
 function model(id: string, overrides: Partial<ModelConfig> = {}): ModelConfig {
   return {
@@ -14,6 +14,16 @@ function model(id: string, overrides: Partial<ModelConfig> = {}): ModelConfig {
 }
 
 describe("smart model routing", () => {
+  it("normalizes legacy profiles and validates stored strategies", () => {
+    expect(normalizeRoutingProfile({ routing_group: " " })).toEqual({
+      routing_group: "默认组", routing_enabled: true,
+      routing_cost: 3, routing_quality: 3, routing_speed: 3, routing_tasks: []
+    });
+    expect(isRoutingStrategy("quality")).toBe(true);
+    expect(isRoutingStrategy("manual")).toBe(false);
+    expect(isRoutingStrategy(null)).toBe(false);
+  });
+
   it("classifies common task content and image requests", () => {
     expect(classifyRoutingTask("帮我修复这段 TypeScript 代码")).toBe("coding");
     expect(classifyRoutingTask("把这段话翻译成英文")).toBe("translation");

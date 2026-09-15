@@ -353,8 +353,8 @@ export function useChat({
     const explicitProfileInstruction = memoryRoute.kind === "profile";
     const memoryDraft = memoryRoute.memoryDraft;
     const effectiveModelId = conv.resolveConversationModelId(conv.activeConversationId);
-    const routingDecision = model.routingEnabled && !memoryDraft
-      ? model.resolveRoutedModel(textContent || content, attachments.pendingImageAttachments.length > 0)
+    const routingDecision = model.routing.enabled && !memoryDraft
+      ? model.routing.resolve(textContent || content, attachments.pendingImageAttachments.length > 0)
       : null;
     const activeModelId = routingDecision?.modelId || effectiveModelId;
 

@@ -99,6 +99,37 @@ pub struct ModelConfigDraft {
     pub embedding_api_key: String,
 }
 
+impl ModelConfig {
+    pub fn from_draft_for_connectivity(draft: ModelConfigDraft) -> Self {
+        let now = Utc::now();
+        Self {
+            id: draft.id.unwrap_or_default(),
+            name: draft.name,
+            provider: draft.provider,
+            base_url: draft.base_url,
+            model: draft.model,
+            api_key: draft.api_key,
+            temperature: draft.temperature,
+            max_tokens: draft.max_tokens,
+            context_window: draft.context_window,
+            top_p: draft.top_p,
+            reasoning_effort: draft.reasoning_effort,
+            routing_group: draft.routing_group,
+            routing_enabled: draft.routing_enabled,
+            routing_cost: draft.routing_cost,
+            routing_quality: draft.routing_quality,
+            routing_speed: draft.routing_speed,
+            routing_tasks: draft.routing_tasks,
+            embedding_provider: draft.embedding_provider,
+            embedding_base_url: draft.embedding_base_url,
+            embedding_model: draft.embedding_model,
+            embedding_api_key: draft.embedding_api_key,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerConfig {
     pub id: String,

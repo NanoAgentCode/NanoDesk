@@ -548,31 +548,7 @@ async fn call_mcp_tool(
 
 #[tauri::command]
 async fn test_llm_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
-    let config = ModelConfig {
-        id: draft.id.unwrap_or_default(),
-        name: draft.name,
-        provider: draft.provider,
-        base_url: draft.base_url,
-        model: draft.model,
-        api_key: draft.api_key,
-        temperature: draft.temperature,
-        max_tokens: draft.max_tokens,
-        context_window: draft.context_window,
-        top_p: draft.top_p,
-        reasoning_effort: draft.reasoning_effort,
-        routing_group: draft.routing_group,
-        routing_enabled: draft.routing_enabled,
-        routing_cost: draft.routing_cost,
-        routing_quality: draft.routing_quality,
-        routing_speed: draft.routing_speed,
-        routing_tasks: draft.routing_tasks,
-        embedding_provider: draft.embedding_provider,
-        embedding_base_url: draft.embedding_base_url,
-        embedding_model: draft.embedding_model,
-        embedding_api_key: draft.embedding_api_key,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-    };
+    let config = ModelConfig::from_draft_for_connectivity(draft);
 
     let request = ChatRequest {
         model_config_id: config.id.clone(),
@@ -600,31 +576,7 @@ async fn list_available_models(
 
 #[tauri::command]
 async fn test_embedding_connectivity(draft: ModelConfigDraft) -> AppResult<()> {
-    let config = ModelConfig {
-        id: draft.id.unwrap_or_default(),
-        name: draft.name,
-        provider: draft.provider,
-        base_url: draft.base_url,
-        model: draft.model,
-        api_key: draft.api_key,
-        temperature: draft.temperature,
-        max_tokens: draft.max_tokens,
-        context_window: draft.context_window,
-        top_p: draft.top_p,
-        reasoning_effort: draft.reasoning_effort,
-        routing_group: draft.routing_group,
-        routing_enabled: draft.routing_enabled,
-        routing_cost: draft.routing_cost,
-        routing_quality: draft.routing_quality,
-        routing_speed: draft.routing_speed,
-        routing_tasks: draft.routing_tasks,
-        embedding_provider: draft.embedding_provider,
-        embedding_base_url: draft.embedding_base_url,
-        embedding_model: draft.embedding_model,
-        embedding_api_key: draft.embedding_api_key,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-    };
+    let config = ModelConfig::from_draft_for_connectivity(draft);
 
     let _ = crate::llm::create_embeddings(&config, vec!["ping".to_string()]).await?;
     Ok(())

@@ -1,9 +1,10 @@
 import { Activity, ChevronDown, Edit3, Loader2, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
-import { ActionIcon, Autocomplete, Checkbox, MultiSelect, NumberInput, PasswordInput, Select, TextInput, Tooltip, UnstyledButton } from "@mantine/core";
+import { ActionIcon, Autocomplete, NumberInput, PasswordInput, Select, TextInput, Tooltip, UnstyledButton } from "@mantine/core";
 import { useState } from "react";
 import IconTooltipButton from "../IconTooltipButton";
 import { normalizeModelDraft } from "../../hooks/useModel";
 import type { UseModelReturn } from "../../hooks/useModel";
+import ModelRoutingFields from "./ModelRoutingFields";
 
 interface SettingsModelTabProps {
   model: UseModelReturn;
@@ -120,30 +121,7 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
               }
             />
             <PasswordInput className="model-field--wide" label="API Key" value={model.modelDraft.api_key} onChange={(event) => model.setModelDraft({ ...model.modelDraft, api_key: event.currentTarget.value })} placeholder="用于对话模型调用" />
-            <div className="model-parameters-heading model-field--wide">
-              <div className="model-parameters-summary">
-                <strong>智能路由</strong>
-                <span>为空的适用任务表示该模型可处理所有任务</span>
-              </div>
-            </div>
-            <TextInput label="模型组" value={model.modelDraft.routing_group} onChange={(event) => model.setModelDraft({ ...model.modelDraft, routing_group: event.currentTarget.value })} placeholder="默认组" />
-            <Checkbox label="参与智能路由" checked={model.modelDraft.routing_enabled} onChange={(event) => model.setModelDraft({ ...model.modelDraft, routing_enabled: event.currentTarget.checked })} />
-            <MultiSelect
-              className="model-field--wide"
-              label="适用任务"
-              placeholder="全部任务"
-              value={model.modelDraft.routing_tasks}
-              data={[
-                { value: "general", label: "通用" }, { value: "coding", label: "编程" },
-                { value: "reasoning", label: "分析推理" }, { value: "writing", label: "写作" },
-                { value: "translation", label: "翻译" }, { value: "summary", label: "总结" },
-                { value: "vision", label: "图片理解" }
-              ]}
-              onChange={(value) => model.setModelDraft({ ...model.modelDraft, routing_tasks: value })}
-            />
-            <NumberInput label="成本评分" description="1 低成本，5 高成本" min={1} max={5} value={model.modelDraft.routing_cost} onChange={(value) => model.setModelDraft({ ...model.modelDraft, routing_cost: typeof value === "number" ? value : 3 })} />
-            <NumberInput label="质量评分" description="1 较低，5 较高" min={1} max={5} value={model.modelDraft.routing_quality} onChange={(value) => model.setModelDraft({ ...model.modelDraft, routing_quality: typeof value === "number" ? value : 3 })} />
-            <NumberInput label="速度评分" description="1 较慢，5 较快" min={1} max={5} value={model.modelDraft.routing_speed} onChange={(value) => model.setModelDraft({ ...model.modelDraft, routing_speed: typeof value === "number" ? value : 3 })} />
+            <ModelRoutingFields draft={model.modelDraft} onChange={model.setModelDraft} />
             <div className="model-parameters-heading model-field--wide">
               <div className="model-parameters-summary">
                 <strong>参数配置</strong>
