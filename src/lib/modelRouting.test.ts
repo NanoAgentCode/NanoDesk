@@ -40,42 +40,45 @@ describe("smart model routing", () => {
     expect(classifyRoutingTask("这张图里有什么", true)).toBe("vision");
   });
 
-  it("selects by quality, speed and cost strategy", () => {
+  it("uses the single model assigned to each strategy", () => {
     const models = [
       model("premium", { routing_quality: 5, routing_speed: 2, routing_cost: 5, routing_tasks: ["coding"] }),
       model("fast", { routing_quality: 3, routing_speed: 5, routing_cost: 2, routing_tasks: ["coding"] }),
       model("cheap", { routing_quality: 2, routing_speed: 3, routing_cost: 1, routing_tasks: ["coding"] })
     ];
-    expect(routeModel(models, "实现一个函数", "quality", "fast")?.modelId).toBe("premium");
-    expect(routeModel(models, "实现一个函数", "speed", "premium")?.modelId).toBe("fast");
-    expect(routeModel(models, "实现一个函数", "cost", "premium")?.modelId).toBe("cheap");
+    expect(routeModel(models, "实现一个函数", "quality", "fast", false, "premium")?.modelId).toBe("premium");
+    expect(routeModel(models, "实现一个函数", "speed", "premium", false, "fast")?.modelId).toBe("fast");
+    expect(routeModel(models, "实现一个函数", "cost", "premium", false, "cheap")?.modelId).toBe("cheap");
   });
 
-  it("manages an independent model pool for every routing strategy", () => {
+  it("assigns one model per routing strategy and coerces legacy pools", () => {
     const models = [
       model("premium", { routing_quality: 5 }),
       model("fast", { routing_speed: 5 }),
       model("manual", { routing_enabled: false })
     ];
     expect(createDefaultRoutingAssignments(models)).toEqual({
-      balanced: ["premium", "fast"], quality: ["premium", "fast"],
-      speed: ["premium", "fast"], cost: ["premium", "fast"]
+      balanced: "premium", quality: "premium", speed: "premium", cost: "premium"
     });
-    expect(normalizeRoutingAssignments({ quality: ["premium", "missing", "premium"] }, models)).toEqual({
-      balanced: [], quality: ["premium"], speed: [], cost: []
+    expect(normalizeRoutingAssignments({ quality: ["premium", "missing", "fast"] }, models)).toEqual({
+      balanced: null, quality: "premium", speed: null, cost: null
     });
-    expect(routeModel(models, "分析这个问题", "quality", "fast", false, ["premium"])?.modelId).toBe("premium");
-    expect(routeModel(models, "分析这个问题", "quality", "fast", false, [])?.fallback).toBe(true);
+    expect(routeModel(models, "分析这个问题", "quality", "fast", false, "premium")?.modelId).toBe("premium");
+    expect(routeModel(models, "分析这个问题", "quality", "fast", false, null)?.fallback).toBe(true);
   });
 
-  it("excludes disabled or incompatible candidates and falls back deterministically", () => {
+  it("falls back when the assigned model does not cover the task", () => {
     const models = [
-      model("manual", { routing_enabled: false }),
+      model("fallback"),
       model("writer", { routing_tasks: ["writing"] })
     ];
-    const decision = routeModel(models, "翻译这句话", "balanced", "manual");
-    expect(decision?.modelId).toBe("manual");
+    const decision = routeModel(models, "翻译这句话", "balanced", "fallback", false, "writer");
+    expect(decision?.modelId).toBe("fallback");
     expect(decision?.fallback).toBe(true);
+    expect(decision?.reason).toContain("不适用于");
     expect(decision?.reason).toContain("兜底模型");
+    const direct = routeModel(models, "帮我润色这段文案", "balanced", "fallback", false, "writer");
+    expect(direct?.modelId).toBe("writer");
+    expect(direct?.fallback).toBe(false);
   });
 });

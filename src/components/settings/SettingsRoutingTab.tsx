@@ -107,16 +107,18 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="lg" style={{ order: 1 }}>
         {ROUTING_STRATEGY_OPTIONS.map((option) => {
           const strategy = option.value as RoutingStrategy;
-          const selectedModels = model.routing.assignments[strategy];
+          const assignedModelId = model.routing.assignments[strategy];
+          const assignedModelName = chatModels.find((item) => item.id === assignedModelId)
+            ?.model.trim() || "";
           return (
             <Paper key={strategy} withBorder radius="md" p="md">
               <Text fw={600} mb={4}>{option.label}</Text>
-              <Text size="xs" c={selectedModels.length > 0 ? "dimmed" : "red"} mb="sm">
-                {selectedModels.length > 0
-                  ? `已配置 ${selectedModels.length} 个模型`
-                  : "至少配置一个模型后，该模式才可选择"}
+              <Text size="xs" c={assignedModelId ? "dimmed" : "red"} mb="sm">
+                {assignedModelId
+                  ? `已选择 ${assignedModelName}`
+                  : "选择模型后，该模式才可选择"}
               </Text>
-              <SupplierModelMultiSelect
+              <SupplierModelSelect
                 label={option.label}
                 kind="chat"
                 suppliers={model.suppliers}
@@ -124,8 +126,8 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
                 fetchModels={model.fetchSupplierModels}
                 ensureModel={model.ensureSupplierModel}
                 models={chatModels}
-                value={selectedModels}
-                onChange={(modelIds) => model.routing.setStrategyModels(strategy, modelIds)}
+                value={assignedModelId}
+                onChange={(modelId) => model.routing.setStrategyModel(strategy, modelId)}
               />
             </Paper>
           );

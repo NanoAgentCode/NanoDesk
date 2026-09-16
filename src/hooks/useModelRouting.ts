@@ -27,7 +27,7 @@ export interface UseModelRoutingReturn {
   fallbackModelId: string;
   isStrategyAvailable: (strategy: RoutingStrategy) => boolean;
   setMode: (mode: string | null) => void;
-  setStrategyModels: (strategy: RoutingStrategy, modelIds: string[]) => void;
+  setStrategyModel: (strategy: RoutingStrategy, modelId: string | null) => void;
   setFixedModels: (modelIds: string[]) => void;
   setFallbackModel: (modelId: string | null) => void;
   resolve: (content: string, hasImages?: boolean) => ModelRoutingDecision | null;
@@ -44,12 +44,22 @@ function readStoredModelIds(key: string): string[] | null {
   }
 }
 
-function readStoredAssignments(): Partial<Record<RoutingStrategy, string[]>> | null {
+type StoredRoutingAssignments = Partial<Record<RoutingStrategy, string | string[] | null>>;
+
+function readStoredAssignments(): StoredRoutingAssignments | null {
   const stored = localStorage.getItem(ROUTING_ASSIGNMENTS_KEY);
   if (!stored) return null;
   try {
-    const parsed = JSON.parse(stored);
-    return parsed && typeof parsed === "object" ? parsed : null;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return Object.fromEntries(
+      Object.entries(parsed).map(([key, value]) => [
+        key,
+        Array.isArray(value)
+          ? value.filter((item): item is string => typeof item === "string")
+          : typeof value === "string" ? value : null
+      ])
+    );
   } catch {
     return null;
   }
@@ -61,7 +71,7 @@ export function useModelRouting(models: ModelConfig[], currentModelId: string): 
     const stored = localStorage.getItem(ROUTING_STRATEGY_KEY);
     return isRoutingStrategy(stored) ? stored : "balanced";
   });
-  const [storedAssignments, setStoredAssignments] = useState(readStoredAssignments);
+  const [storedAssignments, setStoredAssignments] = useState<StoredRoutingAssignments | null>(readStoredAssignments);
   const [storedFixedModelIds, setStoredFixedModelIds] = useState(() => readStoredModelIds(FIXED_MODELS_KEY));
   const [storedFallbackModelId, setStoredFallbackModelId] = useState(() => localStorage.getItem(FALLBACK_MODEL_KEY) || "");
   const chatModelIds = useMemo(() => models.filter(isChatModel).map((model) => model.id), [models]);
@@ -80,7 +90,7 @@ export function useModelRouting(models: ModelConfig[], currentModelId: string): 
     [models, storedAssignments]
   );
   const isStrategyAvailable = useCallback(
-    (value: RoutingStrategy) => assignments[value].length > 0,
+    (value: RoutingStrategy) => Boolean(assignments[value]),
     [assignments]
   );
   const effectiveEnabled = enabled && isStrategyAvailable(strategy);
@@ -114,12 +124,10 @@ export function useModelRouting(models: ModelConfig[], currentModelId: string): 
     }
   }, [isStrategyAvailable]);
 
-  const setStrategyModels = useCallback((value: RoutingStrategy, modelIds: string[]) => {
+  const setStrategyModel = useCallback((value: RoutingStrategy, modelId: string | null) => {
     setStoredAssignments((current) => {
-      const base = current
-        ? normalizeRoutingAssignments(current, models)
-        : createDefaultRoutingAssignments(models);
-      const next = normalizeRoutingAssignments({ ...base, [value]: modelIds }, models);
+      const base = current ?? createDefaultRoutingAssignments(models);
+      const next = normalizeRoutingAssignments({ ...base, [value]: modelId }, models);
       localStorage.setItem(ROUTING_ASSIGNMENTS_KEY, JSON.stringify(next));
       return next;
     });
@@ -160,7 +168,7 @@ export function useModelRouting(models: ModelConfig[], currentModelId: string): 
     fallbackModelId,
     isStrategyAvailable,
     setMode,
-    setStrategyModels,
+    setStrategyModel,
     setFixedModels,
     setFallbackModel,
     resolve

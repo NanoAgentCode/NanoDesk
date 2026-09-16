@@ -3,7 +3,7 @@ import { isChatModel } from "./modelCapabilities";
 
 export type RoutingStrategy = "balanced" | "cost" | "quality" | "speed";
 export type RoutingTask = "general" | "coding" | "reasoning" | "writing" | "translation" | "summary" | "vision";
-export type RoutingModelAssignments = Record<RoutingStrategy, string[]>;
+export type RoutingModelAssignments = Record<RoutingStrategy, string | null>;
 
 export const DEFAULT_MODEL_ROUTING_PROFILE: ModelRoutingProfile = {
   routing_group: "默认组",
@@ -28,14 +28,11 @@ const ROUTING_TASK_LABELS = Object.fromEntries(
   ROUTING_TASK_OPTIONS.map((option) => [option.value, option.label])
 ) as Record<RoutingTask, string>;
 
-const STRATEGY_DEFINITIONS: Record<RoutingStrategy, {
-  label: string;
-  weights: readonly [quality: number, speed: number, costEfficiency: number];
-}> = {
-  balanced: { label: "均衡", weights: [0.34, 0.33, 0.33] },
-  quality: { label: "质量", weights: [0.7, 0.15, 0.15] },
-  speed: { label: "速度", weights: [0.15, 0.7, 0.15] },
-  cost: { label: "成本", weights: [0.15, 0.15, 0.7] }
+const STRATEGY_DEFINITIONS: Record<RoutingStrategy, { label: string }> = {
+  balanced: { label: "均衡" },
+  quality: { label: "质量" },
+  speed: { label: "速度" },
+  cost: { label: "成本" }
 };
 
 export const ROUTING_STRATEGIES = Object.keys(STRATEGY_DEFINITIONS) as RoutingStrategy[];
@@ -59,20 +56,25 @@ export function getRoutingModeLabel(mode: "manual" | RoutingStrategy): string {
 }
 
 export function createDefaultRoutingAssignments(models: ModelConfig[]): RoutingModelAssignments {
-  const modelIds = models
-    .filter((model) => isChatModel(model) && model.routing_enabled)
-    .map((model) => model.id);
-  return Object.fromEntries(ROUTING_STRATEGIES.map((strategy) => [strategy, [...modelIds]])) as RoutingModelAssignments;
+  const preferred = models.find((model) => isChatModel(model) && model.routing_enabled);
+  const modelId = preferred?.id ?? null;
+  return Object.fromEntries(ROUTING_STRATEGIES.map((strategy) => [strategy, modelId])) as RoutingModelAssignments;
 }
 
 export function normalizeRoutingAssignments(
-  assignments: Partial<Record<RoutingStrategy, string[]>>,
+  assignments: Partial<Record<RoutingStrategy, string | string[] | null | undefined>>,
   models: ModelConfig[]
 ): RoutingModelAssignments {
   const validIds = new Set(models.filter(isChatModel).map((model) => model.id));
+  const pick = (value: string | string[] | null | undefined): string | null => {
+    // 兼容旧版多选存储：数组取第一个有效 id
+    const id = Array.isArray(value)
+      ? value.find((item) => typeof item === "string") ?? null
+      : value ?? null;
+    return id && validIds.has(id) ? id : null;
+  };
   return Object.fromEntries(ROUTING_STRATEGIES.map((strategy) => [
-    strategy,
-    [...new Set(assignments[strategy] ?? [])].filter((id) => validIds.has(id))
+    strategy, pick(assignments[strategy])
   ])) as RoutingModelAssignments;
 }
 
@@ -113,49 +115,34 @@ export function classifyRoutingTask(content: string, hasImages = false): Routing
   return "general";
 }
 
-function scoreModel(model: ModelConfig, strategy: RoutingStrategy, task: RoutingTask) {
-  const costEfficiency = 6 - model.routing_cost;
-  const weights = STRATEGY_DEFINITIONS[strategy].weights;
-  const taskBonus = model.routing_tasks.includes(task) ? 1 : 0;
-  return model.routing_quality * weights[0] + model.routing_speed * weights[1] + costEfficiency * weights[2] + taskBonus;
-}
-
 export function routeModel(
   models: ModelConfig[],
   content: string,
   strategy: RoutingStrategy,
   fallbackModelId: string,
   hasImages = false,
-  assignedModelIds?: string[]
+  assignedModelId?: string | null
 ): ModelRoutingDecision | null {
   const chatModels = models.filter(isChatModel);
   const fallback = chatModels.find((model) => model.id === fallbackModelId) ?? chatModels[0];
   if (!fallback) return null;
 
   const task = classifyRoutingTask(content, hasImages);
-  const assignedIds = assignedModelIds ? new Set(assignedModelIds) : null;
-  const candidates = chatModels.filter((model) => {
-    const participates = assignedIds ? assignedIds.has(model.id) : model.routing_enabled;
-    return participates && (model.routing_tasks.length === 0 || model.routing_tasks.includes(task));
-  });
-  if (candidates.length === 0) {
+  const assigned = assignedModelId
+    ? chatModels.find((model) => model.id === assignedModelId)
+    : undefined;
+  if (!assigned || (assigned.routing_tasks.length > 0 && !assigned.routing_tasks.includes(task))) {
     return {
       modelId: fallback.id, modelName: fallback.model, group: fallback.routing_group,
       task, strategy, fallback: true,
-      reason: `没有适用于“${ROUTING_TASK_LABELS[task]}”的路由候选，使用兜底模型 ${fallback.model}`
+      reason: assigned
+        ? `“${assigned.model}”不适用于“${ROUTING_TASK_LABELS[task]}”任务，使用兜底模型 ${fallback.model}`
+        : `当前策略未指定模型，使用兜底模型 ${fallback.model}`
     };
   }
-
-  const selected = [...candidates].sort((left, right) => {
-    const difference = scoreModel(right, strategy, task) - scoreModel(left, strategy, task);
-    if (Math.abs(difference) > 0.0001) return difference;
-    if (left.id === fallback.id) return -1;
-    if (right.id === fallback.id) return 1;
-    return left.id.localeCompare(right.id);
-  })[0];
   return {
-    modelId: selected.id, modelName: selected.model, group: selected.routing_group,
+    modelId: assigned.id, modelName: assigned.model, group: assigned.routing_group,
     task, strategy, fallback: false,
-    reason: `识别为“${ROUTING_TASK_LABELS[task]}”任务，按“${STRATEGY_DEFINITIONS[strategy].label}”策略从“${selected.routing_group}”组选择 ${selected.model}`
+    reason: `识别为“${ROUTING_TASK_LABELS[task]}”任务，按“${STRATEGY_DEFINITIONS[strategy].label}”策略使用 ${assigned.model}`
   };
 }
