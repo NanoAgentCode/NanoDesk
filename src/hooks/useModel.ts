@@ -117,6 +117,7 @@ export interface UseModelReturn {
   handleFetchAvailableModels: () => Promise<void>;
   handleTestEmbedding: () => Promise<void>;
   handleActiveModelChange: (modelId: string) => Promise<void>;
+  handleSaveRoutingProfile: (draft: ModelConfigDraft) => Promise<void>;
 }
 
 export function useModel(
@@ -469,6 +470,16 @@ export function useModel(
     }
   }
 
+  async function handleSaveRoutingProfile(draft: ModelConfigDraft) {
+    try {
+      await saveModelConfig(draft);
+      await refreshModels();
+      setNotice("智能路由配置已保存");
+    } catch (error) {
+      setNotice(`保存智能路由配置失败: ${String(error)}`);
+    }
+  }
+
   return {
     models,
     setModels,
@@ -500,6 +511,7 @@ export function useModel(
     handleTestLlm,
     handleFetchAvailableModels,
     handleTestEmbedding,
-    handleActiveModelChange
+    handleActiveModelChange,
+    handleSaveRoutingProfile
   };
 }

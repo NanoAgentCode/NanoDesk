@@ -3,6 +3,7 @@ import {
   ActionIcon as MantineActionIcon,
   Button,
   Select,
+  TextInput,
   Textarea,
   Tooltip,
   UnstyledButton
@@ -38,7 +39,7 @@ import type { UseObservabilityReturn } from "../hooks/useObservability";
 import type { UseModelReturn } from "../hooks/useModel";
 import { buildChatModelOptions } from "../lib/modelOptions";
 import { resolveChatDecisionState } from "../lib/chatDecisionState";
-import ModelRoutingSelector from "./ModelRoutingSelector";
+import { getRoutingModeLabel } from "../lib/modelRouting";
 
 interface ChatPaneProps {
   activeConversationId: string;
@@ -601,18 +602,27 @@ export default function ChatPane({
         <div className="chat-input-footer">
           <div className="chat-input-left">
             <AccessModeSelector value={accessMode} onChange={onAccessModeChange} disabled={busy || decisionPending} />
-            <ModelRoutingSelector routing={model.routing} disabled={busy || decisionPending} />
-            <Select
-              className="chat-model-select"
-              aria-label="当前对话模型"
-              placeholder="选择模型"
-              value={model.activeModelId || null}
-              data={buildChatModelOptions(model.models)}
-              onChange={(value) => void model.handleActiveModelChange(value || "")}
-              allowDeselect={false}
-              size="xs"
-              disabled={busy || decisionPending}
-            />
+            {model.routing.enabled ? (
+              <TextInput
+                className="chat-model-select"
+                aria-label="当前智能路由策略"
+                value={getRoutingModeLabel(model.routing.mode)}
+                readOnly
+                size="xs"
+              />
+            ) : (
+              <Select
+                className="chat-model-select"
+                aria-label="当前对话模型"
+                placeholder="选择模型"
+                value={model.activeModelId || null}
+                data={buildChatModelOptions(model.models)}
+                onChange={(value) => void model.handleActiveModelChange(value || "")}
+                allowDeselect={false}
+                size="xs"
+                disabled={busy || decisionPending}
+              />
+            )}
           </div>
           <div className="chat-input-actions">
             <Tooltip label={uploadingImageAttachment ? "图片上传中" : "添加图片"} openDelay={450}>

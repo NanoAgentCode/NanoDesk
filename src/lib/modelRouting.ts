@@ -48,6 +48,10 @@ export function isRoutingStrategy(value: string | null): value is RoutingStrateg
   return value != null && value in STRATEGY_DEFINITIONS;
 }
 
+export function getRoutingModeLabel(mode: "manual" | RoutingStrategy): string {
+  return ROUTING_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "手动选模";
+}
+
 export function normalizeRoutingProfile(profile: Partial<ModelRoutingProfile>): ModelRoutingProfile {
   return {
     routing_group: profile.routing_group?.trim() || DEFAULT_MODEL_ROUTING_PROFILE.routing_group,

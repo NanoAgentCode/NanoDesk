@@ -4,7 +4,6 @@ import { useState } from "react";
 import IconTooltipButton from "../IconTooltipButton";
 import { normalizeModelDraft } from "../../hooks/useModel";
 import type { UseModelReturn } from "../../hooks/useModel";
-import ModelRoutingFields from "./ModelRoutingFields";
 
 interface SettingsModelTabProps {
   model: UseModelReturn;
@@ -121,7 +120,6 @@ export default function SettingsModelTab({ model, setShowModelConfig }: Settings
               }
             />
             <PasswordInput className="model-field--wide" label="API Key" value={model.modelDraft.api_key} onChange={(event) => model.setModelDraft({ ...model.modelDraft, api_key: event.currentTarget.value })} placeholder="用于对话模型调用" />
-            <ModelRoutingFields draft={model.modelDraft} onChange={model.setModelDraft} />
             <div className="model-parameters-heading model-field--wide">
               <div className="model-parameters-summary">
                 <strong>参数配置</strong>

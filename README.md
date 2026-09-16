@@ -5,7 +5,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 ## 核心能力
 
 - 本地笔记、提示词和长期记忆管理；普通手工记忆使用 SQLite 关系表、FTS5、sqlite-vec 和轻量知识图谱混合召回。独立用户画像只收集持久化会话中的用户输入，在本地过滤后按字符、数量或时间异步批量提取，也可从设置页将当前候选立即组批生成；未通过本地规则的输入保留为本机待确认项，由用户选择交给画像模型或丢弃，不阻塞聊天回复。
-- 持久化 AI 对话，支持归档、恢复、删除、项目作用域隔离和按实际模型标识进行会话级选择；LLM 设置可从 OpenAI/Anthropic 兼容服务获取模型列表，也保留手动输入，并可按模型配置上下文窗口、Temperature、最大输出 Token、Top P 和推理强度。聊天栏支持手动选模及均衡、质量、速度、成本四种本地智能路由策略，根据请求任务类型从启用的模型组中选择模型并显示选择原因。
+- 持久化 AI 对话，支持归档、恢复、删除、项目作用域隔离和按实际模型标识进行会话级选择；LLM 设置可从 OpenAI/Anthropic 兼容服务获取模型列表，也保留手动输入，并可按模型配置上下文窗口、Temperature、最大输出 Token、Top P 和推理强度。“系统设置 → 智能路由”支持手动选模及均衡、质量、速度、成本四种本地策略，根据请求任务类型从启用的模型组中选择模型并显示选择原因。
 - OpenAI-compatible Chat/Embeddings、Anthropic Messages API，以及 Ollama/OpenRouter 等兼容服务。
 - 流式回复、reasoning/thinking 片段展示、生成中打断并保留已输出内容，以及对最后一条普通回答进行替换式重新生成；同时支持动态 Token 预算、保留原始消息的结构化滚动摘要和 GFM/KaTeX 数学公式渲染。
 - 轻量 RAG：拖拽文件、抽取文本、分块、生成 embedding，并在对话时召回相关片段。
@@ -42,7 +42,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - 数据库：SQLite + WAL + FTS5 + sqlite-vec
 - 模型：OpenAI-compatible Chat/Embeddings、Anthropic Messages API
 - 扩展：MCP、Skills、本地 Agent 工具、PaddleOCR
-- 运维：SSH/SFTP、Windows NSIS/MSI 打包
+- 运维：SSH/SFTP、Windows NSIS 打包
 
 ## 开发环境
 
@@ -71,13 +71,13 @@ npm.cmd run tauri dev
 npm.cmd run dev
 ```
 
-安装 `nano` 命令行客户端（Windows）：运行 `npm.cmd run package:win` 后，双击下面生成的独立安装器：
+安装 `nano` 命令行客户端（Windows 开发环境）：
 
-```text
-src-tauri\target\release\bundle\cli\NanoDesk-CLI_0.1.0_x64-setup.exe
+```bash
+npm.cmd run install:nano
 ```
 
-安装器无需管理员权限，会将 CLI 释放到 `%USERPROFILE%\.nano` 并把该目录加入当前用户的 `PATH`。安装完成后打开新终端，即可在任意目录直接运行：
+该命令会单独构建并安装 CLI，不会随默认桌面端打包执行。安装完成后打开新终端，即可在任意目录直接运行：
 
 ```powershell
 nano
@@ -106,7 +106,7 @@ Windows 打包：
 npm.cmd run package:win
 ```
 
-`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，然后构建 CLI、Tauri 桌面端及安装包。常见产物包括 `nano.exe`、独立 CLI 安装器、`nano-desk.exe`、桌面端标准 NSIS 安装包、内置 WebView2 Offline Installer 的离线 NSIS 安装包和 MSI 安装包。离线 NSIS 包以 `-offline-setup.exe` 结尾，最终用户安装时不需要联网下载 WebView2 Runtime，但文件通常会增加百余 MB，实际大小随微软提供的离线安装器版本变化。
+`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，并只生成标准 NSIS 安装包：`src-tauri\target\release\bundle\nsis\NanoDesk_0.1.0_x64-setup.exe`。默认跳过独立 CLI、CLI 安装器、离线 NSIS 和 MSI，以减少重复编译与打包时间。
 
 ## 数据位置
 
