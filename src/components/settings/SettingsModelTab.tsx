@@ -1,14 +1,29 @@
 import { Edit3, Loader2, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { ActionIcon, PasswordInput, Select, TextInput, Tooltip, UnstyledButton } from "@mantine/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { UseModelReturn } from "../../hooks/useModel";
+import type { ModelSupplier, ModelSupplierDraft } from "../../types";
 import IconTooltipButton from "../IconTooltipButton";
 interface Props { model: UseModelReturn; setShowModelConfig: (show: boolean) => void }
 const emptySupplier = { name: "OpenAI", provider: "openai-compatible", base_url: "https://api.openai.com/v1", api_key: "" };
+
+export function shouldAutoSaveSupplierApiKey(draft: ModelSupplierDraft, suppliers: ModelSupplier[]) {
+  if (!draft.name.trim() || !draft.provider.trim() || !draft.base_url.trim() || !draft.api_key.trim()) return false;
+  if (!draft.id) return true;
+  const saved = suppliers.find((supplier) => supplier.id === draft.id);
+  return Boolean(saved && saved.api_key !== draft.api_key);
+}
+
 export default function SettingsModelTab({ model }: Props) {
   const editing = Boolean(model.supplierDraft.id);
   const [loadingSupplierId, setLoadingSupplierId] = useState("");
   const [supplierErrors, setSupplierErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!shouldAutoSaveSupplierApiKey(model.supplierDraft, model.suppliers)) return;
+    const timer = window.setTimeout(() => void model.saveSupplier(), 800);
+    return () => window.clearTimeout(timer);
+  }, [model.supplierDraft.api_key, model.supplierDraft.id, model.suppliers]);
 
   async function refreshSupplierModels(supplierId: string) {
     setLoadingSupplierId(supplierId);
