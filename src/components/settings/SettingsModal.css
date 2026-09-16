@@ -112,11 +112,20 @@
 .settings-tab-content .llm-config-grid .model-config-form { overflow: hidden; }
 .model-config-row-flex { display: flex; align-items: center; gap: 10px; }
 .supplier-config-row {
-  display: flex;
-  align-items: center;
-  padding-right: 8px;
+  position: relative;
 }
-.supplier-config-row .model-config-row { flex: 1; min-width: 0; }
+.supplier-config-row .model-config-row {
+  width: 100%;
+  min-width: 0;
+  padding-right: 48px;
+}
+.supplier-config-refresh {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  z-index: 1;
+  transform: translateY(-50%);
+}
 .supplier-config-row.active { background: var(--control-primary-soft-bg); }
 .supplier-model-tooltip-list {
   max-height: 260px;

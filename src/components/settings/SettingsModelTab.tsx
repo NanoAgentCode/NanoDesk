@@ -54,7 +54,7 @@ export default function SettingsModelTab({ model }: Props) {
         return <div key={s.id} className={s.id === model.supplierDraft.id ? "supplier-config-row active" : "supplier-config-row"}>
           <UnstyledButton className="model-config-row" onClick={() => model.setSupplierDraft(s)}><span className="status-dot status-dot--idle" /><div className="model-config-row-info"><strong>{s.name}</strong><span>{s.provider}</span></div></UnstyledButton>
           <Tooltip label={supplierModelsTooltip(s.id)} multiline w={420} position="right">
-            <ActionIcon aria-label={`获取 ${s.name} 模型列表`} variant="subtle" disabled={loading} onClick={() => void refreshSupplierModels(s.id)}>
+            <ActionIcon className="supplier-config-refresh" aria-label={`获取 ${s.name} 模型列表`} variant="subtle" disabled={loading} onClick={() => void refreshSupplierModels(s.id)}>
               {loading ? <Loader2 size={16} className="svg-spin" /> : <RefreshCw size={16} />}
             </ActionIcon>
           </Tooltip>
