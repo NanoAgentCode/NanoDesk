@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Brand = Get-Content -LiteralPath (Join-Path $Root "brand.config.json") -Raw | ConvertFrom-Json
 $VcVars = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 
@@ -12,6 +12,26 @@ Push-Location $Root
 try {
   Write-Host "==> Building $($Brand.displayName) installer"
   Write-Host "==> Workspace: $Root"
+
+  # Cargo 与 Tauri 的生成文件包含工作区绝对路径。仓库移动或改名后继续复用
+  # 原 target 会让权限清单仍指向旧目录，因此在路径变化时执行一次干净构建。
+  $CargoTarget = [System.IO.Path]::GetFullPath((Join-Path $Root "src-tauri\target"))
+  $ExpectedTargetRoot = [System.IO.Path]::GetFullPath((Join-Path $Root "src-tauri"))
+  if (-not $CargoTarget.StartsWith($ExpectedTargetRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to clean Cargo target outside the workspace: $CargoTarget"
+  }
+  $WorkspaceMarker = Join-Path $CargoTarget ".nanodesk-workspace-root"
+  $RecordedWorkspace = if (Test-Path -LiteralPath $WorkspaceMarker) {
+    (Get-Content -LiteralPath $WorkspaceMarker -Raw).Trim()
+  } else {
+    ""
+  }
+  if ((Test-Path -LiteralPath $CargoTarget) -and $RecordedWorkspace -ne $Root) {
+    Write-Host "==> Cargo cache belongs to another workspace; cleaning: $CargoTarget"
+    Remove-Item -LiteralPath $CargoTarget -Recurse -Force
+  }
+  New-Item -ItemType Directory -Path $CargoTarget -Force | Out-Null
+  Set-Content -LiteralPath $WorkspaceMarker -Value $Root -Encoding UTF8
 
   # vcvars64.bat 仅在 cmd 上下文有效，先在 cmd 中采集完整的 MSVC 环境。
   $envDump = & cmd.exe /d /s /c ('"' + $VcVars + '" && set')
