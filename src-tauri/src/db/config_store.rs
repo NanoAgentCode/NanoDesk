@@ -9,15 +9,70 @@ use super::{
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    McpServerConfig, McpServerDraft, ModelConfig, ModelConfigDraft, OpsServer, OpsServerDraft,
+    McpServerConfig, McpServerDraft, ModelConfig, ModelConfigDraft, ModelSupplier,
+    ModelSupplierDraft, OpsServer, OpsServerDraft,
 };
 
 impl Database {
+    pub fn list_model_suppliers(&self) -> AppResult<Vec<ModelSupplier>> {
+        let mut stmt = self.config_conn.prepare("SELECT id, name, provider, base_url, api_key, created_at, updated_at FROM model_suppliers ORDER BY updated_at DESC")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(ModelSupplier {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    provider: row.get(2)?,
+                    base_url: row.get(3)?,
+                    api_key: row.get(4)?,
+                    created_at: parse_time(&row.get::<_, String>(5)?)
+                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                    updated_at: parse_time(&row.get::<_, String>(6)?)
+                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn save_model_supplier(&self, draft: ModelSupplierDraft) -> AppResult<ModelSupplier> {
+        let now = Utc::now();
+        let id = draft.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let created_at = self
+            .config_conn
+            .query_row(
+                "SELECT created_at FROM model_suppliers WHERE id=?1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .map(|v| parse_time(&v))
+            .transpose()?
+            .unwrap_or(now);
+        let supplier = ModelSupplier {
+            id,
+            name: clean_or_default(draft.name, "默认供应商"),
+            provider: clean_or_default(draft.provider, "openai-compatible"),
+            base_url: clean_or_default(draft.base_url, "https://api.openai.com/v1"),
+            api_key: draft.api_key,
+            created_at,
+            updated_at: now,
+        };
+        self.config_conn.execute("INSERT INTO model_suppliers (id,name,provider,base_url,api_key,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET name=excluded.name,provider=excluded.provider,base_url=excluded.base_url,api_key=excluded.api_key,updated_at=excluded.updated_at", params![supplier.id, supplier.name, supplier.provider, supplier.base_url, supplier.api_key, supplier.created_at.to_rfc3339(), supplier.updated_at.to_rfc3339()])?;
+        Ok(supplier)
+    }
+
+    pub fn delete_model_supplier(&self, id: &str) -> AppResult<()> {
+        ensure_affected(
+            self.config_conn
+                .execute("DELETE FROM model_suppliers WHERE id=?1", params![id])?,
+            "model supplier not found",
+        )
+    }
     pub fn list_model_configs(&self) -> AppResult<Vec<ModelConfig>> {
         let mut stmt = self.config_conn.prepare(
             "
             SELECT id, name, provider, base_url, model, api_key,
-                   temperature, max_tokens, context_window, top_p, reasoning_effort,
+                   temperature, max_tokens, context_window, top_p, reasoning_effort, model_kind,
                    routing_group, routing_enabled, routing_cost, routing_quality, routing_speed, routing_tasks_json,
                    embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                    created_at, updated_at
@@ -39,7 +94,7 @@ impl Database {
             .query_row(
                 "
                 SELECT id, name, provider, base_url, model, api_key,
-                       temperature, max_tokens, context_window, top_p, reasoning_effort,
+                       temperature, max_tokens, context_window, top_p, reasoning_effort, model_kind,
                        routing_group, routing_enabled, routing_cost, routing_quality, routing_speed, routing_tasks_json,
                        embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                        created_at, updated_at
@@ -79,6 +134,7 @@ impl Database {
             context_window: validate_context_window(draft.context_window, draft.max_tokens)?,
             top_p: validate_top_p(draft.top_p)?,
             reasoning_effort: validate_reasoning_effort(draft.reasoning_effort)?,
+            model_kind: validate_model_kind(draft.model_kind)?,
             routing_group: clean_or_default(draft.routing_group, "默认组"),
             routing_enabled: draft.routing_enabled,
             routing_cost: validate_routing_score(draft.routing_cost)?,
@@ -97,11 +153,11 @@ impl Database {
             "
             INSERT INTO model_configs
                 (id, name, provider, base_url, model, api_key,
-                 temperature, max_tokens, context_window, top_p, reasoning_effort,
+                 temperature, max_tokens, context_window, top_p, reasoning_effort, model_kind,
                  routing_group, routing_enabled, routing_cost, routing_quality, routing_speed, routing_tasks_json,
                  embedding_provider, embedding_base_url, embedding_model, embedding_api_key,
                  created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 provider = excluded.provider,
@@ -113,6 +169,7 @@ impl Database {
                 context_window = excluded.context_window,
                 top_p = excluded.top_p,
                 reasoning_effort = excluded.reasoning_effort,
+                model_kind = excluded.model_kind,
                 routing_group = excluded.routing_group,
                 routing_enabled = excluded.routing_enabled,
                 routing_cost = excluded.routing_cost,
@@ -137,6 +194,7 @@ impl Database {
                 config.context_window,
                 config.top_p,
                 config.reasoning_effort,
+                config.model_kind,
                 config.routing_group,
                 if config.routing_enabled { 1 } else { 0 },
                 config.routing_cost,
@@ -446,6 +504,17 @@ fn validate_reasoning_effort(value: String) -> AppResult<String> {
     } else {
         Err(AppError::Message(
             "Reasoning Effort 必须为空、low、medium 或 high".to_string(),
+        ))
+    }
+}
+
+fn validate_model_kind(value: String) -> AppResult<String> {
+    let value = value.trim().to_lowercase();
+    if matches!(value.as_str(), "chat" | "embedding" | "both") {
+        Ok(value)
+    } else {
+        Err(AppError::Message(
+            "模型用途必须是 chat、embedding 或 both".to_string(),
         ))
     }
 }

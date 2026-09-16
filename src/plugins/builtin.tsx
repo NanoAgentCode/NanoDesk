@@ -1,4 +1,4 @@
-import { Activity, Archive, Bot, Brain, Cpu, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
+import { Activity, Archive, Bot, Brain, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
 import { AppPluginRegistry, type FrontendPlugin } from "../core/plugins";
 import OpsPanel from "../components/OpsPanel";
 import SettingsThemeTab from "../components/settings/SettingsThemeTab";
@@ -6,7 +6,6 @@ import SettingsMemoryTab from "../components/settings/SettingsMemoryTab";
 import SettingsProfileTab from "../components/settings/SettingsProfileTab";
 import SettingsArchiveTab from "../components/settings/SettingsArchiveTab";
 import SettingsModelTab from "../components/settings/SettingsModelTab";
-import SettingsEmbeddingTab from "../components/settings/SettingsEmbeddingTab";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab";
 import SettingsObservabilityTab from "../components/settings/SettingsObservabilityTab";
 import SettingsMcpTab from "../components/settings/SettingsMcpTab";
@@ -45,22 +44,15 @@ const coreUiPlugin: FrontendPlugin = {
     },
     {
       id: "model",
-      label: "LLM 管理",
+      label: "供应商管理",
       icon: Bot,
       render: ({ model, close }) => <SettingsModelTab model={model} setShowModelConfig={(show) => !show && close()} />
     },
     {
       id: "routing",
-      label: "智能路由",
+      label: "模型路由",
       icon: Route,
       render: ({ model }) => <SettingsRoutingTab model={model} />
-    },
-    {
-      id: "embedding",
-      label: "嵌入模型",
-      icon: Cpu,
-      onActivate: ({ model }) => model.handleOpenEmbeddingConfig(),
-      render: ({ model }) => <SettingsEmbeddingTab model={model} />
     },
     {
       id: "archive",

@@ -45,6 +45,7 @@ pub struct ModelConfig {
     pub context_window: u32,
     pub top_p: Option<f32>,
     pub reasoning_effort: String,
+    pub model_kind: String,
     pub routing_group: String,
     pub routing_enabled: bool,
     pub routing_cost: u8,
@@ -77,6 +78,8 @@ pub struct ModelConfigDraft {
     pub top_p: Option<f32>,
     #[serde(default)]
     pub reasoning_effort: String,
+    #[serde(default = "default_model_kind")]
+    pub model_kind: String,
     #[serde(default = "default_routing_group")]
     pub routing_group: String,
     #[serde(default = "default_routing_enabled")]
@@ -99,6 +102,26 @@ pub struct ModelConfigDraft {
     pub embedding_api_key: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelSupplier {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelSupplierDraft {
+    pub id: Option<String>,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: String,
+}
+
 impl ModelConfig {
     pub fn from_draft_for_connectivity(draft: ModelConfigDraft) -> Self {
         let now = Utc::now();
@@ -114,6 +137,7 @@ impl ModelConfig {
             context_window: draft.context_window,
             top_p: draft.top_p,
             reasoning_effort: draft.reasoning_effort,
+            model_kind: draft.model_kind,
             routing_group: draft.routing_group,
             routing_enabled: draft.routing_enabled,
             routing_cost: draft.routing_cost,
@@ -303,6 +327,7 @@ pub struct ChatRequest {
 pub struct AvailableModelInfo {
     pub id: String,
     pub context_window: Option<u32>,
+    pub suggested_kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -322,6 +347,10 @@ pub struct ChatStreamRequest {
 
 fn default_model_temperature() -> f32 {
     0.4
+}
+
+fn default_model_kind() -> String {
+    "chat".to_string()
 }
 
 fn default_model_context_window() -> u32 {

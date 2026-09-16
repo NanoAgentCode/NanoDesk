@@ -15,7 +15,9 @@ export default function ModelRoutingSelector({ routing, disabled }: ModelRouting
       value={routing.mode}
       data={ROUTING_MODE_OPTIONS.map((option) => ({
         ...option,
-        disabled: isRoutingStrategy(option.value) && !routing.isStrategyAvailable(option.value)
+        disabled: option.value === "manual"
+          ? routing.fixedModelIds.length === 0
+          : isRoutingStrategy(option.value) && !routing.isStrategyAvailable(option.value)
       }))}
       onChange={routing.setMode}
       allowDeselect={false}

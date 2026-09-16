@@ -545,7 +545,7 @@ fn chat_models(db: &Database) -> AppResult<Vec<ModelConfig>> {
     Ok(db
         .list_model_configs()?
         .into_iter()
-        .filter(|model| model.id != EMBEDDING_CONFIG_ID)
+        .filter(|model| model.id != EMBEDDING_CONFIG_ID && model.model_kind != "embedding")
         .collect())
 }
 
@@ -642,6 +642,7 @@ fn configure_model(db: &Database, title: String, description: &str) -> AppResult
         context_window,
         top_p: None,
         reasoning_effort: String::new(),
+        model_kind: "chat".to_string(),
         routing_group: "默认组".to_string(),
         routing_enabled: true,
         routing_cost: 3,
@@ -1563,6 +1564,7 @@ mod tests {
                 context_window: 32_768,
                 top_p: None,
                 reasoning_effort: String::new(),
+                model_kind: "chat".to_string(),
                 routing_group: "默认组".to_string(),
                 routing_enabled: true,
                 routing_cost: 3,
@@ -1609,6 +1611,7 @@ mod tests {
                 context_window: 32_768,
                 top_p: None,
                 reasoning_effort: String::new(),
+                model_kind: "chat".to_string(),
                 routing_group: "默认组".to_string(),
                 routing_enabled: true,
                 routing_cost: 3,
@@ -1777,6 +1780,7 @@ mod tests {
             context_window: 32_768,
             top_p: None,
             reasoning_effort: String::new(),
+            model_kind: "chat".to_string(),
             routing_group: "默认组".to_string(),
             routing_enabled: true,
             routing_cost: 3,
@@ -1802,6 +1806,7 @@ mod tests {
             context_window: model.context_window,
             top_p: model.top_p,
             reasoning_effort: model.reasoning_effort.clone(),
+            model_kind: model.model_kind.clone(),
             routing_group: model.routing_group.clone(),
             routing_enabled: model.routing_enabled,
             routing_cost: model.routing_cost,

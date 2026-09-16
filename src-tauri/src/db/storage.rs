@@ -324,6 +324,7 @@ mod tests {
             context_window: 32_768,
             top_p: None,
             reasoning_effort: String::new(),
+            model_kind: "chat".to_string(),
             routing_group: "默认组".to_string(),
             routing_enabled: true,
             routing_cost: 3,

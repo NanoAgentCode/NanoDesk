@@ -102,6 +102,7 @@ impl Database {
                 context_window INTEGER NOT NULL DEFAULT 32768,
                 top_p REAL,
                 reasoning_effort TEXT NOT NULL DEFAULT '',
+                model_kind TEXT NOT NULL DEFAULT 'chat',
                 routing_group TEXT NOT NULL DEFAULT '默认组',
                 routing_enabled INTEGER NOT NULL DEFAULT 1,
                 routing_cost INTEGER NOT NULL DEFAULT 3,
@@ -115,6 +116,22 @@ impl Database {
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS model_suppliers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                base_url TEXT NOT NULL,
+                api_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            INSERT INTO model_suppliers (id, name, provider, base_url, api_key, created_at, updated_at)
+            SELECT lower(hex(randomblob(16))), m.name, m.provider, m.base_url, m.api_key, m.created_at, m.updated_at
+            FROM model_configs m
+            WHERE m.id <> 'embedding-config'
+              AND NOT EXISTS (SELECT 1 FROM model_suppliers s WHERE s.provider=m.provider AND s.base_url=m.base_url AND s.api_key=m.api_key);
 
             CREATE TABLE IF NOT EXISTS mcp_servers (
                 id TEXT PRIMARY KEY,
@@ -652,6 +669,16 @@ impl Database {
         Self::ensure_column(
             conn,
             "model_configs",
+            "model_kind",
+            "TEXT NOT NULL DEFAULT 'chat'",
+        )?;
+        conn.execute(
+            "UPDATE model_configs SET model_kind = 'embedding' WHERE id = 'embedding-config'",
+            [],
+        )?;
+        Self::ensure_column(
+            conn,
+            "model_configs",
             "routing_group",
             "TEXT NOT NULL DEFAULT '默认组'",
         )?;
@@ -920,9 +947,9 @@ impl Database {
     }
 
     fn row_to_model_config(row: &rusqlite::Row<'_>) -> rusqlite::Result<ModelConfig> {
-        let routing_tasks_json: String = row.get(16)?;
-        let created_at: String = row.get(21)?;
-        let updated_at: String = row.get(22)?;
+        let routing_tasks_json: String = row.get(17)?;
+        let created_at: String = row.get(22)?;
+        let updated_at: String = row.get(23)?;
 
         Ok(ModelConfig {
             id: row.get(0)?,
@@ -936,16 +963,17 @@ impl Database {
             context_window: row.get(8)?,
             top_p: row.get(9)?,
             reasoning_effort: row.get(10)?,
-            routing_group: row.get(11)?,
-            routing_enabled: row.get::<_, i64>(12)? != 0,
-            routing_cost: row.get(13)?,
-            routing_quality: row.get(14)?,
-            routing_speed: row.get(15)?,
+            model_kind: row.get(11)?,
+            routing_group: row.get(12)?,
+            routing_enabled: row.get::<_, i64>(13)? != 0,
+            routing_cost: row.get(14)?,
+            routing_quality: row.get(15)?,
+            routing_speed: row.get(16)?,
             routing_tasks: serde_json::from_str(&routing_tasks_json).unwrap_or_default(),
-            embedding_provider: row.get(17)?,
-            embedding_base_url: row.get(18)?,
-            embedding_model: row.get(19)?,
-            embedding_api_key: row.get(20)?,
+            embedding_provider: row.get(18)?,
+            embedding_base_url: row.get(19)?,
+            embedding_model: row.get(20)?,
+            embedding_api_key: row.get(21)?,
             created_at: parse_time_for_row(&created_at)?,
             updated_at: parse_time_for_row(&updated_at)?,
         })
@@ -1516,6 +1544,7 @@ mod tests {
                 context_window: 65_536,
                 top_p: Some(0.9),
                 reasoning_effort: "high".to_string(),
+                model_kind: "chat".to_string(),
                 routing_group: "高质量组".to_string(),
                 routing_enabled: true,
                 routing_cost: 5,
@@ -1537,6 +1566,7 @@ mod tests {
         assert_eq!(loaded.routing_group, "高质量组");
         assert_eq!(loaded.routing_tasks, vec!["coding", "reasoning"]);
         assert_eq!(loaded.reasoning_effort, "high");
+        assert_eq!(loaded.model_kind, "chat");
     }
 
     #[test]
@@ -1571,6 +1601,11 @@ mod tests {
                 VALUES
                     ('existing', 'Existing', 'openai-compatible', 'http://localhost:11434/v1',
                      'existing-model', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                INSERT INTO model_configs
+                    (id, name, provider, base_url, model, api_key, created_at, updated_at)
+                VALUES
+                    ('embedding-config', 'Embedding', 'openai-compatible', 'http://localhost:11434/v1',
+                     'bge-m3', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
                 ",
             )
             .expect("existing schema should be created");
@@ -1585,12 +1620,17 @@ mod tests {
         assert_eq!(loaded.context_window, 32_768);
         assert_eq!(loaded.top_p, None);
         assert_eq!(loaded.reasoning_effort, "");
+        assert_eq!(loaded.model_kind, "chat");
         assert_eq!(loaded.routing_group, "默认组");
         assert!(loaded.routing_enabled);
         assert_eq!(loaded.routing_cost, 3);
         assert_eq!(loaded.routing_quality, 3);
         assert_eq!(loaded.routing_speed, 3);
         assert!(loaded.routing_tasks.is_empty());
+        assert_eq!(
+            db.get_model_config("embedding-config").unwrap().model_kind,
+            "embedding"
+        );
 
         drop(db);
         for split_path in [

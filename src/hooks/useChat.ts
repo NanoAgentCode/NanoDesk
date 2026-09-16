@@ -352,7 +352,12 @@ export function useChat({
     const memoryRoute = resolveUserMemoryRoute(textContent, content);
     const explicitProfileInstruction = memoryRoute.kind === "profile";
     const memoryDraft = memoryRoute.memoryDraft;
-    const effectiveModelId = conv.resolveConversationModelId(conv.activeConversationId);
+    const conversationModelId = conv.resolveConversationModelId(conv.activeConversationId);
+    const effectiveModelId = model.routing.enabled
+      ? conversationModelId
+      : model.routing.fixedModelIds.includes(conversationModelId)
+        ? conversationModelId
+        : model.routing.fixedModelIds[0] || "";
     const routingDecision = model.routing.enabled && !memoryDraft
       ? model.routing.resolve(textContent || content, attachments.pendingImageAttachments.length > 0)
       : null;
@@ -370,7 +375,7 @@ export function useChat({
     try {
       const projectHint = conv.getConversationProjectHint();
       const conversationId = await conv.ensureConversation(projectHint);
-      if (routingDecision && activeModelId !== effectiveModelId) {
+      if (activeModelId && activeModelId !== conversationModelId) {
         await updateConversationModel(conversationId, activeModelId);
         model.setActiveModelId(activeModelId);
       }

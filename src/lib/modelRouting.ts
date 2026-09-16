@@ -1,4 +1,5 @@
 import type { ModelConfig, ModelRoutingProfile } from "../types";
+import { isChatModel } from "./modelCapabilities";
 
 export type RoutingStrategy = "balanced" | "cost" | "quality" | "speed";
 export type RoutingTask = "general" | "coding" | "reasoning" | "writing" | "translation" | "summary" | "vision";
@@ -59,7 +60,7 @@ export function getRoutingModeLabel(mode: "manual" | RoutingStrategy): string {
 
 export function createDefaultRoutingAssignments(models: ModelConfig[]): RoutingModelAssignments {
   const modelIds = models
-    .filter((model) => model.id !== "embedding-config" && model.routing_enabled)
+    .filter((model) => isChatModel(model) && model.routing_enabled)
     .map((model) => model.id);
   return Object.fromEntries(ROUTING_STRATEGIES.map((strategy) => [strategy, [...modelIds]])) as RoutingModelAssignments;
 }
@@ -68,7 +69,7 @@ export function normalizeRoutingAssignments(
   assignments: Partial<Record<RoutingStrategy, string[]>>,
   models: ModelConfig[]
 ): RoutingModelAssignments {
-  const validIds = new Set(models.filter((model) => model.id !== "embedding-config").map((model) => model.id));
+  const validIds = new Set(models.filter(isChatModel).map((model) => model.id));
   return Object.fromEntries(ROUTING_STRATEGIES.map((strategy) => [
     strategy,
     [...new Set(assignments[strategy] ?? [])].filter((id) => validIds.has(id))
@@ -127,7 +128,7 @@ export function routeModel(
   hasImages = false,
   assignedModelIds?: string[]
 ): ModelRoutingDecision | null {
-  const chatModels = models.filter((model) => model.id !== "embedding-config");
+  const chatModels = models.filter(isChatModel);
   const fallback = chatModels.find((model) => model.id === fallbackModelId) ?? chatModels[0];
   if (!fallback) return null;
 
@@ -141,7 +142,7 @@ export function routeModel(
     return {
       modelId: fallback.id, modelName: fallback.model, group: fallback.routing_group,
       task, strategy, fallback: true,
-      reason: `没有适用于“${ROUTING_TASK_LABELS[task]}”的路由候选，回退到固定模型 ${fallback.model}`
+      reason: `没有适用于“${ROUTING_TASK_LABELS[task]}”的路由候选，使用兜底模型 ${fallback.model}`
     };
   }
 

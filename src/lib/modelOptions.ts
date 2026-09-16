@@ -1,10 +1,12 @@
 import type { ModelConfig } from "../types";
+import { isChatModel } from "./modelCapabilities";
 
-export function buildChatModelOptions(models: ModelConfig[]) {
+export function buildChatModelOptions(models: ModelConfig[], allowedModelIds?: string[]) {
   const groups = new Map<string, Array<{ value: string; label: string }>>();
+  const allowedIds = allowedModelIds ? new Set(allowedModelIds) : null;
 
   for (const item of models) {
-    if (item.id === "embedding-config") continue;
+    if (!isChatModel(item) || (allowedIds && !allowedIds.has(item.id))) continue;
 
     const group = item.name.trim() || "未命名配置";
     const options = groups.get(group) || [];

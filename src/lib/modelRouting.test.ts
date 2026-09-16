@@ -14,7 +14,7 @@ function model(id: string, overrides: Partial<ModelConfig> = {}): ModelConfig {
   return {
     id, name: id, provider: "openai-compatible", base_url: "http://localhost:11434/v1",
     model: id, api_key: "", temperature: 0.4, max_tokens: null, context_window: 32768,
-    top_p: null, reasoning_effort: "", routing_group: "默认组", routing_enabled: true,
+    top_p: null, reasoning_effort: "", model_kind: "chat", routing_group: "默认组", routing_enabled: true,
     routing_cost: 3, routing_quality: 3, routing_speed: 3, routing_tasks: [],
     embedding_provider: "", embedding_base_url: "", embedding_model: "", embedding_api_key: "",
     created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", ...overrides
@@ -76,5 +76,6 @@ describe("smart model routing", () => {
     const decision = routeModel(models, "翻译这句话", "balanced", "manual");
     expect(decision?.modelId).toBe("manual");
     expect(decision?.fallback).toBe(true);
+    expect(decision?.reason).toContain("兜底模型");
   });
 });

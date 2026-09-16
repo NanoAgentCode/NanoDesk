@@ -24,6 +24,8 @@ import type {
   McpToolInfo,
   ModelConfig,
   ModelConfigDraft,
+  ModelSupplier,
+  ModelSupplierDraft,
   OpsAiRequest,
   OpsServer,
   OpsServerDraft,
@@ -114,6 +116,18 @@ export function testEmbeddingConnectivity(draft: ModelConfigDraft) {
 
 export function listMcpServers() {
   return invoke<McpServerView[]>("list_mcp_servers");
+}
+
+export function listModelSuppliers() {
+  return invoke<ModelSupplier[]>("list_model_suppliers");
+}
+
+export function saveModelSupplier(draft: ModelSupplierDraft) {
+  return invoke<ModelSupplier>("save_model_supplier", { draft });
+}
+
+export function deleteModelSupplier(id: string) {
+  return invoke<void>("delete_model_supplier", { id });
 }
 
 export function restoreMcpServers() {

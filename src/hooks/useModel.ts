@@ -7,11 +7,13 @@ import {
   testLlmConnectivity,
   testEmbeddingConnectivity,
   updateConversationModel
+  ,listModelSuppliers, saveModelSupplier, deleteModelSupplier
 } from "../api";
 import { confirmAction } from "../lib/dialogs";
-import type { AvailableModelInfo, ModelConfig, ModelConfigDraft, Conversation } from "../types";
+import type { AvailableModelInfo, ModelConfig, ModelConfigDraft, ModelSupplier, ModelSupplierDraft, Conversation } from "../types";
 import { DEFAULT_MODEL_ROUTING_PROFILE, normalizeRoutingProfile } from "../lib/modelRouting";
 import { useModelRouting, type UseModelRoutingReturn } from "./useModelRouting";
+import { isChatModel, isEmbeddingModel } from "../lib/modelCapabilities";
 
 export const emptyModelDraft: ModelConfigDraft = {
   name: "OpenAI",
@@ -24,6 +26,7 @@ export const emptyModelDraft: ModelConfigDraft = {
   context_window: 32_768,
   top_p: null,
   reasoning_effort: "",
+  model_kind: "chat",
   ...DEFAULT_MODEL_ROUTING_PROFILE,
   embedding_provider: "openai-compatible",
   embedding_base_url: "https://api.openai.com/v1",
@@ -43,6 +46,7 @@ export const emptyEmbeddingDraft: ModelConfigDraft = {
   context_window: 32_768,
   top_p: null,
   reasoning_effort: "",
+  model_kind: "embedding",
   ...DEFAULT_MODEL_ROUTING_PROFILE,
   routing_enabled: false,
   embedding_provider: "openai-compatible",
@@ -62,13 +66,6 @@ export const providerDefaults: Record<string, Pick<ModelConfigDraft, "base_url" 
   }
 };
 
-export const embeddingProviderDefaults: Record<string, Pick<ModelConfigDraft, "embedding_base_url" | "embedding_model">> = {
-  "openai-compatible": {
-    embedding_base_url: "https://api.openai.com/v1",
-    embedding_model: "text-embedding-3-small"
-  }
-};
-
 export function normalizeModelDraft(model: ModelConfig | ModelConfigDraft): ModelConfigDraft {
   return {
     ...model,
@@ -77,6 +74,7 @@ export function normalizeModelDraft(model: ModelConfig | ModelConfigDraft): Mode
     context_window: model.context_window || 32_768,
     top_p: model.top_p ?? null,
     reasoning_effort: model.reasoning_effort || "",
+    model_kind: model.model_kind || (model.id === "embedding-config" ? "embedding" : "chat"),
     ...normalizeRoutingProfile(model),
     embedding_provider: model.embedding_provider || "openai-compatible",
     embedding_base_url: model.embedding_base_url || "https://api.openai.com/v1",
@@ -86,6 +84,14 @@ export function normalizeModelDraft(model: ModelConfig | ModelConfigDraft): Mode
 }
 
 export interface UseModelReturn {
+  suppliers: ModelSupplier[];
+  supplierDraft: ModelSupplierDraft;
+  setSupplierDraft: React.Dispatch<React.SetStateAction<ModelSupplierDraft>>;
+  supplierModels: Record<string, AvailableModelInfo[]>;
+  saveSupplier: () => Promise<void>;
+  deleteSupplier: () => Promise<void>;
+  fetchSupplierModels: (supplierId: string) => Promise<AvailableModelInfo[]>;
+  ensureSupplierModel: (supplierId: string, modelInfo: AvailableModelInfo) => Promise<ModelConfig>;
   models: ModelConfig[];
   setModels: React.Dispatch<React.SetStateAction<ModelConfig[]>>;
   modelDraft: ModelConfigDraft;
@@ -94,7 +100,6 @@ export interface UseModelReturn {
   setActiveModelId: React.Dispatch<React.SetStateAction<string>>;
   routing: UseModelRoutingReturn;
   embeddingDraft: ModelConfigDraft;
-  setEmbeddingDraft: React.Dispatch<React.SetStateAction<ModelConfigDraft>>;
   llmTestStatus: { status: "idle" | "testing" | "success" | "error"; message?: string };
   setLlmTestStatus: React.Dispatch<React.SetStateAction<{ status: "idle" | "testing" | "success" | "error"; message?: string }>>;
   modelTestStatuses: Record<string, { status: "idle" | "testing" | "success" | "error"; message?: string }>;
@@ -110,14 +115,11 @@ export interface UseModelReturn {
   handleNewModelConfig: (setShowModelConfig: (show: boolean) => void) => void;
   handleDeleteModel: () => Promise<void>;
   handleProviderChange: (provider: string) => void;
-  handleEmbeddingProviderChange: (embeddingProvider: string) => void;
-  handleSaveEmbeddingModel: () => Promise<void>;
-  handleOpenEmbeddingConfig: () => void;
   handleTestLlm: () => Promise<void>;
   handleFetchAvailableModels: () => Promise<void>;
   handleTestEmbedding: () => Promise<void>;
+  handleSelectEmbeddingModel: (modelId: string) => Promise<void>;
   handleActiveModelChange: (modelId: string) => Promise<void>;
-  handleSaveRoutingProfile: (draft: ModelConfigDraft) => Promise<void>;
 }
 
 export function useModel(
@@ -127,6 +129,9 @@ export function useModel(
   setProjectConversations?: React.Dispatch<React.SetStateAction<Record<string, Conversation[]>>>
 ): UseModelReturn {
   const [models, setModels] = useState<ModelConfig[]>([]);
+  const [suppliers, setSuppliers] = useState<ModelSupplier[]>([]);
+  const [supplierDraft, setSupplierDraft] = useState<ModelSupplierDraft>({ name: "OpenAI", provider: "openai-compatible", base_url: "https://api.openai.com/v1", api_key: "" });
+  const [supplierModels, setSupplierModels] = useState<Record<string, AvailableModelInfo[]>>({});
   const [modelDraft, setModelDraft] = useState<ModelConfigDraft>(emptyModelDraft);
   const [activeModelId, setActiveModelId] = useState("");
   const routing = useModelRouting(models, activeModelId);
@@ -165,7 +170,8 @@ export function useModel(
          modelDraft.max_tokens !== savedModel.max_tokens ||
          modelDraft.context_window !== savedModel.context_window ||
          modelDraft.top_p !== savedModel.top_p ||
-         modelDraft.reasoning_effort !== savedModel.reasoning_effort)
+         modelDraft.reasoning_effort !== savedModel.reasoning_effort ||
+         modelDraft.model_kind !== savedModel.model_kind)
       : (modelDraft.name !== emptyModelDraft.name ||
          modelDraft.provider !== emptyModelDraft.provider ||
          modelDraft.base_url !== emptyModelDraft.base_url ||
@@ -175,7 +181,8 @@ export function useModel(
          modelDraft.max_tokens !== emptyModelDraft.max_tokens ||
          modelDraft.context_window !== emptyModelDraft.context_window ||
          modelDraft.top_p !== emptyModelDraft.top_p ||
-         modelDraft.reasoning_effort !== emptyModelDraft.reasoning_effort);
+         modelDraft.reasoning_effort !== emptyModelDraft.reasoning_effort ||
+         modelDraft.model_kind !== emptyModelDraft.model_kind);
 
     if (isDirty) {
       const currentStatus = modelTestStatuses[modelId]?.status || "idle";
@@ -198,6 +205,7 @@ export function useModel(
     modelDraft.context_window,
     modelDraft.top_p,
     modelDraft.reasoning_effort,
+    modelDraft.model_kind,
     models,
     modelTestStatuses
   ]);
@@ -233,8 +241,47 @@ export function useModel(
   // Initial load
   useEffect(() => {
     void refreshModels();
+    void listModelSuppliers().then(setSuppliers).catch((error) => setNotice(`获取供应商失败: ${String(error)}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function saveSupplier() {
+    try {
+      const saved = await saveModelSupplier(supplierDraft);
+      setSuppliers(await listModelSuppliers());
+      setSupplierDraft(saved);
+      setNotice("供应商已保存");
+    } catch (error) { setNotice(`保存供应商失败: ${String(error)}`); }
+  }
+
+  async function deleteSupplier() {
+    if (!supplierDraft.id) return;
+    if (!(await confirmAction(`确定要删除供应商「${supplierDraft.name}」吗？`))) return;
+    try {
+      await deleteModelSupplier(supplierDraft.id);
+      setSuppliers(await listModelSuppliers());
+      setSupplierDraft({ name: "OpenAI", provider: "openai-compatible", base_url: "https://api.openai.com/v1", api_key: "" });
+      setNotice("供应商已删除");
+    } catch (error) { setNotice(`删除供应商失败: ${String(error)}`); }
+  }
+
+  async function fetchSupplierModels(supplierId: string) {
+    const supplier = suppliers.find((item) => item.id === supplierId);
+    if (!supplier) return [];
+    const items = await listAvailableModels({ ...emptyModelDraft, name: supplier.name, provider: supplier.provider, base_url: supplier.base_url, api_key: supplier.api_key });
+    setSupplierModels((current) => ({ ...current, [supplierId]: items }));
+    return items;
+  }
+
+  async function ensureSupplierModel(supplierId: string, modelInfo: AvailableModelInfo) {
+    const supplier = suppliers.find((item) => item.id === supplierId);
+    if (!supplier) throw new Error("供应商不存在");
+    const existing = models.find((item) => item.provider === supplier.provider && item.base_url === supplier.base_url && item.api_key === supplier.api_key && item.model === modelInfo.id);
+    if (existing) return existing;
+    const saved = await saveModelConfig({ ...emptyModelDraft, name: supplier.name, provider: supplier.provider, base_url: supplier.base_url, api_key: supplier.api_key, model: modelInfo.id, model_kind: modelInfo.suggested_kind, context_window: modelInfo.context_window ?? 32_768 });
+    await refreshModels(saved.id);
+    return saved;
+  }
 
   async function refreshModels(selectId?: string) {
     try {
@@ -247,7 +294,7 @@ export function useModel(
         if (current && nextModels.some((m) => m.id === current)) {
           return current;
         }
-        return nextModels.find((m) => m.id !== "embedding-config")?.id || "";
+        return nextModels.find(isChatModel)?.id || "";
       });
     } catch (e) {
       setNotice(`获取模型配置失败: ${String(e)}`);
@@ -260,7 +307,11 @@ export function useModel(
       const nextModels = await listModelConfigs();
       setModels(nextModels);
       setModelDraft(normalizeModelDraft(saved));
-      await handleActiveModelChange(saved.id);
+      if (isChatModel(saved)) {
+        await handleActiveModelChange(saved.id);
+      } else if (saved.id === activeModelId) {
+        await handleActiveModelChange(nextModels.find(isChatModel)?.id || "");
+      }
       setNotice("模型配置已保存");
     } catch (e) {
       setNotice(`保存模型配置失败: ${String(e)}`);
@@ -279,7 +330,7 @@ export function useModel(
   }
 
   function handleOpenModelConfig(setShowModelConfig: (show: boolean) => void) {
-    const model = models.find((item) => item.id === activeModelId) || models.find((item) => item.id !== "embedding-config");
+    const model = models.find((item) => item.id === activeModelId) || models.find(isChatModel) || models.find((item) => item.id !== "embedding-config");
     setModelDraft(model ? normalizeModelDraft(model) : emptyModelDraft);
     setShowModelConfig(true);
   }
@@ -299,11 +350,22 @@ export function useModel(
       return;
     }
     try {
+      const clearsEmbeddingSelection = modelDraft.id !== "embedding-config" &&
+        modelDraft.provider === embeddingDraft.embedding_provider &&
+        modelDraft.base_url === embeddingDraft.embedding_base_url &&
+        modelDraft.model === embeddingDraft.embedding_model;
       await deleteModelConfig(modelDraft.id);
+      if (clearsEmbeddingSelection) {
+        try {
+          await deleteModelConfig("embedding-config");
+        } catch {
+          // Compatibility config may not exist yet.
+        }
+      }
       const nextModels = await listModelConfigs();
       setModels(nextModels);
       if (modelDraft.id === activeModelId) {
-        await handleActiveModelChange(nextModels.find((m) => m.id !== "embedding-config")?.id || "");
+        await handleActiveModelChange(nextModels.find(isChatModel)?.id || "");
       }
       setModelDraft(emptyModelDraft);
       setNotice("模型配置已删除");
@@ -331,49 +393,6 @@ export function useModel(
     }));
   }
 
-  function handleEmbeddingProviderChange(embeddingProvider: string) {
-    const defaults = embeddingProviderDefaults[embeddingProvider];
-    if (!defaults) return;
-    setEmbeddingDraft((current) => ({
-      ...current,
-      embedding_provider: embeddingProvider,
-      embedding_base_url:
-        current.embedding_base_url === embeddingProviderDefaults["openai-compatible"].embedding_base_url
-          ? defaults.embedding_base_url
-          : current.embedding_base_url,
-      embedding_model:
-        current.embedding_model === embeddingProviderDefaults["openai-compatible"].embedding_model
-          ? defaults.embedding_model
-          : current.embedding_model
-    }));
-  }
-
-  async function handleSaveEmbeddingModel() {
-    const updatedDraft = {
-      ...embeddingDraft,
-      id: "embedding-config",
-      name: "嵌入模型",
-      provider: embeddingDraft.embedding_provider,
-      base_url: embeddingDraft.embedding_base_url,
-      model: embeddingDraft.embedding_model,
-      api_key: embeddingDraft.embedding_api_key,
-    };
-    try {
-      const saved = await saveModelConfig(updatedDraft);
-      const nextModels = await listModelConfigs();
-      setModels(nextModels);
-      setEmbeddingDraft(normalizeModelDraft(saved));
-      setNotice("嵌入模型配置已保存");
-    } catch (e) {
-      setNotice(`保存嵌入模型失败: ${String(e)}`);
-    }
-  }
-
-  function handleOpenEmbeddingConfig() {
-    const existing = models.find((m) => m.id === "embedding-config");
-    setEmbeddingDraft(existing ? normalizeModelDraft(existing) : emptyEmbeddingDraft);
-  }
-
   async function handleTestLlm() {
     const modelId = modelDraft.id || "new-config";
     setLlmTestStatus({ status: "testing" });
@@ -382,7 +401,17 @@ export function useModel(
       [modelId]: { status: "testing" }
     }));
     try {
-      await testLlmConnectivity(modelDraft);
+      if (modelDraft.model_kind === "embedding") {
+        await testEmbeddingConnectivity({
+          ...modelDraft,
+          embedding_provider: modelDraft.provider,
+          embedding_base_url: modelDraft.base_url,
+          embedding_model: modelDraft.model,
+          embedding_api_key: modelDraft.api_key
+        });
+      } else {
+        await testLlmConnectivity(modelDraft);
+      }
       setLlmTestStatus({ status: "success" });
       setModelTestStatuses((prev) => ({
         ...prev,
@@ -403,9 +432,10 @@ export function useModel(
       const nextModels = await listAvailableModels(modelDraft);
       setAvailableModels(nextModels);
       const selectedModel = nextModels.find((item) => item.id === modelDraft.model);
-      if (selectedModel?.context_window != null) {
+      if (selectedModel) {
         setModelDraft((current) => ({
           ...current,
+          model_kind: selectedModel.suggested_kind,
           context_window: selectedModel.context_window ?? current.context_window
         }));
       }
@@ -470,17 +500,37 @@ export function useModel(
     }
   }
 
-  async function handleSaveRoutingProfile(draft: ModelConfigDraft) {
+  async function handleSelectEmbeddingModel(modelId: string) {
+    const latestModels = models.some((item) => item.id === modelId) ? models : await listModelConfigs();
+    const selected = latestModels.find((item) => item.id === modelId && isEmbeddingModel(item));
+    if (!selected) {
+      setNotice("请选择支持嵌入用途的供应商模型");
+      return;
+    }
+    const updatedDraft: ModelConfigDraft = {
+      ...emptyEmbeddingDraft,
+      embedding_provider: selected.provider,
+      embedding_base_url: selected.base_url,
+      embedding_model: selected.model,
+      embedding_api_key: selected.api_key,
+      provider: selected.provider,
+      base_url: selected.base_url,
+      model: selected.model,
+      api_key: selected.api_key
+    };
     try {
-      await saveModelConfig(draft);
-      await refreshModels();
-      setNotice("智能路由配置已保存");
+      const saved = await saveModelConfig(updatedDraft);
+      const nextModels = await listModelConfigs();
+      setModels(nextModels);
+      setEmbeddingDraft(normalizeModelDraft(saved));
+      setNotice(`嵌入模型已切换为 ${selected.name} · ${selected.model}`);
     } catch (error) {
-      setNotice(`保存智能路由配置失败: ${String(error)}`);
+      setNotice(`切换嵌入模型失败: ${String(error)}`);
     }
   }
 
   return {
+    suppliers, supplierDraft, setSupplierDraft, supplierModels, saveSupplier, deleteSupplier, fetchSupplierModels, ensureSupplierModel,
     models,
     setModels,
     modelDraft,
@@ -489,7 +539,6 @@ export function useModel(
     setActiveModelId,
     routing,
     embeddingDraft,
-    setEmbeddingDraft,
     llmTestStatus,
     setLlmTestStatus,
     modelTestStatuses,
@@ -505,13 +554,10 @@ export function useModel(
     handleNewModelConfig,
     handleDeleteModel,
     handleProviderChange,
-    handleEmbeddingProviderChange,
-    handleSaveEmbeddingModel,
-    handleOpenEmbeddingConfig,
     handleTestLlm,
     handleFetchAvailableModels,
     handleTestEmbedding,
-    handleActiveModelChange,
-    handleSaveRoutingProfile
+    handleSelectEmbeddingModel,
+    handleActiveModelChange
   };
 }

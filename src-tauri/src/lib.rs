@@ -311,6 +311,26 @@ async fn list_model_configs(state: State<'_, AppState>) -> AppResult<Vec<ModelCo
 }
 
 #[tauri::command]
+async fn list_model_suppliers(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::models::ModelSupplier>> {
+    state.db.lock().await.list_model_suppliers()
+}
+
+#[tauri::command]
+async fn save_model_supplier(
+    state: State<'_, AppState>,
+    draft: crate::models::ModelSupplierDraft,
+) -> AppResult<crate::models::ModelSupplier> {
+    state.db.lock().await.save_model_supplier(draft)
+}
+
+#[tauri::command]
+async fn delete_model_supplier(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.db.lock().await.delete_model_supplier(&id)
+}
+
+#[tauri::command]
 async fn save_model_config(
     state: State<'_, AppState>,
     draft: ModelConfigDraft,
@@ -2203,6 +2223,9 @@ pub fn run() {
             update_item,
             delete_item,
             list_model_configs,
+            list_model_suppliers,
+            save_model_supplier,
+            delete_model_supplier,
             save_model_config,
             delete_model_config,
             list_mcp_servers,

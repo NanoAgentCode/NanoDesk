@@ -8,6 +8,7 @@ import {
   saveProfileSettings
 } from "../../api";
 import { confirmAction } from "../../lib/dialogs";
+import { isChatModel } from "../../lib/modelCapabilities";
 import type { FilteredProfileObservation, ModelConfig, ProfileProcessingStatus, ProfileSettingsDraft, UserProfile } from "../../types";
 
 interface SettingsProfileTabProps {
@@ -51,7 +52,7 @@ export default function SettingsProfileTab({ activeModelId }: SettingsProfileTab
         getUserProfile(), getProfileSettings(), getProfileProcessingStatus(),
         listFilteredProfileObservations(), listModelConfigs()
       ]);
-      const chatModels = allModels.filter((model) => model.id !== "embedding-config");
+      const chatModels = allModels.filter(isChatModel);
       setProfile(nextProfile);
       setStatus(nextStatus);
       setFilteredInputs(nextFilteredInputs);

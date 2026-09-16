@@ -15,6 +15,7 @@ function model(overrides: Partial<ModelConfig>): ModelConfig {
     context_window: 32_768,
     top_p: null,
     reasoning_effort: "",
+    model_kind: "chat",
     routing_group: "默认组",
     routing_enabled: true,
     routing_cost: 3,
@@ -65,6 +66,16 @@ describe("buildChatModelOptions", () => {
         group: "旧配置",
         items: [{ value: "legacy", label: "旧配置" }]
       }
+    ]);
+  });
+
+  it("restricts fixed mode options to configured chat model ids", () => {
+    expect(buildChatModelOptions([
+      model({ id: "fixed", name: "固定", model: "gpt-fixed" }),
+      model({ id: "other", name: "其他", model: "gpt-other" }),
+      model({ id: "embed", name: "嵌入", model: "bge-m3", model_kind: "embedding" })
+    ], ["fixed", "embed"])).toEqual([
+      { group: "固定", items: [{ value: "fixed", label: "gpt-fixed" }] }
     ]);
   });
 });

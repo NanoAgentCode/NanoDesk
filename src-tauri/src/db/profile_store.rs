@@ -85,7 +85,12 @@ impl Database {
                     "用户画像必须使用聊天模型，不能使用嵌入模型".to_string(),
                 ));
             }
-            self.get_model_config(model_id)?;
+            let model = self.get_model_config(model_id)?;
+            if model.model_kind == "embedding" {
+                return Err(AppError::Message(
+                    "用户画像必须使用对话模型，不能使用仅嵌入模型".to_string(),
+                ));
+            }
         }
 
         let previous = self.get_profile_settings()?;
@@ -1532,6 +1537,7 @@ mod tests {
                 context_window: 32_768,
                 top_p: None,
                 reasoning_effort: String::new(),
+                model_kind: "chat".to_string(),
                 routing_group: "默认组".to_string(),
                 routing_enabled: true,
                 routing_cost: 3,

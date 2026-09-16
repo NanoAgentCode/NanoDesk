@@ -38,6 +38,8 @@ export interface ModelRoutingProfile {
   routing_tasks: string[];
 }
 
+export type ModelKind = "chat" | "embedding" | "both";
+
 export interface ModelConfig extends ModelRoutingProfile {
   id: string;
   name: string;
@@ -50,6 +52,7 @@ export interface ModelConfig extends ModelRoutingProfile {
   context_window: number;
   top_p: number | null;
   reasoning_effort: string;
+  model_kind: ModelKind;
   embedding_provider: string;
   embedding_base_url: string;
   embedding_model: string;
@@ -70,6 +73,7 @@ export interface ModelConfigDraft extends ModelRoutingProfile {
   context_window: number;
   top_p: number | null;
   reasoning_effort: string;
+  model_kind: ModelKind;
   embedding_provider: string;
   embedding_base_url: string;
   embedding_model: string;
@@ -279,7 +283,20 @@ export interface MessageMetadata {
 export interface AvailableModelInfo {
   id: string;
   context_window: number | null;
+  suggested_kind: ModelKind;
 }
+
+export interface ModelSupplier {
+  id: string;
+  name: string;
+  provider: string;
+  base_url: string;
+  api_key: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ModelSupplierDraft = Omit<ModelSupplier, "id" | "created_at" | "updated_at"> & { id?: string };
 
 export interface ContextSummaryMetadata {
   version: number;

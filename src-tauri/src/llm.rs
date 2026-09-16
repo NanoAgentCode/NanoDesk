@@ -60,6 +60,12 @@ struct ModelListResponse {
 struct ModelListItem {
     id: String,
     #[serde(default)]
+    capabilities: Vec<String>,
+    #[serde(default, rename = "type")]
+    model_type: Option<String>,
+    #[serde(default)]
+    task: Option<String>,
+    #[serde(default)]
     context_window: Option<u32>,
     #[serde(default)]
     context_length: Option<u32>,
@@ -150,6 +156,7 @@ pub async fn send_chat_completion(
     config: ModelConfig,
     request: ChatRequest,
 ) -> AppResult<ChatResponse> {
+    ensure_chat_model(&config)?;
     if is_anthropic_provider(&config.provider) {
         send_anthropic_chat_completion(config, request).await
     } else {
@@ -162,6 +169,7 @@ pub async fn send_chat_completion_stream(
     config: ModelConfig,
     request: ChatStreamRequest,
 ) -> AppResult<()> {
+    ensure_chat_model(&config)?;
     stream_chat_completion(config, request, |event| {
         app.emit("chat-stream", event)
             .map_err(|err| AppError::Message(err.to_string()))
@@ -177,6 +185,7 @@ pub async fn stream_chat_completion<F>(
 where
     F: FnMut(ChatStreamEvent) -> AppResult<()>,
 {
+    ensure_chat_model(&config)?;
     if is_anthropic_provider(&config.provider) {
         send_anthropic_chat_completion_stream(config, request, emit).await
     } else {
@@ -298,6 +307,13 @@ fn parse_model_list(body: &str) -> AppResult<Vec<AvailableModelInfo>> {
         .filter_map(|item| {
             let id = item.id.trim().to_string();
             (!id.is_empty()).then_some(AvailableModelInfo {
+                suggested_kind: infer_model_kind(
+                    &id,
+                    &item.capabilities,
+                    item.model_type.as_deref(),
+                    item.task.as_deref(),
+                )
+                .to_string(),
                 id,
                 context_window: item
                     .context_window
@@ -321,6 +337,44 @@ fn parse_model_list(body: &str) -> AppResult<Vec<AvailableModelInfo>> {
         return Err(AppError::Message("服务商未返回可用模型".to_string()));
     }
     Ok(deduplicated)
+}
+
+fn infer_model_kind(
+    model_id: &str,
+    capabilities: &[String],
+    model_type: Option<&str>,
+    task: Option<&str>,
+) -> &'static str {
+    let metadata = capabilities
+        .iter()
+        .map(String::as_str)
+        .chain(model_type)
+        .chain(task)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    let supports_embedding = metadata.contains("embed") || metadata.contains("pooling");
+    let supports_chat = metadata.contains("chat")
+        || metadata.contains("completion")
+        || metadata.contains("generate");
+    if supports_embedding && supports_chat {
+        return "both";
+    }
+    if supports_embedding {
+        return "embedding";
+    }
+    if supports_chat {
+        return "chat";
+    }
+    let id = model_id.to_ascii_lowercase();
+    if ["embedding", "embed", "bge-", "e5-", "gte-", "nomic-embed"]
+        .iter()
+        .any(|marker| id.contains(marker))
+    {
+        "embedding"
+    } else {
+        "chat"
+    }
 }
 
 async fn send_openai_chat_completion(
@@ -755,6 +809,16 @@ fn ensure_api_key(config: &ModelConfig) -> AppResult<()> {
     Ok(())
 }
 
+fn ensure_chat_model(config: &ModelConfig) -> AppResult<()> {
+    if config.model_kind == "embedding" {
+        Err(AppError::Message(
+            "所选模型仅支持嵌入用途，不能用于对话".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn is_anthropic_provider(provider: &str) -> bool {
     let provider = provider.trim().to_lowercase();
     provider == "anthropic" || provider == "claude"
@@ -763,7 +827,8 @@ fn is_anthropic_provider(provider: &str) -> bool {
 #[cfg(test)]
 mod model_list_tests {
     use super::{
-        model_list_endpoint, parse_model_list, resolve_generation_params, GenerationParams,
+        infer_model_kind, model_list_endpoint, parse_model_list, resolve_generation_params,
+        GenerationParams,
     };
     use crate::models::{AvailableModelInfo, ModelConfig};
 
@@ -781,6 +846,7 @@ mod model_list_tests {
             context_window: 32_768,
             top_p: Some(0.85),
             reasoning_effort: "medium".to_string(),
+            model_kind: "chat".to_string(),
             routing_group: "默认组".to_string(),
             routing_enabled: true,
             routing_cost: 3,
@@ -814,19 +880,48 @@ mod model_list_tests {
 
     #[test]
     fn parses_sorts_and_deduplicates_model_ids() {
-        let body = r#"{"data":[{"id":"glm-4.5"},{"id":"glm-4-air","max_context_length":65536},{"id":"glm-4.5","context_length":131072},{"id":" "}]}"#;
+        let body = r#"{"data":[{"id":"glm-4.5"},{"id":"glm-4-air","max_context_length":65536},{"id":"glm-4.5","context_length":131072},{"id":"text-vector","capabilities":["embedding"]},{"id":" "}]}"#;
         assert_eq!(
             parse_model_list(body).unwrap(),
             vec![
                 AvailableModelInfo {
                     id: "glm-4-air".to_string(),
-                    context_window: Some(65_536)
+                    context_window: Some(65_536),
+                    suggested_kind: "chat".to_string()
                 },
                 AvailableModelInfo {
                     id: "glm-4.5".to_string(),
-                    context_window: Some(131_072)
+                    context_window: Some(131_072),
+                    suggested_kind: "chat".to_string()
+                },
+                AvailableModelInfo {
+                    id: "text-vector".to_string(),
+                    context_window: None,
+                    suggested_kind: "embedding".to_string()
                 }
             ]
+        );
+    }
+
+    #[test]
+    fn infers_embedding_models_from_common_ids() {
+        assert_eq!(
+            infer_model_kind("text-embedding-3-small", &[], None, None),
+            "embedding"
+        );
+        assert_eq!(
+            infer_model_kind("BAAI/bge-m3", &[], None, None),
+            "embedding"
+        );
+        assert_eq!(infer_model_kind("gpt-4o-mini", &[], None, None), "chat");
+        assert_eq!(
+            infer_model_kind(
+                "multi",
+                &["completion".into(), "embedding".into()],
+                None,
+                None
+            ),
+            "both"
         );
     }
 

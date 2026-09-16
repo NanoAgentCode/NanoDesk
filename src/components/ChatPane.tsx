@@ -186,6 +186,9 @@ export default function ChatPane({
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const activeModel = model.models.find((item) => item.id === model.activeModelId);
+  const fixedModelId = model.routing.fixedModelIds.includes(model.activeModelId)
+    ? model.activeModelId
+    : model.routing.fixedModelIds[0] || "";
   const projectName = project?.name || getProjectName(project?.path || "");
   const starterActions = projectName ? PROJECT_STARTER_ACTIONS : GENERAL_STARTER_ACTIONS;
 
@@ -615,8 +618,8 @@ export default function ChatPane({
                 className="chat-model-select"
                 aria-label="当前对话模型"
                 placeholder="选择模型"
-                value={model.activeModelId || null}
-                data={buildChatModelOptions(model.models)}
+                value={fixedModelId || null}
+                data={buildChatModelOptions(model.models, model.routing.fixedModelIds)}
                 onChange={(value) => void model.handleActiveModelChange(value || "")}
                 allowDeselect={false}
                 size="xs"
