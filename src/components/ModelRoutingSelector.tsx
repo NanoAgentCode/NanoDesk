@@ -1,6 +1,6 @@
 import { Select } from "@mantine/core";
 import type { UseModelRoutingReturn } from "../hooks/useModelRouting";
-import { isRoutingStrategy, ROUTING_MODE_OPTIONS } from "../lib/modelRouting";
+import { isRoutingStrategy, ROUTING_MODE_OPTIONS, SMART_ROUTING_VALUE } from "../lib/modelRouting";
 
 interface ModelRoutingSelectorProps {
   routing: UseModelRoutingReturn;
@@ -17,7 +17,9 @@ export default function ModelRoutingSelector({ routing, disabled }: ModelRouting
         ...option,
         disabled: option.value === "manual"
           ? routing.fixedModelIds.length === 0
-          : isRoutingStrategy(option.value) && !routing.isStrategyAvailable(option.value)
+          : option.value === SMART_ROUTING_VALUE
+            ? !routing.smartAvailable
+            : isRoutingStrategy(option.value) && !routing.isStrategyAvailable(option.value)
       }))}
       onChange={routing.setMode}
       allowDeselect={false}

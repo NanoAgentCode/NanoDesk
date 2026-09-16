@@ -4,6 +4,9 @@ import { isChatModel } from "./modelCapabilities";
 export type RoutingStrategy = "balanced" | "cost" | "quality" | "speed";
 export type RoutingTask = "general" | "coding" | "reasoning" | "writing" | "translation" | "summary" | "vision";
 export type RoutingModelAssignments = Record<RoutingStrategy, string | null>;
+export type RoutingMode = "manual" | "smart" | RoutingStrategy;
+
+export const SMART_ROUTING_VALUE = "smart";
 
 export const DEFAULT_MODEL_ROUTING_PROFILE: ModelRoutingProfile = {
   routing_group: "默认组",
@@ -29,10 +32,10 @@ const ROUTING_TASK_LABELS = Object.fromEntries(
 ) as Record<RoutingTask, string>;
 
 const STRATEGY_DEFINITIONS: Record<RoutingStrategy, { label: string }> = {
-  balanced: { label: "均衡" },
-  quality: { label: "质量" },
-  speed: { label: "速度" },
-  cost: { label: "成本" }
+  balanced: { label: "均衡模式" },
+  quality: { label: "质量优先" },
+  speed: { label: "速度优先" },
+  cost: { label: "成本优先" }
 };
 
 export const ROUTING_STRATEGIES = Object.keys(STRATEGY_DEFINITIONS) as RoutingStrategy[];
@@ -42,8 +45,9 @@ export const ROUTING_STRATEGY_OPTIONS = ROUTING_STRATEGIES.map((value) => ({
   label: `智能·${STRATEGY_DEFINITIONS[value].label}`
 }));
 
-export const ROUTING_MODE_OPTIONS = [
+export const ROUTING_MODE_OPTIONS: Array<{ value: RoutingMode; label: string }> = [
   { value: "manual", label: "固定模式" },
+  { value: SMART_ROUTING_VALUE, label: "智能模式" },
   ...ROUTING_STRATEGY_OPTIONS
 ];
 
@@ -51,7 +55,11 @@ export function isRoutingStrategy(value: string | null): value is RoutingStrateg
   return value != null && value in STRATEGY_DEFINITIONS;
 }
 
-export function getRoutingModeLabel(mode: "manual" | RoutingStrategy): string {
+export function isRoutingModeSelection(value: string | null): value is "smart" | RoutingStrategy {
+  return value === SMART_ROUTING_VALUE || isRoutingStrategy(value);
+}
+
+export function getRoutingModeLabel(mode: RoutingMode): string {
   return ROUTING_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "固定模式";
 }
 
@@ -144,5 +152,56 @@ export function routeModel(
     modelId: assigned.id, modelName: assigned.model, group: assigned.routing_group,
     task, strategy, fallback: false,
     reason: `识别为“${ROUTING_TASK_LABELS[task]}”任务，按“${STRATEGY_DEFINITIONS[strategy].label}”策略使用 ${assigned.model}`
+  };
+}
+
+// 智能模式：按任务类型在 质量/成本/均衡/速度 四个维度间自动选择策略
+export const SMART_TASK_STRATEGY: Record<RoutingTask, RoutingStrategy> = {
+  coding: "quality",
+  reasoning: "quality",
+  writing: "quality",
+  vision: "quality",
+  translation: "cost",
+  summary: "speed",
+  general: "balanced"
+};
+
+export function resolveSmartStrategy(task: RoutingTask): RoutingStrategy {
+  return SMART_TASK_STRATEGY[task];
+}
+
+export function routeSmartModel(
+  models: ModelConfig[],
+  content: string,
+  fallbackModelId: string,
+  hasImages = false,
+  assignments: RoutingModelAssignments
+): ModelRoutingDecision | null {
+  const chatModels = models.filter(isChatModel);
+  const fallback = chatModels.find((model) => model.id === fallbackModelId) ?? chatModels[0];
+  if (!fallback) return null;
+
+  const task = classifyRoutingTask(content, hasImages);
+  const preferred = resolveSmartStrategy(task);
+  const taskLabel = ROUTING_TASK_LABELS[task];
+  const candidates = [preferred, ...ROUTING_STRATEGIES.filter((strategy) => strategy !== preferred)];
+  for (const strategy of candidates) {
+    const modelId = assignments[strategy];
+    const candidate = modelId ? chatModels.find((model) => model.id === modelId) : undefined;
+    if (!candidate) continue;
+    if (candidate.routing_tasks.length > 0 && !candidate.routing_tasks.includes(task)) continue;
+    const strategyLabel = STRATEGY_DEFINITIONS[strategy].label;
+    return {
+      modelId: candidate.id, modelName: candidate.model, group: candidate.routing_group,
+      task, strategy, fallback: false,
+      reason: strategy === preferred
+        ? `智能模式：识别为“${taskLabel}”任务，自动选择“${strategyLabel}”策略使用 ${candidate.model}`
+        : `智能模式：识别为“${taskLabel}”任务，“${STRATEGY_DEFINITIONS[preferred].label}”策略无可用模型，改用“${strategyLabel}”策略 ${candidate.model}`
+    };
+  }
+  return {
+    modelId: fallback.id, modelName: fallback.model, group: fallback.routing_group,
+    task, strategy: preferred, fallback: true,
+    reason: `智能模式：识别为“${taskLabel}”任务，四维策略均无可用模型，使用兜底模型 ${fallback.model}`
   };
 }

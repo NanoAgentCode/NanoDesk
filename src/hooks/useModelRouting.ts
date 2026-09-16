@@ -2,10 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_STORAGE_PREFIX } from "../config/brand";
 import {
   createDefaultRoutingAssignments,
+  isRoutingModeSelection,
   isRoutingStrategy,
   normalizeRoutingAssignments,
+  ROUTING_STRATEGIES,
   routeModel,
+  routeSmartModel,
+  SMART_ROUTING_VALUE,
   type ModelRoutingDecision,
+  type RoutingMode,
   type RoutingModelAssignments,
   type RoutingStrategy
 } from "../lib/modelRouting";
@@ -20,11 +25,12 @@ const FALLBACK_MODEL_KEY = `${APP_STORAGE_PREFIX}-fallback-model`;
 
 export interface UseModelRoutingReturn {
   enabled: boolean;
-  strategy: RoutingStrategy;
-  mode: "manual" | RoutingStrategy;
+  strategy: RoutingStrategy | "smart";
+  mode: RoutingMode;
   assignments: RoutingModelAssignments;
   fixedModelIds: string[];
   fallbackModelId: string;
+  smartAvailable: boolean;
   isStrategyAvailable: (strategy: RoutingStrategy) => boolean;
   setMode: (mode: string | null) => void;
   setStrategyModel: (strategy: RoutingStrategy, modelId: string | null) => void;
@@ -67,9 +73,9 @@ function readStoredAssignments(): StoredRoutingAssignments | null {
 
 export function useModelRouting(models: ModelConfig[], currentModelId: string): UseModelRoutingReturn {
   const [enabled, setEnabled] = useState(() => localStorage.getItem(ROUTING_ENABLED_KEY) === "true");
-  const [strategy, setStrategy] = useState<RoutingStrategy>(() => {
+  const [strategy, setStrategy] = useState<RoutingStrategy | "smart">(() => {
     const stored = localStorage.getItem(ROUTING_STRATEGY_KEY);
-    return isRoutingStrategy(stored) ? stored : "balanced";
+    return isRoutingModeSelection(stored) ? stored : "balanced";
   });
   const [storedAssignments, setStoredAssignments] = useState<StoredRoutingAssignments | null>(readStoredAssignments);
   const [storedFixedModelIds, setStoredFixedModelIds] = useState(() => readStoredModelIds(FIXED_MODELS_KEY));
@@ -93,7 +99,13 @@ export function useModelRouting(models: ModelConfig[], currentModelId: string): 
     (value: RoutingStrategy) => Boolean(assignments[value]),
     [assignments]
   );
-  const effectiveEnabled = enabled && isStrategyAvailable(strategy);
+  const smartAvailable = useMemo(
+    () => ROUTING_STRATEGIES.some((value) => Boolean(assignments[value])),
+    [assignments]
+  );
+  const effectiveEnabled = enabled && (strategy === SMART_ROUTING_VALUE
+    ? smartAvailable
+    : isStrategyAvailable(strategy));
 
   useEffect(() => {
     if (storedAssignments || models.filter(isChatModel).length === 0) return;
@@ -115,14 +127,16 @@ export function useModelRouting(models: ModelConfig[], currentModelId: string): 
   }, [fallbackModelId, storedFallbackModelId]);
 
   const setMode = useCallback((mode: string | null) => {
-    const nextEnabled = isRoutingStrategy(mode) && isStrategyAvailable(mode);
-    setEnabled(nextEnabled);
-    localStorage.setItem(ROUTING_ENABLED_KEY, String(nextEnabled));
-    if (nextEnabled) {
+    const available = mode === SMART_ROUTING_VALUE
+      ? smartAvailable
+      : isRoutingStrategy(mode) && isStrategyAvailable(mode);
+    setEnabled(available);
+    localStorage.setItem(ROUTING_ENABLED_KEY, String(available));
+    if (available && isRoutingModeSelection(mode)) {
       setStrategy(mode);
       localStorage.setItem(ROUTING_STRATEGY_KEY, mode);
     }
-  }, [isStrategyAvailable]);
+  }, [isStrategyAvailable, smartAvailable]);
 
   const setStrategyModel = useCallback((value: RoutingStrategy, modelId: string | null) => {
     setStoredAssignments((current) => {
@@ -148,14 +162,16 @@ export function useModelRouting(models: ModelConfig[], currentModelId: string): 
   }, [models]);
 
   const resolve = useCallback(
-    (content: string, hasImages = false) => routeModel(
-      models,
-      content,
-      strategy,
-      fallbackModelId || currentModelId,
-      hasImages,
-      assignments[strategy]
-    ),
+    (content: string, hasImages = false) => strategy === SMART_ROUTING_VALUE
+      ? routeSmartModel(models, content, fallbackModelId || currentModelId, hasImages, assignments)
+      : routeModel(
+        models,
+        content,
+        strategy,
+        fallbackModelId || currentModelId,
+        hasImages,
+        assignments[strategy]
+      ),
     [assignments, currentModelId, fallbackModelId, models, strategy]
   );
 
@@ -166,6 +182,7 @@ export function useModelRouting(models: ModelConfig[], currentModelId: string): 
     assignments,
     fixedModelIds,
     fallbackModelId,
+    smartAvailable,
     isStrategyAvailable,
     setMode,
     setStrategyModel,

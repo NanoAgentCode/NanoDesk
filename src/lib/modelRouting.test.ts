@@ -4,10 +4,13 @@ import {
   classifyRoutingTask,
   createDefaultRoutingAssignments,
   getRoutingModeLabel,
+  isRoutingModeSelection,
   isRoutingStrategy,
   normalizeRoutingAssignments,
   normalizeRoutingProfile,
-  routeModel
+  routeModel,
+  routeSmartModel,
+  SMART_ROUTING_VALUE
 } from "./modelRouting";
 
 function model(id: string, overrides: Partial<ModelConfig> = {}): ModelConfig {
@@ -30,8 +33,12 @@ describe("smart model routing", () => {
     expect(isRoutingStrategy("quality")).toBe(true);
     expect(isRoutingStrategy("manual")).toBe(false);
     expect(isRoutingStrategy(null)).toBe(false);
+    expect(isRoutingModeSelection(SMART_ROUTING_VALUE)).toBe(true);
+    expect(isRoutingModeSelection("balanced")).toBe(true);
+    expect(isRoutingModeSelection("manual")).toBe(false);
     expect(getRoutingModeLabel("manual")).toBe("固定模式");
-    expect(getRoutingModeLabel("cost")).toBe("智能·成本");
+    expect(getRoutingModeLabel(SMART_ROUTING_VALUE)).toBe("智能模式");
+    expect(getRoutingModeLabel("cost")).toBe("智能·成本优先");
   });
 
   it("classifies common task content and image requests", () => {
@@ -79,6 +86,48 @@ describe("smart model routing", () => {
     expect(decision?.reason).toContain("兜底模型");
     const direct = routeModel(models, "帮我润色这段文案", "balanced", "fallback", false, "writer");
     expect(direct?.modelId).toBe("writer");
+    expect(direct?.fallback).toBe(false);
+  });
+
+  it("smart mode picks a strategy per task across the four dimensions", () => {
+    const models = [
+      model("base"),
+      model("premium", { routing_tasks: [] }),
+      model("cheap", { routing_tasks: [] }),
+      model("snappy", { routing_tasks: [] }),
+      model("allround", { routing_tasks: [] })
+    ];
+    const assignments = {
+      balanced: "allround", quality: "premium", speed: "snappy", cost: "cheap"
+    };
+    // 编码任务 → 质量优先
+    expect(routeSmartModel(models, "帮我修复这段代码", "base", false, assignments)?.modelId).toBe("premium");
+    // 总结任务 → 速度优先
+    expect(routeSmartModel(models, "总结一下这篇文档", "base", false, assignments)?.modelId).toBe("snappy");
+    // 翻译任务 → 成本优先
+    expect(routeSmartModel(models, "把这段话翻译成英文", "base", false, assignments)?.modelId).toBe("cheap");
+    // 通用任务 → 均衡
+    expect(routeSmartModel(models, "你好", "base", false, assignments)?.modelId).toBe("allround");
+    expect(routeSmartModel(models, "你好", "base", false, assignments)?.reason).toContain("智能模式");
+    // 图片理解 → 质量优先
+    expect(routeSmartModel(models, "这张图里有什么", "base", true, assignments)?.strategy).toBe("quality");
+  });
+
+  it("smart mode falls through to other strategies before the fallback model", () => {
+    const models = [
+      model("base"),
+      model("writer", { routing_tasks: ["writing"] })
+    ];
+    // 质量策略指定的模型不覆盖总结任务，改用其余策略 → 均衡策略未指定 → 兜底
+    const assignments = { balanced: null, quality: "writer", speed: null, cost: null };
+    const decision = routeSmartModel(models, "总结一下这段内容", "base", false, assignments);
+    expect(decision?.modelId).toBe("base");
+    expect(decision?.fallback).toBe(true);
+    expect(decision?.reason).toContain("兜底模型");
+    // 写作任务命中质量策略的模型
+    const direct = routeSmartModel(models, "帮我润色这段文案", "base", false, assignments);
+    expect(direct?.modelId).toBe("writer");
+    expect(direct?.strategy).toBe("quality");
     expect(direct?.fallback).toBe(false);
   });
 });
