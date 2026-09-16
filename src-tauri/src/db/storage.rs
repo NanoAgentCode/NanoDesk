@@ -7,7 +7,12 @@ use rusqlite::{params, Connection, OptionalExtension};
 use super::Database;
 use crate::error::{AppError, AppResult};
 
-const CONFIG_TABLES: &[&str] = &["model_configs", "mcp_servers", "ops_servers"];
+const CONFIG_TABLES: &[&str] = &[
+    "model_configs",
+    "model_suppliers",
+    "mcp_servers",
+    "ops_servers",
+];
 const CONVERSATION_TABLES: &[&str] = &[
     // model_configs is an internal reference mirror for cross-database foreign keys.
     "model_configs",
@@ -353,6 +358,7 @@ mod tests {
         assert!(paths.project_index.exists());
         assert!(!base_path.exists());
         assert!(table_exists(&db.config_conn, "model_configs"));
+        assert!(table_exists(&db.config_conn, "model_suppliers"));
         assert!(!table_exists(&db.config_conn, "conversations"));
         assert!(table_exists(&db.conn, "conversations"));
         assert!(!table_exists(&db.conn, "memories"));
