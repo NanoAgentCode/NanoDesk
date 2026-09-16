@@ -141,25 +141,27 @@ export function useModelRouting(models: ModelConfig[], currentModelId: string): 
   const setStrategyModel = useCallback((value: RoutingStrategy, modelId: string | null) => {
     setStoredAssignments((current) => {
       const base = current ?? createDefaultRoutingAssignments(models);
-      const next = normalizeRoutingAssignments({ ...base, [value]: modelId }, models);
+      // The selected model may have been created moments ago and not exist in this render's
+      // `models` closure yet. Store the requested id now; the derived assignments normalize it
+      // against the freshly rendered model list.
+      const next = { ...base, [value]: modelId };
       localStorage.setItem(ROUTING_ASSIGNMENTS_KEY, JSON.stringify(next));
       return next;
     });
   }, [models]);
 
   const setFixedModels = useCallback((modelIds: string[]) => {
-    const validIds = new Set(models.filter(isChatModel).map((model) => model.id));
-    const next = [...new Set(modelIds)].filter((id) => validIds.has(id));
+    const next = [...new Set(modelIds)];
     setStoredFixedModelIds(next);
     localStorage.setItem(FIXED_MODELS_KEY, JSON.stringify(next));
-  }, [models]);
+  }, []);
 
   const setFallbackModel = useCallback((modelId: string | null) => {
-    const next = modelId && models.some((model) => model.id === modelId && isChatModel(model)) ? modelId : "";
+    const next = modelId || "";
     setStoredFallbackModelId(next);
     if (next) localStorage.setItem(FALLBACK_MODEL_KEY, next);
     else localStorage.removeItem(FALLBACK_MODEL_KEY);
-  }, [models]);
+  }, []);
 
   const resolve = useCallback(
     (content: string, hasImages = false) => strategy === SMART_ROUTING_VALUE

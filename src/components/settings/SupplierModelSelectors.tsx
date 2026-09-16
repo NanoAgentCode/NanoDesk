@@ -14,6 +14,21 @@ interface BaseProps {
 const key = (supplierId: string, modelId: string) => `${supplierId}\u0000${modelId}`;
 const split = (value: string) => { const at = value.indexOf("\u0000"); return [value.slice(0, at), value.slice(at + 1)] as const; };
 
+export function resolveSupplierModelInfo(
+  supplierId: string,
+  modelId: string,
+  suppliers: ModelSupplier[],
+  discovered: Record<string, AvailableModelInfo[]>,
+  models: ModelConfig[]
+): AvailableModelInfo | undefined {
+  const live = discovered[supplierId]?.find((item) => item.id === modelId);
+  if (live) return live;
+  const supplier = suppliers.find((item) => item.id === supplierId);
+  if (!supplier) return undefined;
+  const saved = models.find((item) => item.provider === supplier.provider && item.base_url === supplier.base_url && item.api_key === supplier.api_key && item.model === modelId);
+  return saved ? { id: saved.model, context_window: saved.context_window, suggested_kind: saved.model_kind } : undefined;
+}
+
 function useOptions(props: BaseProps) {
   useEffect(() => { props.suppliers.forEach((s) => { if (!props.discovered[s.id]) void props.fetchModels(s.id).catch(() => undefined); }); }, [props.suppliers, props.discovered, props.fetchModels]);
   return useMemo(() => props.suppliers.map((supplier) => {
@@ -49,7 +64,7 @@ export function SupplierModelSelect(props: BaseProps & { value: string | null; o
     if (!raw) return props.onChange(null);
     setPendingValue(raw);
     try {
-      const [supplierId, modelId] = split(raw); const info = props.discovered[supplierId]?.find((item) => item.id === modelId); if (info) props.onChange((await props.ensureModel(supplierId, info)).id);
+      const [supplierId, modelId] = split(raw); const info = resolveSupplierModelInfo(supplierId, modelId, props.suppliers, props.discovered, props.models); if (info) props.onChange((await props.ensureModel(supplierId, info)).id);
     } finally {
       setPendingValue(undefined);
     }
@@ -62,7 +77,7 @@ export function SupplierModelMultiSelect(props: BaseProps & { value: string[]; o
   return <MultiSelect className="supplier-model-multiselect" aria-label={`${props.label}模型`} placeholder="选择供应商 / 模型" data={options} value={pendingValues ?? visible} searchable clearable onChange={async (rawValues) => {
     setPendingValues(rawValues);
     try {
-      const ids = await Promise.all(rawValues.map(async (raw) => { const [supplierId, modelId] = split(raw); const info = props.discovered[supplierId]?.find((item) => item.id === modelId); return info ? (await props.ensureModel(supplierId, info)).id : ""; }));
+      const ids = await Promise.all(rawValues.map(async (raw) => { const [supplierId, modelId] = split(raw); const info = resolveSupplierModelInfo(supplierId, modelId, props.suppliers, props.discovered, props.models); return info ? (await props.ensureModel(supplierId, info)).id : ""; }));
       props.onChange(ids.filter(Boolean));
     } finally {
       setPendingValues(null);
