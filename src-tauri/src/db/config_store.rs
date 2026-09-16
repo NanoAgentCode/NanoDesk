@@ -62,11 +62,42 @@ impl Database {
     }
 
     pub fn delete_model_supplier(&self, id: &str) -> AppResult<()> {
-        ensure_affected(
-            self.config_conn
-                .execute("DELETE FROM model_suppliers WHERE id=?1", params![id])?,
-            "model supplier not found",
-        )
+        self.config_conn.execute_batch("BEGIN IMMEDIATE;")?;
+        let result = (|| -> AppResult<()> {
+            let (provider, base_url, api_key) = self
+                .config_conn
+                .query_row(
+                    "SELECT provider, base_url, api_key FROM model_suppliers WHERE id=?1",
+                    params![id],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    },
+                )
+                .optional()?
+                .ok_or_else(|| AppError::Message("model supplier not found".to_string()))?;
+
+            self.config_conn.execute(
+                "DELETE FROM model_configs WHERE provider=?1 AND base_url=?2 AND api_key=?3",
+                params![provider, base_url, api_key],
+            )?;
+            ensure_affected(
+                self.config_conn
+                    .execute("DELETE FROM model_suppliers WHERE id=?1", params![id])?,
+                "model supplier not found",
+            )?;
+            self.config_conn.execute_batch("COMMIT;")?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = self.config_conn.execute_batch("ROLLBACK;");
+        }
+        result?;
+        self.sync_model_config_references()?;
+        Ok(())
     }
     pub fn list_model_configs(&self) -> AppResult<Vec<ModelConfig>> {
         let mut stmt = self.config_conn.prepare(

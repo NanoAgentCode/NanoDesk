@@ -203,7 +203,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::models::{ConversationDraft, ModelConfigDraft};
+    use crate::models::{ConversationDraft, MessageDraft, ModelConfigDraft, ModelSupplierDraft};
     use rusqlite::Connection;
 
     fn temp_database_path(label: &str) -> PathBuf {
@@ -351,5 +351,60 @@ mod tests {
             )
             .expect("conversation reference should load");
         assert_eq!(reference_after_delete, None);
+    }
+
+    #[test]
+    fn deleting_supplier_cascades_models_but_preserves_chat_history() {
+        let db = Database::open(PathBuf::from(":memory:")).expect("database should open");
+        let supplier = db
+            .save_model_supplier(ModelSupplierDraft {
+                id: Some("supplier-1".to_string()),
+                name: "Primary".to_string(),
+                provider: "openai-compatible".to_string(),
+                base_url: "http://localhost".to_string(),
+                api_key: "test-secret".to_string(),
+            })
+            .expect("supplier should save");
+        db.save_model_config(model_draft("model-1", "Primary model"))
+            .expect("associated model should save");
+        let mut unrelated = model_draft("model-2", "Unrelated model");
+        unrelated.base_url = "http://other-host".to_string();
+        db.save_model_config(unrelated)
+            .expect("unrelated model should save");
+
+        let conversation = db
+            .create_conversation(ConversationDraft {
+                title: Some("Preserved chat".to_string()),
+                model_config_id: Some("model-1".to_string()),
+                project_path: None,
+            })
+            .expect("conversation should save");
+        db.append_message(MessageDraft {
+            conversation_id: conversation.id.clone(),
+            role: "user".to_string(),
+            content: "keep this message".to_string(),
+            metadata: None,
+        })
+        .expect("message should save");
+
+        db.delete_model_supplier(&supplier.id)
+            .expect("supplier should delete");
+
+        assert!(db.list_model_suppliers().unwrap().is_empty());
+        let remaining_models = db.list_model_configs().unwrap();
+        assert_eq!(remaining_models.len(), 1);
+        assert_eq!(remaining_models[0].id, "model-2");
+        let model_reference: Option<String> = db
+            .conn
+            .query_row(
+                "SELECT model_config_id FROM conversations WHERE id=?1",
+                params![conversation.id],
+                |row| row.get(0),
+            )
+            .expect("conversation should remain");
+        assert_eq!(model_reference, None);
+        let messages = db.list_messages(&conversation.id).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].content, "keep this message");
     }
 }

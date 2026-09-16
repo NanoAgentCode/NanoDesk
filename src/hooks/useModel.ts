@@ -258,10 +258,17 @@ export function useModel(
     if (!supplierDraft.id) return;
     if (!(await confirmAction(`确定要删除供应商「${supplierDraft.name}」吗？`))) return;
     try {
-      await deleteModelSupplier(supplierDraft.id);
+      const deletedId = supplierDraft.id;
+      await deleteModelSupplier(deletedId);
       setSuppliers(await listModelSuppliers());
+      setSupplierModels((current) => {
+        const next = { ...current };
+        delete next[deletedId];
+        return next;
+      });
+      await refreshModels();
       setSupplierDraft({ name: "OpenAI", provider: "openai-compatible", base_url: "https://api.openai.com/v1", api_key: "" });
-      setNotice("供应商已删除");
+      setNotice("供应商及关联模型配置已删除");
     } catch (error) { setNotice(`删除供应商失败: ${String(error)}`); }
   }
 
