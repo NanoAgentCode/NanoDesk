@@ -2,6 +2,7 @@ import type { ModelConfig, ModelRoutingProfile } from "../types";
 
 export type RoutingStrategy = "balanced" | "cost" | "quality" | "speed";
 export type RoutingTask = "general" | "coding" | "reasoning" | "writing" | "translation" | "summary" | "vision";
+export type RoutingModelAssignments = Record<RoutingStrategy, string[]>;
 
 export const DEFAULT_MODEL_ROUTING_PROFILE: ModelRoutingProfile = {
   routing_group: "默认组",
@@ -36,12 +37,16 @@ const STRATEGY_DEFINITIONS: Record<RoutingStrategy, {
   cost: { label: "成本", weights: [0.15, 0.15, 0.7] }
 };
 
+export const ROUTING_STRATEGIES = Object.keys(STRATEGY_DEFINITIONS) as RoutingStrategy[];
+
+export const ROUTING_STRATEGY_OPTIONS = ROUTING_STRATEGIES.map((value) => ({
+  value,
+  label: `智能·${STRATEGY_DEFINITIONS[value].label}`
+}));
+
 export const ROUTING_MODE_OPTIONS = [
-  { value: "manual", label: "手动选模" },
-  ...Object.entries(STRATEGY_DEFINITIONS).map(([value, definition]) => ({
-    value,
-    label: `智能·${definition.label}`
-  }))
+  { value: "manual", label: "固定模式" },
+  ...ROUTING_STRATEGY_OPTIONS
 ];
 
 export function isRoutingStrategy(value: string | null): value is RoutingStrategy {
@@ -49,7 +54,25 @@ export function isRoutingStrategy(value: string | null): value is RoutingStrateg
 }
 
 export function getRoutingModeLabel(mode: "manual" | RoutingStrategy): string {
-  return ROUTING_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "手动选模";
+  return ROUTING_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "固定模式";
+}
+
+export function createDefaultRoutingAssignments(models: ModelConfig[]): RoutingModelAssignments {
+  const modelIds = models
+    .filter((model) => model.id !== "embedding-config" && model.routing_enabled)
+    .map((model) => model.id);
+  return Object.fromEntries(ROUTING_STRATEGIES.map((strategy) => [strategy, [...modelIds]])) as RoutingModelAssignments;
+}
+
+export function normalizeRoutingAssignments(
+  assignments: Partial<Record<RoutingStrategy, string[]>>,
+  models: ModelConfig[]
+): RoutingModelAssignments {
+  const validIds = new Set(models.filter((model) => model.id !== "embedding-config").map((model) => model.id));
+  return Object.fromEntries(ROUTING_STRATEGIES.map((strategy) => [
+    strategy,
+    [...new Set(assignments[strategy] ?? [])].filter((id) => validIds.has(id))
+  ])) as RoutingModelAssignments;
 }
 
 export function normalizeRoutingProfile(profile: Partial<ModelRoutingProfile>): ModelRoutingProfile {
@@ -101,21 +124,24 @@ export function routeModel(
   content: string,
   strategy: RoutingStrategy,
   fallbackModelId: string,
-  hasImages = false
+  hasImages = false,
+  assignedModelIds?: string[]
 ): ModelRoutingDecision | null {
   const chatModels = models.filter((model) => model.id !== "embedding-config");
   const fallback = chatModels.find((model) => model.id === fallbackModelId) ?? chatModels[0];
   if (!fallback) return null;
 
   const task = classifyRoutingTask(content, hasImages);
-  const candidates = chatModels.filter((model) =>
-    model.routing_enabled && (model.routing_tasks.length === 0 || model.routing_tasks.includes(task))
-  );
+  const assignedIds = assignedModelIds ? new Set(assignedModelIds) : null;
+  const candidates = chatModels.filter((model) => {
+    const participates = assignedIds ? assignedIds.has(model.id) : model.routing_enabled;
+    return participates && (model.routing_tasks.length === 0 || model.routing_tasks.includes(task));
+  });
   if (candidates.length === 0) {
     return {
       modelId: fallback.id, modelName: fallback.model, group: fallback.routing_group,
       task, strategy, fallback: true,
-      reason: `没有适用于“${ROUTING_TASK_LABELS[task]}”的路由候选，回退到手动模型 ${fallback.model}`
+      reason: `没有适用于“${ROUTING_TASK_LABELS[task]}”的路由候选，回退到固定模型 ${fallback.model}`
     };
   }
 

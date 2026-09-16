@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ModelConfig } from "../types";
-import { classifyRoutingTask, getRoutingModeLabel, isRoutingStrategy, normalizeRoutingProfile, routeModel } from "./modelRouting";
+import {
+  classifyRoutingTask,
+  createDefaultRoutingAssignments,
+  getRoutingModeLabel,
+  isRoutingStrategy,
+  normalizeRoutingAssignments,
+  normalizeRoutingProfile,
+  routeModel
+} from "./modelRouting";
 
 function model(id: string, overrides: Partial<ModelConfig> = {}): ModelConfig {
   return {
@@ -22,6 +30,7 @@ describe("smart model routing", () => {
     expect(isRoutingStrategy("quality")).toBe(true);
     expect(isRoutingStrategy("manual")).toBe(false);
     expect(isRoutingStrategy(null)).toBe(false);
+    expect(getRoutingModeLabel("manual")).toBe("固定模式");
     expect(getRoutingModeLabel("cost")).toBe("智能·成本");
   });
 
@@ -40,6 +49,23 @@ describe("smart model routing", () => {
     expect(routeModel(models, "实现一个函数", "quality", "fast")?.modelId).toBe("premium");
     expect(routeModel(models, "实现一个函数", "speed", "premium")?.modelId).toBe("fast");
     expect(routeModel(models, "实现一个函数", "cost", "premium")?.modelId).toBe("cheap");
+  });
+
+  it("manages an independent model pool for every routing strategy", () => {
+    const models = [
+      model("premium", { routing_quality: 5 }),
+      model("fast", { routing_speed: 5 }),
+      model("manual", { routing_enabled: false })
+    ];
+    expect(createDefaultRoutingAssignments(models)).toEqual({
+      balanced: ["premium", "fast"], quality: ["premium", "fast"],
+      speed: ["premium", "fast"], cost: ["premium", "fast"]
+    });
+    expect(normalizeRoutingAssignments({ quality: ["premium", "missing", "premium"] }, models)).toEqual({
+      balanced: [], quality: ["premium"], speed: [], cost: []
+    });
+    expect(routeModel(models, "分析这个问题", "quality", "fast", false, ["premium"])?.modelId).toBe("premium");
+    expect(routeModel(models, "分析这个问题", "quality", "fast", false, [])?.fallback).toBe(true);
   });
 
   it("excludes disabled or incompatible candidates and falls back deterministically", () => {

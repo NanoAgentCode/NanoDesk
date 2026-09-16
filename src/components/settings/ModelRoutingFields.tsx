@@ -1,4 +1,4 @@
-import { MultiSelect, NumberInput, Switch, TextInput } from "@mantine/core";
+import { MultiSelect, NumberInput, TextInput } from "@mantine/core";
 import { ROUTING_TASK_OPTIONS } from "../../lib/modelRouting";
 import type { ModelConfigDraft } from "../../types";
 
@@ -22,14 +22,6 @@ export default function ModelRoutingFields({ draft, onChange }: ModelRoutingFiel
         value={draft.routing_group}
         onChange={(event) => update({ routing_group: event.currentTarget.value })}
         placeholder="默认组"
-      />
-      <Switch
-        label="参与智能路由"
-        description={draft.routing_enabled ? "该模型可被自动选择" : "该模型仅供手动选择"}
-        size="sm"
-        color="nanoBlue"
-        checked={draft.routing_enabled}
-        onChange={(event) => update({ routing_enabled: event.currentTarget.checked })}
       />
       <MultiSelect
         className="model-field--wide"
