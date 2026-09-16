@@ -22,7 +22,7 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
   )?.id || null;
 
   return (
-    <div className="settings-tab-content">
+    <div className="settings-tab-content" style={{ display: "flex", flexDirection: "column" }}>
       <div className="model-header-row">
         <div>
           <h3>模型路由</h3>
@@ -31,7 +31,7 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
         <ModelRoutingSelector routing={model.routing} disabled={chatModels.length === 0} />
       </div>
 
-      <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md" mb="md">
+      <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md" mb="md" style={{ order: 2 }}>
         <Paper withBorder radius="md" p="md">
           <Text fw={600} mb={4}>固定模型列表</Text>
           <Text size="xs" c={model.routing.fixedModelIds.length > 0 ? "dimmed" : "red"} mb="sm">
@@ -104,7 +104,7 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
         </Paper>
       </SimpleGrid>
 
-      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="lg">
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="lg" style={{ order: 1 }}>
         {ROUTING_STRATEGY_OPTIONS.map((option) => {
           const strategy = option.value as RoutingStrategy;
           const selectedModels = model.routing.assignments[strategy];

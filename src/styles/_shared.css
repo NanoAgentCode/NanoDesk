@@ -1029,6 +1029,23 @@
   grid-column: 1 / -1;
 }
 
+/* Distinguish selected routing models while keeping text and remove icons legible. */
+.supplier-model-multiselect .mantine-Pill-root {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.supplier-model-multiselect .mantine-Pill-root:nth-of-type(6n + 1) { background: #1971c2; }
+.supplier-model-multiselect .mantine-Pill-root:nth-of-type(6n + 2) { background: #6741d9; }
+.supplier-model-multiselect .mantine-Pill-root:nth-of-type(6n + 3) { background: #087f5b; }
+.supplier-model-multiselect .mantine-Pill-root:nth-of-type(6n + 4) { background: #c2410c; }
+.supplier-model-multiselect .mantine-Pill-root:nth-of-type(6n + 5) { background: #9c2b72; }
+.supplier-model-multiselect .mantine-Pill-root:nth-of-type(6n) { background: #0b7285; }
+
+.supplier-model-multiselect .mantine-Pill-remove {
+  color: inherit;
+}
+
 .model-parameters-heading {
   display: flex;
   align-items: center;

@@ -37,7 +37,7 @@ export function SupplierModelSelect(props: BaseProps & { value: string | null; o
 export function SupplierModelMultiSelect(props: BaseProps & { value: string[]; onChange: (ids: string[]) => void }) {
   const options = useOptions(props);
   const visible = props.value.map((id) => selectedKey(id, props)).filter((value): value is string => Boolean(value));
-  return <MultiSelect aria-label={`${props.label}模型`} placeholder="选择供应商 / 模型" data={options} value={visible} searchable clearable onChange={async (rawValues) => {
+  return <MultiSelect className="supplier-model-multiselect" aria-label={`${props.label}模型`} placeholder="选择供应商 / 模型" data={options} value={visible} searchable clearable onChange={async (rawValues) => {
     const ids = await Promise.all(rawValues.map(async (raw) => { const [supplierId, modelId] = split(raw); const info = props.discovered[supplierId]?.find((item) => item.id === modelId); return info ? (await props.ensureModel(supplierId, info)).id : ""; }));
     props.onChange(ids.filter(Boolean));
   }} />;
