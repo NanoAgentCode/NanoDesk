@@ -16,10 +16,24 @@ const split = (value: string) => { const at = value.indexOf("\u0000"); return [v
 
 function useOptions(props: BaseProps) {
   useEffect(() => { props.suppliers.forEach((s) => { if (!props.discovered[s.id]) void props.fetchModels(s.id).catch(() => undefined); }); }, [props.suppliers, props.discovered, props.fetchModels]);
-  return useMemo(() => props.suppliers.map((supplier) => ({
-    group: supplier.name,
-    items: (props.discovered[supplier.id] || []).filter((model) => props.kind === "chat" ? model.suggested_kind !== "embedding" : model.suggested_kind !== "chat").map((model) => ({ value: key(supplier.id, model.id), label: model.id }))
-  })).filter((group) => group.items.length > 0), [props.suppliers, props.discovered]);
+  return useMemo(() => props.suppliers.map((supplier) => {
+    const available = new Map((props.discovered[supplier.id] || []).map((model) => [model.id, model]));
+    for (const saved of props.models) {
+      if (saved.provider === supplier.provider && saved.base_url === supplier.base_url && saved.api_key === supplier.api_key && !available.has(saved.model)) {
+        available.set(saved.model, {
+          id: saved.model,
+          context_window: saved.context_window,
+          suggested_kind: saved.model_kind
+        });
+      }
+    }
+    return {
+      group: supplier.name,
+      items: [...available.values()]
+        .filter((model) => props.kind === "chat" ? model.suggested_kind !== "embedding" : model.suggested_kind !== "chat")
+        .map((model) => ({ value: key(supplier.id, model.id), label: model.id }))
+    };
+  }).filter((group) => group.items.length > 0), [props.suppliers, props.discovered, props.models, props.kind]);
 }
 function selectedKey(id: string, props: BaseProps) {
   const model = props.models.find((item) => item.id === id);

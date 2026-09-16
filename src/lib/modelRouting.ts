@@ -42,7 +42,7 @@ export const ROUTING_STRATEGIES = Object.keys(STRATEGY_DEFINITIONS) as RoutingSt
 
 export const ROUTING_STRATEGY_OPTIONS = ROUTING_STRATEGIES.map((value) => ({
   value,
-  label: `智能·${STRATEGY_DEFINITIONS[value].label}`
+  label: `${STRATEGY_DEFINITIONS[value].label}`
 }));
 
 export const ROUTING_MODE_OPTIONS: Array<{ value: RoutingMode; label: string }> = [

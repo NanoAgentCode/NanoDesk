@@ -38,7 +38,7 @@ describe("smart model routing", () => {
     expect(isRoutingModeSelection("manual")).toBe(false);
     expect(getRoutingModeLabel("manual")).toBe("固定模式");
     expect(getRoutingModeLabel(SMART_ROUTING_VALUE)).toBe("智能模式");
-    expect(getRoutingModeLabel("cost")).toBe("智能·成本优先");
+    expect(getRoutingModeLabel("cost")).toBe("成本优先");
   });
 
   it("classifies common task content and image requests", () => {

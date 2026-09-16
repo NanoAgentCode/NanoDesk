@@ -111,6 +111,23 @@
 .settings-tab-content .model-config-form { min-height: 0; overflow-y: auto; }
 .settings-tab-content .llm-config-grid .model-config-form { overflow: hidden; }
 .model-config-row-flex { display: flex; align-items: center; gap: 10px; }
+.supplier-config-row {
+  display: flex;
+  align-items: center;
+  padding-right: 8px;
+}
+.supplier-config-row .model-config-row { flex: 1; min-width: 0; }
+.supplier-config-row.active { background: var(--control-primary-soft-bg); }
+.supplier-model-tooltip-list {
+  max-height: 260px;
+  margin-top: 8px;
+  padding-right: 4px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
 .theme-section { display: grid; gap: 14px; margin-top: 6px; }
 .theme-switcher { display: flex; gap: 8px; }
 .theme-switcher button {
