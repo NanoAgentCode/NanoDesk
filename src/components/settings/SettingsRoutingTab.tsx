@@ -31,27 +31,27 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
         <ModelRoutingSelector routing={model.routing} disabled={chatModels.length === 0} />
       </div>
 
-      <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md" mb="md" style={{ order: 2 }}>
-        <Paper withBorder radius="md" p="md">
-          <Text fw={600} mb={4}>固定模型列表</Text>
-          <Text size="xs" c={model.routing.fixedModelIds.length > 0 ? "dimmed" : "red"} mb="sm">
-            {model.routing.fixedModelIds.length > 0
-              ? `固定模式可选择 ${model.routing.fixedModelIds.length} 个模型`
-              : "至少配置一个模型后，固定模式才可选择"}
-          </Text>
-          <SupplierModelMultiSelect
-            label="固定模式"
-            kind="chat"
-            suppliers={model.suppliers}
-            discovered={model.supplierModels}
-            fetchModels={model.fetchSupplierModels}
-            ensureModel={model.ensureSupplierModel}
-            models={chatModels}
-            value={model.routing.fixedModelIds}
-            onChange={model.routing.setFixedModels}
-          />
-        </Paper>
+      <Paper withBorder radius="md" p="md" mb="md" style={{ order: 2 }}>
+        <Text fw={600} mb={4}>固定模型列表</Text>
+        <Text size="xs" c={model.routing.fixedModelIds.length > 0 ? "dimmed" : "red"} mb="sm">
+          {model.routing.fixedModelIds.length > 0
+            ? `固定模式可选择 ${model.routing.fixedModelIds.length} 个模型`
+            : "至少配置一个模型后，固定模式才可选择"}
+        </Text>
+        <SupplierModelMultiSelect
+          label="固定模式"
+          kind="chat"
+          suppliers={model.suppliers}
+          discovered={model.supplierModels}
+          fetchModels={model.fetchSupplierModels}
+          ensureModel={model.ensureSupplierModel}
+          models={chatModels}
+          value={model.routing.fixedModelIds}
+          onChange={model.routing.setFixedModels}
+        />
+      </Paper>
 
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="md" style={{ order: 3 }}>
         <Paper withBorder radius="md" p="md">
           <Text fw={600} mb={4}>兜底模型</Text>
           <Text size="xs" c={model.routing.fallbackModelId ? "dimmed" : "red"} mb="sm">
