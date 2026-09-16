@@ -10,9 +10,5 @@
   "startupRegistryName": "NanoDesk",
   "cliRegistryPath": "Software\\NanoDesk\\CLI",
   "cliUninstallKey": "NanoDeskCLI",
-  "pluginNamespace": "nanodesk",
-  "legacyBundleIdentifier": "com.nanoagent.desktop",
-  "legacyStoragePrefix": "nano-agent",
-  "legacyProjectDataDirectory": ".nano-agent",
-  "repository": "NanoAgentCode/NanoDesk"
+  "pluginNamespace": "nanodesk"
 }

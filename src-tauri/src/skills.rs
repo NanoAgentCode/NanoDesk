@@ -9,10 +9,7 @@ use crate::error::{AppError, AppResult};
 const USER_AGENT: &str = concat!(
     env!("APP_DISPLAY_NAME"),
     "/",
-    env!("CARGO_PKG_VERSION"),
-    " (https://github.com/",
-    env!("APP_REPOSITORY"),
-    ")"
+    env!("CARGO_PKG_VERSION")
 );
 
 /// Maximum concurrent HTTP requests when fetching individual SKILL.md files.

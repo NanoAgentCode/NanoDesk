@@ -10,7 +10,6 @@ mod core;
 mod db;
 mod error;
 mod file_content;
-mod legacy_migration;
 mod llm;
 mod logging;
 mod mcp;
@@ -1819,15 +1818,7 @@ async fn read_chat_image_attachment(
     const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 
     let normalized = normalize_relative_path(&relative_path)?;
-    let legacy_uploads_directory =
-        format!("{}/uploads/images", brand::LEGACY_PROJECT_DATA_DIRECTORY);
-    if ![
-        brand::IMAGE_UPLOADS_DIRECTORY,
-        legacy_uploads_directory.as_str(),
-    ]
-    .iter()
-    .any(|directory| normalized.starts_with(&format!("{directory}/")))
-    {
+    if !normalized.starts_with(&format!("{}/", brand::IMAGE_UPLOADS_DIRECTORY)) {
         return Err(crate::error::AppError::Message(
             "只能预览对话图片附件".to_string(),
         ));
@@ -2157,8 +2148,6 @@ pub fn run() {
                 .map_err(|err| format!("failed to resolve app data directory: {err}"))?;
             std::fs::create_dir_all(&data_dir)
                 .map_err(|err| format!("failed to create app data directory: {err}"))?;
-            let migration = legacy_migration::migrate_legacy_app_data(&data_dir)
-                .map_err(|err| format!("failed to migrate legacy app data: {err}"))?;
             let log_dir = data_dir.join("logs");
             logging::init_system_logger(log_dir)
                 .map_err(|err| format!("failed to initialize system logger: {err}"))?;
@@ -2172,16 +2161,6 @@ pub fn run() {
                 "app data directory resolved",
                 serde_json::json!({ "path": data_dir.display().to_string() }),
             );
-            if migration.databases > 0 || migration.files > 0 {
-                logging::info(
-                    "migration",
-                    "legacy NanoAgent data imported",
-                    serde_json::json!({
-                        "databases": migration.databases,
-                        "files": migration.files
-                    }),
-                );
-            }
             let temp_dir = data_dir.join("temp");
             std::fs::create_dir_all(&temp_dir)
                 .map_err(|err| format!("failed to create temp directory: {err}"))?;

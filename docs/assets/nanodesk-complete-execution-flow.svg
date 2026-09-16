@@ -73,12 +73,6 @@
   <text class="node-text" x="552" y="268">创建数据目录与 temp</text>
   <text class="node-code" x="552" y="288">com.nanodesk.desktop</text>
 
-  <rect class="node rust" x="730" y="204" width="275" height="102"/>
-  <text class="node-title" x="868" y="236">旧数据兼容迁移</text>
-  <text class="node-text" x="868" y="260">NanoAgent 单库 / 分库 / 附件</text>
-  <text class="node-text" x="868" y="281">快照、无覆盖合并、幂等标记</text>
-  <text class="node-code" x="868" y="299">legacy_migration.rs</text>
-
   <rect class="node rust" x="1060" y="204" width="285" height="102"/>
   <text class="node-title" x="1202" y="236">初始化应用状态</text>
   <text class="node-text" x="1202" y="260">Database / Runtime / Observability</text>
@@ -94,7 +88,7 @@
   <text class="node-title" x="1758" y="248">进入桌面 UI</text>
   <text class="node-text" x="1758" y="273">React 挂载</text>
 
-  <path class="edge" d="M 375 255 H 430"/><path class="edge" d="M 675 255 H 730"/><path class="edge" d="M 1005 255 H 1060"/><path class="edge" d="M 1345 255 H 1400"/><path class="edge" d="M 1620 255 H 1675"/>
+  <path class="edge" d="M 375 255 H 430"/><path class="edge" d="M 675 255 H 1060"/><path class="edge" d="M 1345 255 H 1400"/><path class="edge" d="M 1620 255 H 1675"/>
 
   <text class="lane-label" x="65" y="407">CLI</text>
   <rect class="node entry" x="155" y="365" width="220" height="82"/>

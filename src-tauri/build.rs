@@ -42,13 +42,6 @@ fn main() {
         ("projectDataDirectory", "APP_PROJECT_DATA_DIRECTORY"),
         ("startupRegistryName", "APP_STARTUP_REGISTRY_NAME"),
         ("pluginNamespace", "APP_PLUGIN_NAMESPACE"),
-        ("legacyBundleIdentifier", "APP_LEGACY_BUNDLE_IDENTIFIER"),
-        ("legacyStoragePrefix", "APP_LEGACY_STORAGE_PREFIX"),
-        (
-            "legacyProjectDataDirectory",
-            "APP_LEGACY_PROJECT_DATA_DIRECTORY",
-        ),
-        ("repository", "APP_REPOSITORY"),
     ] {
         let value = config[field]
             .as_str()

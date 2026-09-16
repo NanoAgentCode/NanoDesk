@@ -88,12 +88,12 @@ interface GitHubSkillSource {
 
 function createDefaultGitHubSource(): GitHubSkillSource {
   return {
-    id: "nanoagentcode-skills-manager-main-root",
-    name: "NanoAgentCode skills-manager",
-    repo: "NanoAgentCode/skills-manager",
-    path: "",
+    id: "anthropics-skills-main-skills",
+    name: "Anthropic Skills",
+    repo: "anthropics/skills",
+    path: "skills",
     refName: "main",
-    provider: "NanoAgentCode",
+    provider: "Anthropic",
     githubToken: ""
   };
 }

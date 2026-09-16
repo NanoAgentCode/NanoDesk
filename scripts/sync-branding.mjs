@@ -18,11 +18,7 @@ for (const field of [
   "startupRegistryName",
   "cliRegistryPath",
   "cliUninstallKey",
-  "pluginNamespace",
-  "legacyBundleIdentifier",
-  "legacyStoragePrefix",
-  "legacyProjectDataDirectory",
-  "repository"
+  "pluginNamespace"
 ]) {
   if (typeof config[field] !== "string" || !config[field].trim()) {
     throw new Error(`brand.config.json field ${field} must be a non-empty string`);

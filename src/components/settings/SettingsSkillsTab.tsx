@@ -92,7 +92,7 @@ export default function SettingsSkillsTab({ skills }: SettingsSkillsTabProps) {
                   <input
                     value={skills.githubSourceDraft.name}
                     onChange={(e) => skills.setGithubSourceDraft((prev) => ({ ...prev, name: e.target.value }))}
-                    placeholder="NanoAgentCode skills-manager"
+                    placeholder="团队 Skills"
                   />
                 </div>
                 <div className="skills-param-field">
@@ -100,7 +100,7 @@ export default function SettingsSkillsTab({ skills }: SettingsSkillsTabProps) {
                   <input
                     value={skills.githubSourceDraft.repo}
                     onChange={(e) => skills.setGithubSourceDraft((prev) => ({ ...prev, repo: e.target.value }))}
-                    placeholder="NanoAgentCode/skills-manager"
+                    placeholder="owner/repository"
                   />
                 </div>
                 <div className="skills-param-field">

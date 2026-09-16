@@ -19,10 +19,4 @@ describe("brand configuration", () => {
     expect(APP_STORAGE_PREFIX).toBe("nanodesk");
     expect(PROJECT_DATA_DIRECTORY).toBe(".nanodesk");
   });
-
-  it("keeps legacy identifiers as an explicit migration contract", () => {
-    expect(brandConfig.legacyBundleIdentifier).toBe("com.nanoagent.desktop");
-    expect(brandConfig.legacyStoragePrefix).toBe("nano-agent");
-    expect(brandConfig.legacyProjectDataDirectory).toBe(".nano-agent");
-  });
 });
