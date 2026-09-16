@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MultiSelect, Select } from "@mantine/core";
 import type { AvailableModelInfo, ModelConfig, ModelSupplier } from "../../types";
 
@@ -43,16 +43,29 @@ function selectedKey(id: string, props: BaseProps) {
 }
 export function SupplierModelSelect(props: BaseProps & { value: string | null; onChange: (id: string | null) => void }) {
   const options = useOptions(props);
-  return <Select aria-label={`${props.label}模型`} placeholder="选择供应商 / 模型" data={options} value={props.value ? selectedKey(props.value, props) : null} searchable onChange={async (raw) => {
+  const [pendingValue, setPendingValue] = useState<string | undefined>();
+  const committedValue = props.value ? selectedKey(props.value, props) : null;
+  return <Select aria-label={`${props.label}模型`} placeholder="选择供应商 / 模型" data={options} value={pendingValue ?? committedValue} searchable onChange={async (raw) => {
     if (!raw) return props.onChange(null);
-    const [supplierId, modelId] = split(raw); const info = props.discovered[supplierId]?.find((item) => item.id === modelId); if (info) props.onChange((await props.ensureModel(supplierId, info)).id);
+    setPendingValue(raw);
+    try {
+      const [supplierId, modelId] = split(raw); const info = props.discovered[supplierId]?.find((item) => item.id === modelId); if (info) props.onChange((await props.ensureModel(supplierId, info)).id);
+    } finally {
+      setPendingValue(undefined);
+    }
   }} />;
 }
 export function SupplierModelMultiSelect(props: BaseProps & { value: string[]; onChange: (ids: string[]) => void }) {
   const options = useOptions(props);
   const visible = props.value.map((id) => selectedKey(id, props)).filter((value): value is string => Boolean(value));
-  return <MultiSelect className="supplier-model-multiselect" aria-label={`${props.label}模型`} placeholder="选择供应商 / 模型" data={options} value={visible} searchable clearable onChange={async (rawValues) => {
-    const ids = await Promise.all(rawValues.map(async (raw) => { const [supplierId, modelId] = split(raw); const info = props.discovered[supplierId]?.find((item) => item.id === modelId); return info ? (await props.ensureModel(supplierId, info)).id : ""; }));
-    props.onChange(ids.filter(Boolean));
+  const [pendingValues, setPendingValues] = useState<string[] | null>(null);
+  return <MultiSelect className="supplier-model-multiselect" aria-label={`${props.label}模型`} placeholder="选择供应商 / 模型" data={options} value={pendingValues ?? visible} searchable clearable onChange={async (rawValues) => {
+    setPendingValues(rawValues);
+    try {
+      const ids = await Promise.all(rawValues.map(async (raw) => { const [supplierId, modelId] = split(raw); const info = props.discovered[supplierId]?.find((item) => item.id === modelId); return info ? (await props.ensureModel(supplierId, info)).id : ""; }));
+      props.onChange(ids.filter(Boolean));
+    } finally {
+      setPendingValues(null);
+    }
   }} />;
 }

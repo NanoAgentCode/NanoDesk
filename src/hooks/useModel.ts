@@ -279,7 +279,7 @@ export function useModel(
     const existing = models.find((item) => item.provider === supplier.provider && item.base_url === supplier.base_url && item.api_key === supplier.api_key && item.model === modelInfo.id);
     if (existing) return existing;
     const saved = await saveModelConfig({ ...emptyModelDraft, name: supplier.name, provider: supplier.provider, base_url: supplier.base_url, api_key: supplier.api_key, model: modelInfo.id, model_kind: modelInfo.suggested_kind, context_window: modelInfo.context_window ?? 32_768 });
-    await refreshModels(saved.id);
+    setModels((current) => current.some((item) => item.id === saved.id) ? current : [saved, ...current]);
     return saved;
   }
 
