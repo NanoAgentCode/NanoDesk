@@ -40,8 +40,21 @@ export default function SettingsUsageTab() {
 
   useEffect(() => { void refresh(); }, []);
 
-  const trend = analysis.token_trend.slice(-14);
+  const trend = analysis.token_trend.slice(-30);
   const maxTokens = Math.max(1, ...trend.map((point) => point.total_tokens));
+  const modelLegend = Array.from(
+    new Map(
+      trend.flatMap((point) => point.models).map((model) => [
+        model.model_config_id || "unassigned",
+        model.model_name
+      ])
+    ).entries()
+  ).map(([id, name], index) => ({
+    id,
+    name,
+    color: `hsl(${Math.round(index * 137.508) % 360} 70% 60%)`
+  }));
+  const modelColors = new Map(modelLegend.map((model) => [model.id, model.color]));
 
   return (
     <div className="settings-tab-content usage-tab-content">
@@ -70,14 +83,30 @@ export default function SettingsUsageTab() {
           <span>Prompt <strong>{formatNumber(analysis.prompt_tokens)}</strong></span>
           <span>Completion <strong>{formatNumber(analysis.completion_tokens)}</strong></span>
         </div>
-        <div className="usage-trend" aria-label="最近 Token 趋势">
-          {trend.map((point) => (
-            <div className="usage-trend-column" key={point.date} title={`${point.date}: ${formatNumber(point.total_tokens)} Token`}>
-              <div className="usage-trend-bar" style={{ height: `${Math.max(4, point.total_tokens / maxTokens * 100)}%` }} />
-              <span>{point.date.slice(5)}</span>
-            </div>
-          ))}
-          {trend.length === 0 && <div className="empty">暂无 Token 数据</div>}
+        <div className="usage-model-legend">
+          {modelLegend.map((model) => <span key={model.id}><i style={{ background: model.color }} />{model.name}</span>)}
+        </div>
+        <div className="usage-trend-scroll">
+          <div className="usage-trend" aria-label="最近 30 天 Token 趋势">
+            {trend.map((point) => (
+              <div className="usage-trend-column" key={point.date} title={`${point.date}: ${formatNumber(point.total_tokens)} Token`}>
+                <div className="usage-trend-bar" style={{ height: `${Math.max(4, point.total_tokens / maxTokens * 100)}%` }}>
+                  {point.models.map((model) => (
+                    <i
+                      key={model.model_config_id || "unassigned"}
+                      style={{
+                        background: modelColors.get(model.model_config_id || "unassigned"),
+                        height: `${model.tokens / Math.max(1, point.total_tokens) * 100}%`
+                      }}
+                      title={`${model.model_name}: ${formatNumber(model.tokens)} Token`}
+                    />
+                  ))}
+                </div>
+                <span>{point.date.slice(5)}</span>
+              </div>
+            ))}
+            {trend.length === 0 && <div className="empty">暂无 Token 数据</div>}
+          </div>
         </div>
       </section>
 

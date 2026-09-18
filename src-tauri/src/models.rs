@@ -294,6 +294,14 @@ pub struct UsageTokenTrendPoint {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
     pub total_tokens: i64,
+    pub models: Vec<UsageModelTokens>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageModelTokens {
+    pub model_config_id: Option<String>,
+    pub model_name: String,
+    pub tokens: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

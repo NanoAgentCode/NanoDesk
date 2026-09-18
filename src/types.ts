@@ -637,6 +637,11 @@ export interface UsageAnalysis {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    models: Array<{
+      model_config_id?: string | null;
+      model_name: string;
+      tokens: number;
+    }>;
   }>;
   latency_call_count: number;
   average_latency_ms: number;

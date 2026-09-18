@@ -6,7 +6,7 @@ use super::{clean_or_default, ensure_affected, serialize_metadata, Database};
 use crate::error::{AppError, AppResult};
 use crate::models::{
     Conversation, ConversationDraft, Message, MessageDraft, UsageAnalysis, UsageModelCount,
-    UsageTokenTrendPoint,
+    UsageModelTokens, UsageTokenTrendPoint,
 };
 use std::collections::BTreeMap;
 
@@ -48,39 +48,65 @@ impl Database {
             })
             .collect();
 
-        let mut trend = BTreeMap::<String, (i64, i64)>::new();
+        let cutoff_date = (Utc::now().date_naive() - chrono::Duration::days(29)).to_string();
+        let mut trend = BTreeMap::<String, (i64, i64, BTreeMap<Option<String>, i64>)>::new();
         let mut message_statement = self.conn.prepare(
-            "SELECT role, content, substr(created_at, 1, 10) FROM messages ORDER BY created_at",
+            "SELECT m.role, m.content, substr(m.created_at, 1, 10), c.model_config_id
+             FROM messages m
+             JOIN conversations c ON c.id = m.conversation_id
+             ORDER BY m.created_at",
         )?;
         let rows = message_statement.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
             ))
         })?;
+        let mut prompt_tokens = 0;
+        let mut completion_tokens = 0;
         for row in rows {
-            let (role, content, date) = row?;
+            let (role, content, date, model_config_id) = row?;
             let tokens = estimate_usage_tokens(&content);
-            let entry = trend.entry(date).or_default();
             if role == "assistant" {
-                entry.1 += tokens;
+                completion_tokens += tokens;
             } else {
-                entry.0 += tokens;
+                prompt_tokens += tokens;
+            }
+            if date >= cutoff_date {
+                let entry = trend.entry(date).or_default();
+                if role == "assistant" {
+                    entry.1 += tokens;
+                } else {
+                    entry.0 += tokens;
+                }
+                *entry.2.entry(model_config_id).or_default() += tokens;
             }
         }
-        let prompt_tokens = trend.values().map(|point| point.0).sum();
-        let completion_tokens = trend.values().map(|point| point.1).sum();
         let token_trend = trend
             .into_iter()
-            .map(
-                |(date, (prompt_tokens, completion_tokens))| UsageTokenTrendPoint {
+            .map(|(date, (prompt_tokens, completion_tokens, model_tokens))| {
+                let models = model_tokens
+                    .into_iter()
+                    .map(|(model_config_id, tokens)| UsageModelTokens {
+                        model_name: model_config_id
+                            .as_deref()
+                            .and_then(|id| self.get_model_config(id).ok())
+                            .map(|config| config.name)
+                            .unwrap_or_else(|| "未指定模型".to_string()),
+                        model_config_id,
+                        tokens,
+                    })
+                    .collect();
+                UsageTokenTrendPoint {
                     date,
                     prompt_tokens,
                     completion_tokens,
                     total_tokens: prompt_tokens + completion_tokens,
-                },
-            )
+                    models,
+                }
+            })
             .collect();
 
         Ok(UsageAnalysis {
@@ -466,5 +492,7 @@ mod usage_tests {
         assert_eq!(analysis.model_usage[0].count, 1);
         assert_eq!(analysis.token_trend.len(), 1);
         assert_eq!(analysis.token_trend[0].total_tokens, 5);
+        assert_eq!(analysis.token_trend[0].models[0].model_name, "未指定模型");
+        assert_eq!(analysis.token_trend[0].models[0].tokens, 5);
     }
 }
