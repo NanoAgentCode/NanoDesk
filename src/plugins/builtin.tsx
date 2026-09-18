@@ -72,18 +72,27 @@ const coreUiPlugin: FrontendPlugin = {
       )
     },
     {
-      id: "usage",
-      label: "用量分析",
-      icon: BarChart3,
-      render: () => <SettingsUsageTab />
-    },
-    {
       id: "observability",
       label: "链路追踪",
       icon: Activity,
       render: ({ obs }) => <SettingsObservabilityTab obs={obs} />
     }
   ]
+};
+
+const usagePlugin: FrontendPlugin = {
+  manifest: {
+    id: `${APP_PLUGIN_NAMESPACE}.usage`,
+    name: "Usage Analytics",
+    version: "0.1.0",
+    capabilities: ["settings"]
+  },
+  settings: [{
+    id: "usage",
+    label: "用量分析",
+    icon: BarChart3,
+    render: () => <SettingsUsageTab />
+  }]
 };
 
 const skillsPlugin: FrontendPlugin = {
@@ -151,5 +160,6 @@ export const appPlugins = new AppPluginRegistry([
   skillsPlugin,
   mcpPlugin,
   environmentPlugin,
-  opsPlugin
+  opsPlugin,
+  usagePlugin
 ]);
