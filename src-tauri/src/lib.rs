@@ -1987,6 +1987,17 @@ async fn clear_observability_spans(state: State<'_, AppState>) -> AppResult<()> 
     state.observability.lock().await.clear()
 }
 
+#[tauri::command]
+async fn get_usage_analysis(state: State<'_, AppState>) -> AppResult<crate::models::UsageAnalysis> {
+    let mut analysis = state.db.lock().await.get_usage_analysis()?;
+    state
+        .observability
+        .lock()
+        .await
+        .add_latency_summary(&mut analysis)?;
+    Ok(analysis)
+}
+
 fn show_main_window(app: &AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
@@ -2317,6 +2328,7 @@ pub fn run() {
             file_content::extract_uploaded_file,
             list_observability_spans,
             clear_observability_spans,
+            get_usage_analysis,
             show_app_window,
             minimize_to_tray,
             quit_app,

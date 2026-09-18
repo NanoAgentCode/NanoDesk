@@ -281,6 +281,35 @@ pub struct MessageDraft {
     pub metadata: Option<MessageMetadata>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageModelCount {
+    pub model_config_id: Option<String>,
+    pub model_name: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageTokenTrendPoint {
+    pub date: String,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub total_tokens: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UsageAnalysis {
+    pub conversation_count: i64,
+    pub message_count: i64,
+    pub model_usage: Vec<UsageModelCount>,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub total_tokens: i64,
+    pub token_trend: Vec<UsageTokenTrendPoint>,
+    pub latency_call_count: i64,
+    pub average_latency_ms: f64,
+    pub p95_latency_ms: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Memory {
     pub id: String,

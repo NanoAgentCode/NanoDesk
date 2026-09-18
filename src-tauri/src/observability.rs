@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::logging;
+use crate::models::UsageAnalysis;
 
 #[derive(Debug, Clone)]
 pub struct SpanStart {
@@ -157,6 +158,23 @@ impl ObservabilityPipeline {
         for sink in &mut self.sinks {
             sink.clear()?;
         }
+        Ok(())
+    }
+
+    pub fn add_latency_summary(&mut self, analysis: &mut UsageAnalysis) -> AppResult<()> {
+        let mut durations = self
+            .list_spans(Some(1000))?
+            .into_iter()
+            .filter_map(|span| span.duration_ms)
+            .collect::<Vec<_>>();
+        durations.sort_unstable();
+        analysis.latency_call_count = durations.len() as i64;
+        if durations.is_empty() {
+            return Ok(());
+        }
+        analysis.average_latency_ms = durations.iter().sum::<i64>() as f64 / durations.len() as f64;
+        let p95_index = ((durations.len() as f64 * 0.95).ceil() as usize).saturating_sub(1);
+        analysis.p95_latency_ms = durations[p95_index];
         Ok(())
     }
 }

@@ -21,6 +21,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - Skills 管理：同步 Anthropic Skills、维护本地 Skills 目录，并在系统提示中注入启用技能。
 - Ops 工作台：管理 SSH 服务器、测试连接、上传文件、打开交互式 SSH 终端。
 - 独立诊断链路：LLM、MCP、Ops、部分工具和数据库操作写入 `nanodesk-observability.sqlite3`；系统操作日志按天写入 `logs/` 并保留 7 天。
+- 用量分析：系统设置展示会话数、消息数、模型回答次数、基于已保存消息内容估算的 Prompt/Completion/总 Token 与近 14 个有数据日期的趋势，并从观测库汇总调用平均延迟和 P95 延迟；暂不包含缓存命中率、费用与成本核算、统一 API 请求量/成功率面板。
 - 深色、浅色、跟随系统主题，以及可配置的关闭行为、系统托盘和 Windows 开机自启动。
 
 ## 文档

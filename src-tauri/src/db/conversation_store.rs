@@ -4,9 +4,98 @@ use uuid::Uuid;
 
 use super::{clean_or_default, ensure_affected, serialize_metadata, Database};
 use crate::error::{AppError, AppResult};
-use crate::models::{Conversation, ConversationDraft, Message, MessageDraft};
+use crate::models::{
+    Conversation, ConversationDraft, Message, MessageDraft, UsageAnalysis, UsageModelCount,
+    UsageTokenTrendPoint,
+};
+use std::collections::BTreeMap;
 
 impl Database {
+    pub fn get_usage_analysis(&self) -> AppResult<UsageAnalysis> {
+        let conversation_count =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM conversations", [], |row| row.get(0))?;
+        let message_count = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))?;
+
+        let mut model_statement = self.conn.prepare(
+            "SELECT c.model_config_id, COUNT(*)
+             FROM messages m
+             JOIN conversations c ON c.id = m.conversation_id
+             WHERE m.role = 'assistant'
+             GROUP BY c.model_config_id
+             ORDER BY COUNT(*) DESC",
+        )?;
+        let model_rows = model_statement
+            .query_map([], |row| {
+                Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let model_usage = model_rows
+            .into_iter()
+            .map(|(model_config_id, count)| {
+                let model_name = model_config_id
+                    .as_deref()
+                    .and_then(|id| self.get_model_config(id).ok())
+                    .map(|config| config.name)
+                    .unwrap_or_else(|| "未指定模型".to_string());
+                UsageModelCount {
+                    model_config_id,
+                    model_name,
+                    count,
+                }
+            })
+            .collect();
+
+        let mut trend = BTreeMap::<String, (i64, i64)>::new();
+        let mut message_statement = self.conn.prepare(
+            "SELECT role, content, substr(created_at, 1, 10) FROM messages ORDER BY created_at",
+        )?;
+        let rows = message_statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (role, content, date) = row?;
+            let tokens = estimate_usage_tokens(&content);
+            let entry = trend.entry(date).or_default();
+            if role == "assistant" {
+                entry.1 += tokens;
+            } else {
+                entry.0 += tokens;
+            }
+        }
+        let prompt_tokens = trend.values().map(|point| point.0).sum();
+        let completion_tokens = trend.values().map(|point| point.1).sum();
+        let token_trend = trend
+            .into_iter()
+            .map(
+                |(date, (prompt_tokens, completion_tokens))| UsageTokenTrendPoint {
+                    date,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens: prompt_tokens + completion_tokens,
+                },
+            )
+            .collect();
+
+        Ok(UsageAnalysis {
+            conversation_count,
+            message_count,
+            model_usage,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens: prompt_tokens + completion_tokens,
+            token_trend,
+            latency_call_count: 0,
+            average_latency_ms: 0.0,
+            p95_latency_ms: 0,
+        })
+    }
     pub fn list_conversations(&self, project_path: Option<&str>) -> AppResult<Vec<Conversation>> {
         let mut stmt = self.conn.prepare(
             "
@@ -314,5 +403,68 @@ impl Database {
             return Err(AppError::Message("message not found".to_string()));
         }
         Ok(())
+    }
+}
+
+fn estimate_usage_tokens(text: &str) -> i64 {
+    let mut ascii_chars = 0usize;
+    let mut non_ascii_chars = 0usize;
+    for character in text.chars() {
+        if character.is_ascii() {
+            ascii_chars += 1;
+        } else {
+            non_ascii_chars += 1;
+        }
+    }
+    ((ascii_chars + 3) / 4 + non_ascii_chars) as i64
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::{estimate_usage_tokens, Database};
+    use crate::models::{ConversationDraft, MessageDraft};
+
+    #[test]
+    fn estimates_ascii_and_non_ascii_tokens() {
+        assert_eq!(estimate_usage_tokens("abcdefgh"), 2);
+        assert_eq!(estimate_usage_tokens("你好ab"), 3);
+    }
+
+    #[test]
+    fn aggregates_conversations_messages_models_and_token_trend() {
+        let path = std::env::temp_dir()
+            .join(format!("nanodesk-usage-{}", uuid::Uuid::new_v4()))
+            .join("nanodesk.sqlite3");
+        std::fs::create_dir_all(path.parent().expect("temporary path should have a parent"))
+            .expect("temporary directory should be created");
+        let db = Database::open(path).expect("database should open");
+        let conversation = db
+            .create_conversation(ConversationDraft {
+                title: Some("Usage test".to_string()),
+                model_config_id: None,
+                project_path: None,
+            })
+            .expect("conversation should be created");
+        for (role, content) in [("user", "abcdefgh"), ("assistant", "你好ab")] {
+            db.append_message(MessageDraft {
+                conversation_id: conversation.id.clone(),
+                role: role.to_string(),
+                content: content.to_string(),
+                metadata: None,
+            })
+            .expect("message should be saved");
+        }
+
+        let analysis = db.get_usage_analysis().expect("usage should load");
+
+        assert_eq!(analysis.conversation_count, 1);
+        assert_eq!(analysis.message_count, 2);
+        assert_eq!(analysis.prompt_tokens, 2);
+        assert_eq!(analysis.completion_tokens, 3);
+        assert_eq!(analysis.total_tokens, 5);
+        assert_eq!(analysis.model_usage[0].model_name, "未指定模型");
+        assert_eq!(analysis.model_usage[0].count, 1);
+        assert_eq!(analysis.token_trend.len(), 1);
+        assert_eq!(analysis.token_trend[0].total_tokens, 5);
     }
 }

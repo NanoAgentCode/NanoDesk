@@ -625,6 +625,24 @@ export interface AgentToolCall {
   max_attempts: number;
 }
 
+export interface UsageAnalysis {
+  conversation_count: number;
+  message_count: number;
+  model_usage: Array<{ model_config_id?: string | null; model_name: string; count: number }>;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  token_trend: Array<{
+    date: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  }>;
+  latency_call_count: number;
+  average_latency_ms: number;
+  p95_latency_ms: number;
+}
+
 export interface UploadedFileExtractionRequest {
   name: string;
   content_base64: string;

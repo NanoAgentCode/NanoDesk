@@ -38,6 +38,7 @@ import type {
   ProjectFileMoveRequest,
   ProjectFileWriteRequest,
   ObservabilitySpan,
+  UsageAnalysis,
   AgentRun,
   AgentRunDraft,
   AgentStep,
@@ -580,6 +581,10 @@ export function finishAgentRun(id: string, status: string, error?: string | null
     status,
     error: error || null
   });
+}
+
+export function getUsageAnalysis() {
+  return invoke<UsageAnalysis>("get_usage_analysis");
 }
 
 export function resumeAgentRun(id: string) {
