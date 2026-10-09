@@ -120,7 +120,8 @@ function App() {
     mcp,
     showModelConfig,
     activeSettingsTab,
-    accessMode
+    accessMode,
+    chatVisible: !appPlugins.findMainView(activeMainView)
   });
   chatRef.current = chat;
   const {
@@ -142,6 +143,8 @@ function App() {
     selectedPromptIndex,
     busy,
     uploadingImageAttachment,
+    uploadingAttachment,
+    speech,
     pendingImageAttachments,
     removePendingImageAttachment,
     attachmentProjectPath,
@@ -167,7 +170,6 @@ function App() {
     handleClarificationAnswer,
     handleCloseConversation,
     handleRagFiles,
-    handleImageFiles,
     handleDeleteRagFile,
     handleInputChange,
     handleChatInputKeyDown,
@@ -706,6 +708,8 @@ function App() {
           selectedPromptIndex={selectedPromptIndex}
           busy={busy}
           uploadingImageAttachment={uploadingImageAttachment}
+          uploadingAttachment={uploadingAttachment}
+          speech={speech}
           pendingImageAttachments={pendingImageAttachments}
           isRagDragging={isRagDragging}
           executingToolMessageId={executingToolMessageId}
@@ -733,7 +737,7 @@ function App() {
           handleInputChange={handleInputChange}
           handleChatInputKeyDown={handleChatInputKeyDown}
           handleChatInputPaste={handleChatInputPaste}
-          handleImageFiles={handleImageFiles}
+          handleAttachmentFiles={handleRagFiles}
           removePendingImageAttachment={removePendingImageAttachment}
           insertPrompt={insertPrompt}
           handleDeleteRagFile={handleDeleteRagFile}
@@ -741,7 +745,6 @@ function App() {
             setActiveSettingsTab("model");
             model.handleOpenModelConfig(setShowModelConfig);
           }}
-          setNotice={setNotice}
         />
       )}
 

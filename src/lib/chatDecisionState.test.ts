@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { resolveChatDecisionState } from "./chatDecisionState";
+import { findPendingToolApproval, resolveChatDecisionState } from "./chatDecisionState";
+import type { AgentToolCall, PersistedMessage } from "../types";
 
 describe("resolveChatDecisionState", () => {
+  it("uses the same pending-tool lock for attachments and the composer", () => {
+    const message = { id: "tool", role: "assistant", content: '<tool_call name="read_file"><path>a.txt</path></tool_call>' } as PersistedMessage;
+    expect(findPendingToolApproval([message], {})?.messageId).toBe("tool");
+    const result = { id: "result", role: "user", content: "[工具执行结果: read_file] 执行结果如下" } as PersistedMessage;
+    expect(findPendingToolApproval([message, result], {})).toBeNull();
+    expect(findPendingToolApproval([message], { tool: { status: "completed" } as AgentToolCall })).toBeNull();
+    expect(findPendingToolApproval([message], { tool: { status: "pending_approval" } as AgentToolCall })?.messageId).toBe("tool");
+  });
   const clarification = { messageId: "clarification-1" };
 
   it("locks the composer for manual clarification and pending tools", () => {

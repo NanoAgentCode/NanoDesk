@@ -1,3 +1,5 @@
+use std::io::Read;
+use std::path::Path;
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -113,13 +115,7 @@ pub async fn transcribe_audio(
     audio_base64: String,
     config: Option<AsrConfig>,
 ) -> AppResult<String> {
-    let config = match config {
-        Some(config) => Some(config),
-        None => crate::settings::load_asr_config(&app)?,
-    }
-    .ok_or_else(|| AppError::from("请先在系统设置 → 模型路由中选择语音识别模型"))?;
-    let suppliers = state.db.lock().await.list_model_suppliers()?;
-    let config = config.resolve(&suppliers)?;
+    let config = resolve_request_config(&app, &state, config).await?;
     if audio_base64.len() > MAX_AUDIO_BYTES.div_ceil(3) * 4 {
         return Err("音频文件不能超过 25 MB".into());
     }
@@ -127,6 +123,60 @@ pub async fn transcribe_audio(
         .decode(audio_base64)
         .map_err(|_| AppError::from("音频数据无效"))?;
     request_transcription(&config, &file_name, audio).await
+}
+
+async fn resolve_request_config(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    config: Option<AsrConfig>,
+) -> AppResult<AsrConfig> {
+    let config = match config {
+        Some(config) => Some(config),
+        None => crate::settings::load_asr_config(app)?,
+    }
+    .ok_or_else(|| AppError::from("请先在系统设置 → 模型路由中选择语音识别模型"))?;
+    let suppliers = state.db.lock().await.list_model_suppliers()?;
+    config.resolve(&suppliers)
+}
+
+#[tauri::command]
+pub async fn transcribe_audio_file(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> AppResult<String> {
+    let config = resolve_request_config(&app, &state, None).await?;
+    let (name, audio) = tokio::task::spawn_blocking(move || read_audio_file(Path::new(&path)))
+        .await
+        .map_err(|_| AppError::from("读取音频文件失败"))??;
+    request_transcription(&config, &name, audio).await
+}
+
+fn read_audio_file(path: &Path) -> AppResult<(String, Vec<u8>)> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| AppError::from("音频文件名无效"))?
+        .to_string();
+    audio_mime(&name)?;
+    let file = std::fs::File::open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err("只能识别普通音频文件".into());
+    }
+    if metadata.len() > MAX_AUDIO_BYTES as u64 {
+        return Err("音频文件不能超过 25 MB".into());
+    }
+    let mut audio = Vec::new();
+    file.take(MAX_AUDIO_BYTES as u64 + 1)
+        .read_to_end(&mut audio)?;
+    if audio.is_empty() {
+        return Err("音频文件为空".into());
+    }
+    if audio.len() > MAX_AUDIO_BYTES {
+        return Err("音频文件不能超过 25 MB".into());
+    }
+    Ok((name, audio))
 }
 
 fn audio_mime(file_name: &str) -> AppResult<&'static str> {
@@ -232,6 +282,41 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
+    }
+
+    #[test]
+    fn reads_dropped_audio_as_binary_without_text_conversion() {
+        let path =
+            std::env::temp_dir().join(format!("nanodesk-audio-{}.WAV", uuid::Uuid::new_v4()));
+        let bytes = vec![b'R', b'I', b'F', b'F', 0, 0xff, 0x80, 0x00];
+        std::fs::write(&path, &bytes).unwrap();
+        let (name, loaded) = read_audio_file(&path).unwrap();
+        assert!(name.ends_with(".WAV"));
+        assert_eq!(loaded, bytes);
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn rejects_empty_unsupported_and_oversized_dropped_audio() {
+        let path =
+            std::env::temp_dir().join(format!("nanodesk-audio-{}.wav", uuid::Uuid::new_v4()));
+        std::fs::write(&path, []).unwrap();
+        assert!(read_audio_file(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("为空"));
+        let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_len(MAX_AUDIO_BYTES as u64 + 1).unwrap();
+        drop(file);
+        assert!(read_audio_file(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("25 MB"));
+        assert!(read_audio_file(&path.with_extension("txt"))
+            .unwrap_err()
+            .to_string()
+            .contains("格式"));
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

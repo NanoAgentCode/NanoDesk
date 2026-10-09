@@ -2292,6 +2292,7 @@ pub fn run() {
             settings::get_asr_config,
             settings::save_asr_config,
             asr::transcribe_audio,
+            asr::transcribe_audio_file,
             chat,
             chat_stream,
             interrupt_chat_stream,

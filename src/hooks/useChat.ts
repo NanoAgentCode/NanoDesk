@@ -22,9 +22,12 @@ import {
 } from "../api";
 import { buildSystemMessage } from "../lib/chatSystemMessage";
 import { createChatStreamAccumulator } from "../lib/chatStreamAccumulator";
-import { isSupportedRagFile } from "../lib/formatters";
 import { prepareBudgetedContext as prepareContextWithinBudget } from "../lib/contextPreparation";
-import { fileToDataUrl, isSupportedImageAttachmentFile } from "../lib/imageAttachments";
+import { fileToDataUrl } from "../lib/imageAttachments";
+import { appendTranscript } from "../lib/speech";
+import { attachmentName, partitionAttachments, formatAttachmentUploadResult, type AttachmentSource } from "../lib/attachmentUploads";
+import { findPendingToolApproval, resolveChatDecisionState } from "../lib/chatDecisionState";
+import { useSpeechInput, type UseSpeechInputReturn } from "./useSpeechInput";
 import {
   resolveUserMemoryRoute,
   buildAutomaticClarificationAnswers,
@@ -98,6 +101,8 @@ export interface UseChatReturn {
   activeStreamRequestId: string | null;
   interruptingGeneration: boolean;
   uploadingImageAttachment: boolean;
+  uploadingAttachment: boolean;
+  speech: UseSpeechInputReturn;
   pendingImageAttachments: ChatImageAttachment[];
   removePendingImageAttachment: (relativePath: string) => void;
   attachmentProjectPath: string;
@@ -132,7 +137,6 @@ export interface UseChatReturn {
   ) => Promise<void>;
   handleCloseConversation: () => void;
   handleRagFiles: (files: FileList | File[]) => Promise<void>;
-  handleImageFiles: (files: FileList | File[]) => Promise<number>;
   handleDroppedFilePaths: (paths: string[]) => Promise<void>;
   handleDeleteRagFile: (id: string) => Promise<void>;
   handleInputChange: (value: string, cursorIndex: number) => Promise<void>;
@@ -153,6 +157,7 @@ export interface UseChatArgs {
   showModelConfig: boolean;
   activeSettingsTab: string;
   accessMode: AgentAccessMode;
+  chatVisible?: boolean;
 }
 
 export function useChat({
@@ -164,11 +169,16 @@ export function useChat({
   mcp,
   showModelConfig,
   activeSettingsTab,
-  accessMode
+  accessMode,
+  chatVisible = true
 }: UseChatArgs): UseChatReturn {
   const messageLoadRequestRef = useRef(0);
   const activeConversationIdRef = useRef("");
   const autoClarificationIdsRef = useRef(new Set<string>());
+  const attachmentScopeRef = useRef("");
+  const attachmentBusyRef = useRef(false);
+  const attachmentLockedRef = useRef(false);
+  const dropHandlerRef = useRef<((paths: string[]) => Promise<void>) | null>(null);
 
   // ── Sub-hooks ──
   const conv = useConversations(setNotice, model, projects, showModelConfig, activeSettingsTab);
@@ -177,13 +187,15 @@ export function useChat({
   const attachments = useChatAttachments({
     getProjectPath: getAttachmentProjectPath,
     onNotice: setNotice,
-    onDragEnd: () => rag.setIsRagDragging(false)
+    onDragEnd: () => rag.setIsRagDragging(false),
+    getScopeKey: () => attachmentScopeRef.current
   });
 
   // ── State owned by useChat ──
   const [messages, setMessages] = useState<PersistedMessage[]>([]);
   const [messageReasoning, setMessageReasoning] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [clarificationFallbackIds, setClarificationFallbackIds] = useState<string[]>([]);
   const [activeStreamRequestId, setActiveStreamRequestId] = useState<string | null>(null);
   const [interruptingGeneration, setInterruptingGeneration] = useState(false);
@@ -209,6 +221,26 @@ export function useChat({
     skills,
     setNotice,
     onContinue: triggerLlmContinue
+  });
+
+  const attachmentScopeKey = `${conv.activeConversationId}:${getAttachmentProjectPath()}`;
+  attachmentScopeRef.current = attachmentScopeKey;
+  const { decisionPending: attachmentDecisionPending } = resolveChatDecisionState({
+    accessMode, busy,
+    pendingToolApproval: busy ? null : findPendingToolApproval(messages, messageToolCalls),
+    unresolvedClarification: findPendingClarification(messages),
+    clarificationFallbackIds
+  });
+  attachmentLockedRef.current = busy || attachmentDecisionPending || !chatVisible;
+  const speech = useSpeechInput({
+    scopeKey: attachmentScopeKey,
+    disabled: busy || attachmentDecisionPending || !chatVisible,
+    onTranscript: (text) => {
+      input.setChatInput((current) => appendTranscript(current, text));
+      input.setPromptSuggestions([]);
+      input.setPromptTriggerIndex(-1);
+    },
+    setNotice
   });
 
   // ── Sync activeConversationId ref ──
@@ -245,15 +277,16 @@ export function useChat({
     let isMounted = true;
 
     void getCurrentWebviewWindow().onDragDropEvent((event) => {
+      if (!isMounted) return;
       const { type, paths } = event.payload as any;
       if (type === "enter" || type === "over") {
-        rag.setIsRagDragging(true);
+        if (!attachmentLockedRef.current) rag.setIsRagDragging(true);
       } else if (type === "leave") {
         rag.setIsRagDragging(false);
       } else if (type === "drop") {
         rag.setIsRagDragging(false);
         if (paths && paths.length > 0) {
-          void handleDroppedFilePaths(paths);
+          void dropHandlerRef.current?.(paths);
         }
       }
     }).then((fn) => {
@@ -347,6 +380,10 @@ export function useChat({
 
   // ── Send message ──
   async function handleSendMessage() {
+    if (attachmentBusyRef.current || speech.isBusy()) {
+      setNotice("请先等待附件或语音处理完成，或取消语音输入。");
+      return;
+    }
     const textContent = input.chatInput.trim();
     const content = buildMessageContentWithImageAttachments(textContent, attachments.pendingImageAttachments);
     const memoryRoute = resolveUserMemoryRoute(textContent, content);
@@ -902,103 +939,103 @@ export function useChat({
     return projects.getProjectFilesForPath(resolvedProject?.path || projectHint?.path);
   }
 
-  // ── RAG file handlers (need context from useChat state) ──
-  async function handleRagFiles(files: FileList | File[]) {
-    const fileList = Array.from(files);
-    const imageFiles = fileList.filter(isSupportedImageAttachmentFile);
-    const selectedFiles = fileList.filter((file) => isSupportedRagFile(file.name));
-    let imageCount = 0;
-    if (imageFiles.length > 0) {
-      imageCount = await attachments.handleImageFiles(imageFiles);
-    }
-    if (selectedFiles.length === 0) {
-      if (imageCount === 0) {
-        setNotice("支持 OCR 图片，或文本类知识文件：txt、md、json、csv、log、代码文件等。");
-      }
+  // ── Unified attachment handlers ──
+  async function handleAttachmentSources(sources: AttachmentSource[]) {
+    if (!sources.length) return;
+    if (!chatVisible) { rag.setIsRagDragging(false); return; }
+    if (busy || attachmentDecisionPending || attachmentBusyRef.current || speech.isBusy()) {
+      rag.setIsRagDragging(false);
+      setNotice("当前暂不能上传附件，请先完成正在进行的操作。");
       return;
     }
-
-    const modelConfigId = conv.resolveConversationModelId(conv.activeConversationId);
-    if (!modelConfigId) { setNotice("请先保存并选择一个模型配置。"); return; }
-
-    const projectHint = conv.getConversationProjectHint();
-    const conversationId = await conv.ensureConversation(projectHint);
+    attachmentBusyRef.current = true;
+    setUploadingAttachment(true);
+    let scopeKey = attachmentScopeRef.current;
+    let transitionScope: string | null = null;
+    const active = () => {
+      if (attachmentLockedRef.current) return false;
+      if (attachmentScopeRef.current === scopeKey) { transitionScope = null; return true; }
+      return transitionScope !== null && attachmentScopeRef.current === transitionScope;
+    };
+    const groups = partitionAttachments(sources);
+    const result = { image: 0, audio: 0, document: 0, errors: [] as string[], unsupported: groups.unsupported.map(attachmentName) };
     try {
-      for (const file of selectedFiles) {
-        rag.setIndexingRagFileName(file.name);
-        const extracted = await extractUploadedFile({
-          name: file.name,
-          content_base64: await fileToDataUrl(file)
-        });
-        await indexRagFile({
-          conversation_id: conversationId, name: file.name, mime: file.type || "text/plain",
-          size: extracted.size, content: extracted.content, model_config_id: modelConfigId
-        });
+      for (const source of groups.image) {
+        if (!active()) return;
+        try {
+          const count = source.kind === "file"
+            ? await attachments.handleImageFiles([source.file])
+            : await attachments.attachDroppedImagePaths([source.path]);
+          result.image += count;
+          if (!count && active()) result.errors.push(`${attachmentName(source)}：图片添加失败`);
+        } catch (error) { result.errors.push(`${attachmentName(source)}：${String(error)}`); }
       }
-      await rag.refreshRagFiles(conversationId);
-      setNotice(imageCount > 0
-        ? `已添加 ${imageCount} 张图片，并索引 ${selectedFiles.length} 个文件到当前对话。`
-        : `已索引 ${selectedFiles.length} 个文件到当前对话。`);
+      if (!active()) return;
+      if (groups.audio.length) {
+        const audio = await speech.transcribeSources(groups.audio);
+        result.audio = audio.count;
+        result.errors.push(...audio.errors);
+        if (audio.cancelled) {
+          if (active()) setNotice("已取消本次附件中的语音识别。");
+          return;
+        }
+      }
+      if (!active()) return;
+      if (groups.document.length) {
+        const modelConfigId = conv.resolveConversationModelId(conv.activeConversationId);
+        if (!modelConfigId) {
+          result.errors.push("文档索引：请先保存并选择一个聊天模型配置");
+        } else {
+          const hadConversation = Boolean(conv.activeConversationId);
+          const uploadProjectPath = getAttachmentProjectPath();
+          const conversationId = await conv.ensureConversation(conv.getConversationProjectHint());
+          if (!hadConversation) {
+            transitionScope = scopeKey;
+            scopeKey = `${conversationId}:${uploadProjectPath}`;
+          }
+          if (!active()) return;
+          for (const source of groups.document) {
+            if (!active()) return;
+            const name = attachmentName(source);
+            rag.setIndexingRagFileName(name);
+            try {
+              const extracted = source.kind === "file"
+                ? await extractUploadedFile({ name, content_base64: await fileToDataUrl(source.file) })
+                : await readAbsoluteFile(source.path);
+              if (!active()) return;
+              await indexRagFile({
+                conversation_id: conversationId, name,
+                mime: source.kind === "file" ? source.file.type || "text/plain" : "text/plain",
+                size: extracted.size, content: extracted.content, model_config_id: modelConfigId
+              });
+              result.document++;
+            } catch (error) { result.errors.push(`${name}：${String(error)}`); }
+          }
+          if (active() && result.document) {
+            const nextFiles = await listRagFiles(conversationId);
+            if (active()) rag.setRagFiles(nextFiles);
+          }
+        }
+      }
+      if (active()) setNotice(formatAttachmentUploadResult(result));
     } catch (error) {
-      console.error("Failed to index RAG file:", error);
-      setNotice(`文件索引失败：${String(error)}`);
+      if (active()) setNotice(`附件处理失败：${String(error)}`);
     } finally {
+      attachmentBusyRef.current = false;
+      setUploadingAttachment(false);
       rag.setIndexingRagFileName("");
       rag.setIsRagDragging(false);
     }
+  }
+
+  async function handleRagFiles(files: FileList | File[]) {
+    await handleAttachmentSources(Array.from(files).map((file) => ({ kind: "file", file })));
   }
 
   async function handleDroppedFilePaths(paths: string[]) {
-    let imageCount = 0;
-    let imageFailed = false;
-    try {
-      imageCount = await attachments.attachDroppedImagePaths(paths);
-    } catch (error) {
-      imageFailed = true;
-      console.error("Failed to attach dropped images:", error);
-      setNotice(`图片添加失败：${String(error)}`);
-    }
-
-    const supportedPaths = paths.filter((p) => isSupportedRagFile(p));
-    if (supportedPaths.length === 0) {
-      if (imageCount > 0) {
-        setNotice(`已添加 ${imageCount} 张图片，可直接让助手识别文字。`);
-      } else if (imageFailed) {
-        return;
-      } else {
-        setNotice("支持 OCR 图片，或文本类知识文件：txt、md、json、csv、log、代码文件等。");
-      }
-      return;
-    }
-
-    const modelConfigId = conv.resolveConversationModelId(conv.activeConversationId);
-    if (!modelConfigId) { setNotice("请先保存并选择一个模型配置。"); return; }
-
-    const projectHint = conv.getConversationProjectHint();
-    const conversationId = await conv.ensureConversation(projectHint);
-    try {
-      for (const filePath of supportedPaths) {
-        const fileName = filePath.split(/[/\\]/).pop() || "unknown";
-        rag.setIndexingRagFileName(fileName);
-        const fileData = await readAbsoluteFile(filePath);
-        await indexRagFile({
-          conversation_id: conversationId, name: fileData.name || fileName,
-          mime: "text/plain", size: fileData.size || 0,
-          content: fileData.content, model_config_id: modelConfigId
-        });
-      }
-      await rag.refreshRagFiles(conversationId);
-      setNotice(imageCount > 0
-        ? `已添加 ${imageCount} 张图片，并索引 ${supportedPaths.length} 个文件到当前对话。`
-        : `已索引 ${supportedPaths.length} 个文件到当前对话。`);
-    } catch (error) {
-      console.error("Failed to index dropped files:", error);
-      setNotice(`文件索引失败：${String(error)}`);
-    } finally {
-      rag.setIndexingRagFileName("");
-      rag.setIsRagDragging(false);
-    }
+    await handleAttachmentSources(paths.map((path) => ({ kind: "path", path })));
   }
+  dropHandlerRef.current = handleDroppedFilePaths;
 
   async function handleDeleteRagFile(id: string) {
     await rag.handleDeleteRagFile(id, conv.activeConversationId);
@@ -1011,7 +1048,7 @@ export function useChat({
       input.handleChatInputKeyDown(event);
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (!busy && (input.chatInput.trim() || attachments.pendingImageAttachments.length > 0)) {
+      if (!busy && !attachmentBusyRef.current && !speech.isBusy() && (input.chatInput.trim() || attachments.pendingImageAttachments.length > 0)) {
         void handleSendMessage();
       }
     }
@@ -1074,6 +1111,8 @@ export function useChat({
     activeStreamRequestId,
     interruptingGeneration,
     uploadingImageAttachment: attachments.uploadingImageAttachment,
+    uploadingAttachment,
+    speech,
     pendingImageAttachments: attachments.pendingImageAttachments,
     removePendingImageAttachment: attachments.removePendingImageAttachment,
     attachmentProjectPath: getAttachmentProjectPath(),
@@ -1109,7 +1148,6 @@ export function useChat({
     // RAG handlers
     refreshRagFiles: rag.refreshRagFiles,
     handleRagFiles,
-    handleImageFiles: attachments.handleImageFiles,
     handleDroppedFilePaths,
     handleDeleteRagFile,
 

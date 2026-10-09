@@ -84,6 +84,10 @@ export function transcribeAudio(fileName: string, audioBase64: string, config?: 
   return invoke<string>("transcribe_audio", { fileName, audioBase64, config: config ?? null });
 }
 
+export function transcribeAudioFile(path: string) {
+  return invoke<string>("transcribe_audio_file", { path });
+}
+
 export function listItems(kind?: string) {
   return invoke<Item[]>("list_items", { kind: kind || null });
 }

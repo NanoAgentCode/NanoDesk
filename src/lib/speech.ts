@@ -2,6 +2,9 @@ import type { AsrConfig } from "../types";
 
 export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 export const AUDIO_ACCEPT = ".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm";
+export function isSupportedAudioAttachment(name: string): boolean {
+  return /\.(mp3|mp4|mpeg|mpga|m4a|wav|webm)$/i.test(name);
+}
 export function validateAsrConfig(config: AsrConfig): string | null {
   if (!config.base_url.trim()) return "请填写 ASR 服务地址";
   try {
@@ -16,7 +19,7 @@ export function validateAsrConfig(config: AsrConfig): string | null {
 }
 
 export function validateAudioFile(file: { name: string; size: number }): string | null {
-  if (!/\.(mp3|mp4|mpeg|mpga|m4a|wav|webm)$/i.test(file.name)) return "不支持的音频格式，请使用 WAV、MP3、M4A、MP4、MPEG、MPGA 或 WebM";
+  if (!isSupportedAudioAttachment(file.name)) return "不支持的音频格式，请使用 WAV、MP3、M4A、MP4、MPEG、MPGA 或 WebM";
   if (file.size === 0) return "音频文件为空";
   if (file.size > MAX_AUDIO_BYTES) return "音频文件不能超过 25 MB";
   return null;

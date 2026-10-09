@@ -31,8 +31,8 @@ import AccessModeSelector from "./AccessModeSelector";
 import ChatDecisionPanel from "./ChatDecisionPanel";
 import AssistantResponseActions from "./AssistantResponseActions";
 import TaskPlanCard from "./TaskPlanCard";
-import SpeechInput from "./SpeechInput";
-import { appendTranscript } from "../lib/speech";
+import ChatAttachmentActions from "./ChatAttachmentActions";
+import type { UseSpeechInputReturn } from "../hooks/useSpeechInput";
 import { formatWebSearchBadge, renderMessageContent } from "../lib/appHelpers";
 import { findPendingClarification, parseClarificationRequest, parseTaskPlan, parseToolCall, parseToolResult } from "../lib/messageHelpers";
 import type { ParsedToolCall } from "../lib/messageHelpers";
@@ -40,7 +40,7 @@ import type { AgentAccessMode, AgentClarificationAnswer, AgentClarificationReque
 import type { UseObservabilityReturn } from "../hooks/useObservability";
 import type { UseModelReturn } from "../hooks/useModel";
 import { buildChatModelOptions } from "../lib/modelOptions";
-import { resolveChatDecisionState } from "../lib/chatDecisionState";
+import { findPendingToolApproval, resolveChatDecisionState } from "../lib/chatDecisionState";
 import { getRoutingModeLabel } from "../lib/modelRouting";
 
 interface ChatPaneProps {
@@ -55,6 +55,8 @@ interface ChatPaneProps {
   selectedPromptIndex: number;
   busy: boolean;
   uploadingImageAttachment: boolean;
+  uploadingAttachment: boolean;
+  speech: UseSpeechInputReturn;
   pendingImageAttachments: ChatImageAttachment[];
   isRagDragging: boolean;
   executingToolMessageId: string | null;
@@ -82,12 +84,11 @@ interface ChatPaneProps {
   handleInputChange: (value: string, cursorIndex: number) => Promise<void>;
   handleChatInputKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   handleChatInputPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
-  handleImageFiles: (files: FileList | File[]) => Promise<number>;
+  handleAttachmentFiles: (files: FileList | File[]) => Promise<void>;
   removePendingImageAttachment: (relativePath: string) => void;
   insertPrompt: (item: Item) => void;
   handleDeleteRagFile: (id: string) => Promise<void>;
   onOpenModelSettings: () => void;
-  setNotice: (message: string) => void;
 }
 
 const PROJECT_STARTER_ACTIONS = [
@@ -149,6 +150,8 @@ export default function ChatPane({
   selectedPromptIndex,
   busy,
   uploadingImageAttachment,
+  uploadingAttachment,
+  speech,
   pendingImageAttachments,
   isRagDragging,
   executingToolMessageId,
@@ -176,16 +179,14 @@ export default function ChatPane({
   handleInputChange,
   handleChatInputKeyDown,
   handleChatInputPaste,
-  handleImageFiles,
+  handleAttachmentFiles,
   removePendingImageAttachment,
   insertPrompt,
   handleDeleteRagFile,
-  onOpenModelSettings,
-  setNotice
+  onOpenModelSettings
 }: ChatPaneProps) {
   const runtimePanelRef = useRef<HTMLElement | null>(null);
   const runtimeToggleBtnRef = useRef<HTMLButtonElement | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const activeModel = model.models.find((item) => item.id === model.activeModelId);
   const fixedModelId = model.routing.fixedModelIds.includes(model.activeModelId)
@@ -215,14 +216,6 @@ export default function ChatPane({
   function handleToggleRuntime() {
     const nextVisible = !obs.showChatRuntime;
     obs.setShowChatRuntime(nextVisible);
-  }
-
-  function handleImageInputChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const { files } = event.currentTarget;
-    if (files && files.length > 0) {
-      void handleImageFiles(files);
-    }
-    event.currentTarget.value = "";
   }
 
   async function handleStarterAction(prompt: string) {
@@ -275,14 +268,7 @@ export default function ChatPane({
     return null;
   }
 
-  const pendingToolApproval = busy
-    ? null
-    : [...messages].reverse().map((message) => {
-        const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
-        return toolCall && getToolDisplayState(message.id, toolCall) === "pending_approval"
-          ? { messageId: message.id, toolCall }
-          : null;
-      }).find((candidate) => candidate !== null) || null;
+  const pendingToolApproval = busy ? null : findPendingToolApproval(messages, messageToolCalls);
   const unresolvedClarification = findPendingClarification(messages);
   const {
     pendingClarification,
@@ -595,15 +581,6 @@ export default function ChatPane({
           disabled={busy || decisionPending}
           placeholder={decisionPending ? decisionPlaceholder : activeModel ? "描述目标、粘贴错误信息，或输入 # 使用提示词…" : "可以先输入内容，发送前请在下方选择或配置模型…"}
         />
-        <input
-          ref={imageInputRef}
-          className="chat-image-input"
-          type="file"
-          accept="image/png,image/jpeg,image/bmp,image/webp,image/tiff"
-          multiple
-          disabled={decisionPending}
-          onChange={handleImageInputChange}
-        />
         <div className="chat-input-footer">
           <div className="chat-input-left">
             <AccessModeSelector value={accessMode} onChange={onAccessModeChange} disabled={busy || decisionPending} />
@@ -630,27 +607,7 @@ export default function ChatPane({
             )}
           </div>
           <div className="chat-input-actions">
-            <SpeechInput
-              key={`${activeConversationId}:${attachmentProjectPath}`}
-              disabled={busy || decisionPending}
-              onTranscript={(text) => {
-                const next = appendTranscript(chatInput, text);
-                void handleInputChange(next, next.length);
-                textareaRef.current?.focus();
-              }}
-              setNotice={setNotice}
-            />
-            <Tooltip label={uploadingImageAttachment ? "图片上传中" : "添加图片"} openDelay={450}>
-              <MantineActionIcon
-              className="chat-header-square ghost"
-              aria-label="添加图片"
-              onClick={() => imageInputRef.current?.click()}
-              disabled={busy || decisionPending || uploadingImageAttachment}
-              variant="subtle"
-              >
-                <ImagePlus size={22} />
-              </MantineActionIcon>
-            </Tooltip>
+            <ChatAttachmentActions disabled={busy || decisionPending} uploading={uploadingAttachment} speech={speech} onFiles={handleAttachmentFiles} />
             <Tooltip label="新建空白对话" openDelay={450}>
               <MantineActionIcon disabled={busy || decisionPending} className="project-add-chat-btn" aria-label="新建空白对话" variant="subtle" color="gray" onClick={() => void handleNewConversation()}>
                 <Plus size={16} />
@@ -662,7 +619,7 @@ export default function ChatPane({
                 aria-label="发送"
                 variant="filled"
                 onClick={handleSendMessage}
-                disabled={busy || decisionPending || (!chatInput.trim() && pendingImageAttachments.length === 0)}
+                disabled={busy || decisionPending || uploadingAttachment || speech.status !== "idle" || (!chatInput.trim() && pendingImageAttachments.length === 0)}
               >
                 <SendHorizontal size={20} />
               </MantineActionIcon>

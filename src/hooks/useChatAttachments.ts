@@ -11,6 +11,7 @@ interface UseChatAttachmentsArgs {
   getProjectPath: () => string;
   onNotice: (message: string) => void;
   onDragEnd: () => void;
+  getScopeKey: () => string;
 }
 
 export function buildImageAttachmentPrompt(attachments: ChatImageAttachment[]) {
@@ -32,7 +33,7 @@ export function buildMessageContentWithImageAttachments(
   return textContent ? `${textContent}\n\n${imagePrompt}` : imagePrompt;
 }
 
-export function useChatAttachments({ getProjectPath, onNotice, onDragEnd }: UseChatAttachmentsArgs) {
+export function useChatAttachments({ getProjectPath, onNotice, onDragEnd, getScopeKey }: UseChatAttachmentsArgs) {
   const [uploadingImageAttachment, setUploadingImageAttachment] = useState(false);
   const [pendingImageAttachments, setPendingImageAttachments] = useState<ChatImageAttachment[]>([]);
 
@@ -59,6 +60,7 @@ export function useChatAttachments({ getProjectPath, onNotice, onDragEnd }: UseC
     }
 
     setUploadingImageAttachment(true);
+    const scopeKey = getScopeKey();
     try {
       const attachments: ChatImageAttachment[] = [];
       const projectPath = getProjectPath();
@@ -72,12 +74,13 @@ export function useChatAttachments({ getProjectPath, onNotice, onDragEnd }: UseC
         });
         attachments.push(attachment);
       }
+      if (scopeKey !== getScopeKey()) return 0;
       addPendingImageAttachments(attachments);
       onNotice(`已添加 ${attachments.length} 张图片，可直接让助手识别文字。`);
       return attachments.length;
     } catch (error) {
       console.error("Failed to attach image:", error);
-      onNotice(`图片添加失败：${String(error)}`);
+      if (scopeKey === getScopeKey()) onNotice(`图片添加失败：${String(error)}`);
       return 0;
     } finally {
       setUploadingImageAttachment(false);
@@ -90,6 +93,7 @@ export function useChatAttachments({ getProjectPath, onNotice, onDragEnd }: UseC
     if (imagePaths.length === 0) return 0;
 
     setUploadingImageAttachment(true);
+    const scopeKey = getScopeKey();
     try {
       const attachments: ChatImageAttachment[] = [];
       const projectPath = getProjectPath();
@@ -103,6 +107,7 @@ export function useChatAttachments({ getProjectPath, onNotice, onDragEnd }: UseC
         });
         attachments.push(attachment);
       }
+      if (scopeKey !== getScopeKey()) return 0;
       addPendingImageAttachments(attachments);
       return attachments.length;
     } finally {
