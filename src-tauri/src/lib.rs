@@ -1,5 +1,6 @@
 mod agent_commands;
 mod agent_runner;
+mod asr;
 mod brand;
 mod cli;
 mod code_index;
@@ -2288,6 +2289,9 @@ pub fn run() {
             list_local_skills,
             settings::get_tavily_api_key,
             settings::save_tavily_api_key,
+            settings::get_asr_config,
+            settings::save_asr_config,
+            asr::transcribe_audio,
             chat,
             chat_stream,
             interrupt_chat_stream,

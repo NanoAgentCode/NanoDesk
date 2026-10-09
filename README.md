@@ -11,6 +11,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - 轻量 RAG：拖拽文件、抽取文本、分块、生成 embedding，并在对话时召回相关片段。
 - 项目索引中心：为项目构建可插拔索引，当前包含代码实体/关系索引和文档片段索引，代码、配置、说明、数据文件问答会优先召回项目级上下文。
 - 图片附件和 OCR：图片保存到 `.nanodesk/uploads/images/`，消息中渲染缩略图，点击可预览，并可通过 `ocr_image` 调用本机 PaddleOCR。
+- 语音转文字：聊天输入区支持麦克风录音和音频文件，识别结果追加到草稿供编辑后发送；系统设置中的“语音识别”可配置兼容 OpenAI 的 ASR 地址、API Key、模型和可选语言，并通过音频文件测试识别。
 - 归档预览：设置页的 Archive 预览复用普通聊天的消息渲染链路，项目会话使用 `project_path`，普通会话回退到 app data 下的 `temp/`。
 - 项目工作区：添加或打开已有项目目录，可从项目条目右键菜单在系统资源管理器中打开目录；支持构建轻量文件索引、浏览文件树、读写/重命名/删除项目文件和执行项目命令。
 - 智能文件链接：聊天 Markdown 中的项目相对路径、裸文件名和已有文件链接会自动解析为项目内真实相对路径；外部 URL 会弹出到系统浏览器，避免应用内跳转。
@@ -32,6 +33,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - [用户画像异步批处理设计](docs/用户画像异步批处理设计.md)：画像与手工记忆边界、低 Token 候选过滤、批调度、租约、预算和删除屏障。
 - [Agent、RAG、MCP 与 Skills](docs/智能体检索增强与扩展工具设计.md)：模型上下文、工具审批、RAG、OCR、MCP 和 Skills。
 - [PaddleOCR OCR 工具](docs/图片文字识别工具.md)：本地 OCR 依赖、图片附件、运行时兼容和资源限制。
+- [语音识别使用说明](docs/语音识别使用说明.md)：ASR 配置、录音与文件入口、接口协议和排查。
 - [构建、配置与运维](docs/构建配置与运维.md)：开发、打包、数据位置、配置、安全和排查。
 - [技术栈学习路线](docs/技术栈学习路线.md)：按当前项目技术栈设计的分阶段学习路径。
 
@@ -120,7 +122,7 @@ nanodesk-knowledge.sqlite3       条目、长期记忆、向量与知识图谱
 nanodesk-project-index.sqlite3   代码与项目文档索引
 nanodesk-runtime.sqlite3         Agent 运行时数据
 nanodesk-observability.sqlite3   观测数据
-settings.json                      Tavily API key
+settings.json                      Tavily API key 与 ASR 配置
 logs/                              按天滚动的系统操作日志（保留 7 天）
 skills/                            本地 Skills 目录
 temp/                              无项目上下文时的临时工作目录

@@ -1,4 +1,4 @@
-import { Activity, Archive, BarChart3, Bot, Brain, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
+import { Activity, Archive, BarChart3, Bot, Brain, Fingerprint, Mic, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
 import { AppPluginRegistry, type FrontendPlugin } from "../core/plugins";
 import OpsPanel from "../components/OpsPanel";
 import SettingsThemeTab from "../components/settings/SettingsThemeTab";
@@ -12,6 +12,7 @@ import SettingsUsageTab from "../components/settings/SettingsUsageTab";
 import SettingsMcpTab from "../components/settings/SettingsMcpTab";
 import SettingsEnvironmentTab from "../components/settings/SettingsEnvironmentTab";
 import SettingsRoutingTab from "../components/settings/SettingsRoutingTab";
+import SettingsAsrTab from "../components/settings/SettingsAsrTab";
 import { APP_PLUGIN_NAMESPACE } from "../config/brand";
 
 const coreUiPlugin: FrontendPlugin = {
@@ -70,6 +71,12 @@ const coreUiPlugin: FrontendPlugin = {
           handleDeleteArchivedConversation={context.handleDeleteArchivedConversation}
         />
       )
+    },
+    {
+      id: "asr",
+      label: "语音识别",
+      icon: Mic,
+      render: () => <SettingsAsrTab />
     },
     {
       id: "observability",

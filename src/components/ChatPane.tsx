@@ -31,6 +31,8 @@ import AccessModeSelector from "./AccessModeSelector";
 import ChatDecisionPanel from "./ChatDecisionPanel";
 import AssistantResponseActions from "./AssistantResponseActions";
 import TaskPlanCard from "./TaskPlanCard";
+import SpeechInput from "./SpeechInput";
+import { appendTranscript } from "../lib/speech";
 import { formatWebSearchBadge, renderMessageContent } from "../lib/appHelpers";
 import { findPendingClarification, parseClarificationRequest, parseTaskPlan, parseToolCall, parseToolResult } from "../lib/messageHelpers";
 import type { ParsedToolCall } from "../lib/messageHelpers";
@@ -628,6 +630,16 @@ export default function ChatPane({
             )}
           </div>
           <div className="chat-input-actions">
+            <SpeechInput
+              key={`${activeConversationId}:${attachmentProjectPath}`}
+              disabled={busy || decisionPending}
+              onTranscript={(text) => {
+                const next = appendTranscript(chatInput, text);
+                void handleInputChange(next, next.length);
+                textareaRef.current?.focus();
+              }}
+              setNotice={setNotice}
+            />
             <Tooltip label={uploadingImageAttachment ? "图片上传中" : "添加图片"} openDelay={450}>
               <MantineActionIcon
               className="chat-header-square ghost"

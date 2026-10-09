@@ -1,11 +1,30 @@
 use tauri::{AppHandle, Manager};
 
+use crate::asr::AsrConfig;
 use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 struct AppSettings {
     tavily_api_key: String,
+    asr: Option<AsrConfig>,
+}
+
+#[tauri::command]
+pub async fn get_asr_config(app: AppHandle) -> AppResult<Option<AsrConfig>> {
+    load_asr_config(&app)
+}
+
+#[tauri::command]
+pub async fn save_asr_config(app: AppHandle, config: AsrConfig) -> AppResult<()> {
+    let config = config.normalized()?;
+    let mut settings = load_app_settings(&app)?;
+    settings.asr = Some(config);
+    save_app_settings(&app, &settings)
+}
+
+pub fn load_asr_config(app: &AppHandle) -> AppResult<Option<AsrConfig>> {
+    Ok(load_app_settings(app)?.asr)
 }
 
 #[tauri::command]
@@ -55,4 +74,26 @@ fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> AppResult<()> {
         .map_err(|err| AppError::Message(format!("序列化应用设置失败: {err}")))?;
     std::fs::write(path, content.as_bytes())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_settings_load_without_asr_and_preserve_tavily_on_roundtrip() {
+        let mut settings: AppSettings =
+            serde_json::from_str(r#"{"tavily_api_key":"existing-key"}"#).unwrap();
+        assert!(settings.asr.is_none());
+        settings.asr = Some(AsrConfig {
+            base_url: "https://api.siliconflow.cn/v1/audio/transcriptions".into(),
+            model: "Qwen/Qwen3-ASR-1.7B".into(),
+            api_key: "asr-key".into(),
+            language: "".into(),
+        });
+        let reloaded: AppSettings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(reloaded.tavily_api_key, "existing-key");
+        assert_eq!(reloaded.asr.unwrap().model, "Qwen/Qwen3-ASR-1.7B");
+    }
 }

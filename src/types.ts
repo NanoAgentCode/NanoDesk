@@ -783,3 +783,10 @@ export interface AgentRunTimeline {
 export type WorkspaceView = ItemKind | "all" | "memory";
 export type ThemeMode = "system" | "light" | "dark";
 export type SettingsTab = string;
+
+export interface AsrConfig {
+  base_url: string;
+  api_key: string;
+  model: string;
+  language: string;
+}
