@@ -496,6 +496,21 @@ export default function ChatPane({
         onSubmitClarification={handleClarificationAnswer}
       />
 
+      <div className="chat-composer-meta" aria-label="快捷键：Enter 发送，Shift 加 Enter 换行">
+        <span className="chat-shortcut">
+          <kbd>Enter</kbd>
+          <span className="chat-shortcut-label">发送</span>
+        </span>
+        <span className="chat-shortcut-divider" aria-hidden="true" />
+        <span className="chat-shortcut">
+          <span className="chat-shortcut-keys">
+            <kbd>Shift</kbd>
+            <span className="chat-shortcut-plus" aria-hidden="true">+</span>
+            <kbd>Enter</kbd>
+          </span>
+          <span className="chat-shortcut-label">换行</span>
+        </span>
+      </div>
       <div className={`chat-input${decisionPending ? " decision-locked" : ""}${isRagDragging ? " rag-dragging" : ""}${uploadingImageAttachment ? " image-uploading" : ""}`}>
         {!decisionPending && promptSuggestions.length > 0 && (
           <div className="prompt-suggestions-dropdown">
@@ -553,25 +568,13 @@ export default function ChatPane({
             ))}
           </div>
         )}
-        <div className="chat-composer-meta" aria-label="快捷键：Enter 发送，Shift 加 Enter 换行">
-          <span className="chat-shortcut">
-            <kbd>Enter</kbd>
-            <span className="chat-shortcut-label">发送</span>
-          </span>
-          <span className="chat-shortcut-divider" aria-hidden="true" />
-          <span className="chat-shortcut">
-            <span className="chat-shortcut-keys">
-              <kbd>Shift</kbd>
-              <span className="chat-shortcut-plus" aria-hidden="true">+</span>
-              <kbd>Enter</kbd>
-            </span>
-            <span className="chat-shortcut-label">换行</span>
-          </span>
-        </div>
         <Textarea
           id="chat-composer"
           ref={textareaRef}
           className="chat-composer-control"
+          autosize
+          minRows={2}
+          maxRows={8}
           value={chatInput}
           onChange={(event) => void handleInputChange(event.target.value, event.target.selectionStart)}
           onContextMenu={(event) => event.preventDefault()}

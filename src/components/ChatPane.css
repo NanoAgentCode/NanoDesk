@@ -720,7 +720,7 @@
 .chat-ready-status { margin-top: 20px; color: #58718e; }
 .chat-message.assistant { border-color: rgba(176, 200, 220, 0.58); box-shadow: 0 8px 24px rgba(46, 83, 120, 0.06); }
 .chat-input {
-  position: relative; display: block;
+  position: relative; display: flex; flex-direction: column;
   padding: 8px 4px 0;
 }
 .chat-composer-meta {
@@ -822,9 +822,9 @@
   box-shadow: var(--chat-input-focus-ring);
 }
 .chat-input-footer {
-  position: absolute; left: 10px; right: 10px; bottom: 10px;
+  flex: none; padding: 4px 16px 14px;
   display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; pointer-events: none;
+  flex-wrap: wrap; gap: 8px 10px;
 }
 .chat-input-left {
   display: flex; align-items: center; gap: 8px;
@@ -837,16 +837,15 @@
   background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 10px 30px rgba(37, 103, 174, 0.07);
 }
-.chat-composer-meta { position: absolute; z-index: 2; top: 13px; right: 14px; margin: 0; }
+.chat-composer-meta { align-self: flex-end; flex-shrink: 0; margin: 0 14px -4px; }
 .chat-input textarea {
-  min-height: 142px;
-  padding: 20px 220px 58px 20px;
+  min-height: 0;
+  padding: 16px 20px 12px;
   border: 0;
   border-radius: 13px;
   background: transparent;
 }
 .chat-input textarea:focus { border: 0; background: rgba(255,255,255,0.42); box-shadow: inset 0 0 0 2px rgba(37, 113, 236, 0.12); }
-.chat-input-footer { left: 16px; right: 16px; bottom: 14px; }
 .chat-model-select { width: min(230px, 40vw); }
 .chat-model-select input { min-height: 38px; border-color: #d7e3ef; background: rgba(248, 251, 255, 0.9); }
 .chat-input-actions .project-add-chat-btn,
@@ -902,6 +901,7 @@
 }
 .chat-input-actions {
   display: flex; align-items: center; gap: 8px; pointer-events: auto;
+  flex-shrink: 0; margin-left: auto;
 }
 /* 新对话 + 复用 project-add-chat-btn，但在输入区常显并加边框 */
 .chat-input-actions .project-add-chat-btn {
@@ -921,6 +921,20 @@
 .chat-input-actions .project-add-chat-btn svg {
   width: 20px;
   height: 20px;
+}
+.chat-input .chat-input-actions .chat-header-square,
+.chat-input .chat-input-actions .project-add-chat-btn {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.chat-input .chat-input-actions button svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .access-mode-trigger {
