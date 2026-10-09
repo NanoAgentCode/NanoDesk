@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActionIcon as MantineActionIcon,
   Button,
@@ -18,6 +18,8 @@ import {
   ImagePlus,
   Lightbulb,
   ListChecks,
+  Maximize2,
+  Minimize2,
   Plus,
   ScanSearch,
   SendHorizontal,
@@ -188,6 +190,7 @@ export default function ChatPane({
   const runtimePanelRef = useRef<HTMLElement | null>(null);
   const runtimeToggleBtnRef = useRef<HTMLButtonElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const activeModel = model.models.find((item) => item.id === model.activeModelId);
   const fixedModelId = model.routing.fixedModelIds.includes(model.activeModelId)
     ? model.activeModelId
@@ -281,6 +284,11 @@ export default function ChatPane({
     unresolvedClarification,
     clarificationFallbackIds
   });
+
+  useEffect(() => { setComposerExpanded(false); }, [activeConversationId]);
+  useEffect(() => {
+    if (busy || decisionPending) setComposerExpanded(false);
+  }, [busy, decisionPending]);
 
   return (
     <aside className="chat-pane">
@@ -496,22 +504,40 @@ export default function ChatPane({
         onSubmitClarification={handleClarificationAnswer}
       />
 
-      <div className="chat-composer-meta" aria-label="快捷键：Enter 发送，Shift 加 Enter 换行">
-        <span className="chat-shortcut">
-          <kbd>Enter</kbd>
-          <span className="chat-shortcut-label">发送</span>
-        </span>
-        <span className="chat-shortcut-divider" aria-hidden="true" />
-        <span className="chat-shortcut">
-          <span className="chat-shortcut-keys">
-            <kbd>Shift</kbd>
-            <span className="chat-shortcut-plus" aria-hidden="true">+</span>
+      <div className="chat-composer-toolbar">
+        <div className="chat-composer-meta" aria-label="快捷键：Enter 发送，Shift 加 Enter 换行">
+          <span className="chat-shortcut">
             <kbd>Enter</kbd>
+            <span className="chat-shortcut-label">发送</span>
           </span>
-          <span className="chat-shortcut-label">换行</span>
-        </span>
+          <span className="chat-shortcut-divider" aria-hidden="true" />
+          <span className="chat-shortcut">
+            <span className="chat-shortcut-keys">
+              <kbd>Shift</kbd>
+              <span className="chat-shortcut-plus" aria-hidden="true">+</span>
+              <kbd>Enter</kbd>
+            </span>
+            <span className="chat-shortcut-label">换行</span>
+          </span>
+        </div>
+        <Tooltip label={composerExpanded ? "收起输入区" : "展开输入区"} openDelay={450}>
+          <MantineActionIcon
+            className={`chat-header-square chat-composer-expand${composerExpanded ? " active" : ""}`}
+            aria-label={composerExpanded ? "收起输入区" : "展开输入区"}
+            aria-expanded={composerExpanded}
+            aria-controls="chat-composer"
+            variant="subtle"
+            disabled={busy || decisionPending}
+            onClick={() => {
+              setComposerExpanded((expanded) => !expanded);
+              requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+          >
+            {composerExpanded ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+          </MantineActionIcon>
+        </Tooltip>
       </div>
-      <div className={`chat-input${decisionPending ? " decision-locked" : ""}${isRagDragging ? " rag-dragging" : ""}${uploadingImageAttachment ? " image-uploading" : ""}`}>
+      <div className={`chat-input${composerExpanded ? " is-expanded" : ""}${decisionPending ? " decision-locked" : ""}${isRagDragging ? " rag-dragging" : ""}${uploadingImageAttachment ? " image-uploading" : ""}`}>
         {!decisionPending && promptSuggestions.length > 0 && (
           <div className="prompt-suggestions-dropdown">
             {promptSuggestions.map((prompt, index) => (
@@ -573,8 +599,8 @@ export default function ChatPane({
           ref={textareaRef}
           className="chat-composer-control"
           autosize
-          minRows={2}
-          maxRows={8}
+          minRows={composerExpanded ? 5 : 2}
+          maxRows={composerExpanded ? 20 : 5}
           value={chatInput}
           onChange={(event) => void handleInputChange(event.target.value, event.target.selectionStart)}
           onContextMenu={(event) => event.preventDefault()}
