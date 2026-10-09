@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="2620" viewBox="0 0 1920 2620" role="img" aria-labelledby="title desc">
   <title id="title">NanoDesk 完整执行流程图</title>
-  <desc id="desc">展示 NanoDesk 桌面端与 nano CLI 从启动、兼容迁移、状态恢复、上下文组装、模型流式响应、Agent 工具审批到持久化和失败恢复的完整执行流程。</desc>
+  <desc id="desc">展示 NanoDesk 桌面端与 nano CLI 从启动、领域库初始化、状态恢复、上下文组装、附件分流、模型响应、Agent 工具审批到持久化和失败恢复的执行流程；默认上传附件的 OCR 当前被目录策略拦截。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#526173"/>
@@ -60,7 +60,7 @@
   <!-- 1. Startup -->
   <rect class="section" x="30" y="125" width="1860" height="405"/>
   <text class="section-title" x="60" y="164">1. 入口与初始化</text>
-  <text class="section-subtitle" x="60" y="190">两个入口共享数据库、模型与索引核心；桌面端额外初始化 Runtime、观测、插件、MCP 和后台画像 Worker。</text>
+  <text class="section-subtitle" x="60" y="190">两个入口共享业务库、模型、索引和画像 Worker；桌面端额外初始化 Runtime、观测、日志、插件及 MCP。</text>
 
   <text class="lane-label" x="65" y="250">桌面端</text>
   <rect class="node entry" x="155" y="214" width="220" height="82"/>
@@ -175,7 +175,7 @@
   <text class="node-code" x="480" y="1064">append_message</text>
 
   <rect class="node frontend" x="670" y="950" width="335" height="140"/>
-  <text class="node-title" x="838" y="982">并行检索运行上下文</text>
+  <text class="node-title" x="838" y="982">检索运行上下文</text>
   <text class="node-text" x="838" y="1007">历史消息 + 滚动摘要</text>
   <text class="node-text" x="838" y="1030">长期记忆 + 用户画像 + RAG</text>
   <text class="node-text" x="838" y="1053">项目文件/代码/文档索引</text>
@@ -185,7 +185,7 @@
   <text class="node-title" x="1220" y="982">组装并控制上下文</text>
   <text class="node-text" x="1220" y="1007">buildSystemMessage</text>
   <text class="node-text" x="1220" y="1030">估算 token 与输出预留</text>
-  <text class="node-text" x="1220" y="1053">必要时生成无损滚动摘要</text>
+  <text class="node-text" x="1220" y="1053">滚动摘要；保留原始消息</text>
   <text class="node-code" x="1220" y="1076">contextPreparation</text>
 
   <rect class="node rust" x="1435" y="965" width="330" height="110"/>
@@ -203,7 +203,7 @@
 
   <rect class="node rust" x="1065" y="1140" width="310" height="96"/>
   <text class="node-title" x="1220" y="1174">Tauri 流式事件</text>
-  <text class="node-text" x="1220" y="1198">delta / reasoning_delta / error</text>
+  <text class="node-text" x="1220" y="1198">delta / reasoning / 中断 / 完成 / error</text>
   <text class="node-code" x="1220" y="1218">chat-stream</text>
 
   <rect class="node frontend" x="670" y="1140" width="335" height="96"/>
@@ -237,12 +237,12 @@
   <text class="lane-label" x="690" y="1295">附件旁路（在发送前完成）</text>
   <polygon class="decision" points="805,1310 910,1360 805,1410 700,1360"/>
   <text class="node-title" x="805" y="1355">文件类型</text>
-  <text class="node-text" x="805" y="1376">图片 / 文档</text>
+  <text class="node-text" x="805" y="1376">图片 / 音频 / 文档</text>
 
   <rect class="node rust" x="980" y="1278" width="330" height="105"/>
   <text class="node-title" x="1145" y="1310">图片附件</text>
   <text class="node-text" x="1145" y="1334">校验根目录 / 后缀 / 大小</text>
-  <text class="node-text" x="1145" y="1357">保存相对路径；按需调用 OCR</text>
+  <text class="node-text" x="1145" y="1357">可预览；OCR 被目录策略拦截</text>
   <text class="node-code" x="1145" y="1376">.nanodesk/uploads/images</text>
 
   <rect class="node rust" x="980" y="1410" width="330" height="90"/>
@@ -258,7 +258,12 @@
 
   <path class="edge-soft" d="M 70 1020 H 45 V 1510 H 650 V 1360 H 700"/>
   <path class="edge" d="M 910 1360 H 945 V 1330 H 980"/><text class="edge-label" x="946" y="1315">图片</text>
-  <path class="edge" d="M 805 1410 V 1455 H 980"/><text class="edge-label" x="885" y="1445">文档</text>
+  <path class="edge" d="M 910 1360 H 950 V 1455 H 980"/><text class="edge-label" x="948" y="1445">文档</text>
+  <rect class="node rust" x="650" y="1436" width="285" height="74"/>
+  <text class="node-title" x="792" y="1461">音频 ASR → 输入草稿</text>
+  <text class="node-text" x="792" y="1483">整段转录；编辑后手动发送</text>
+  <text class="node-code" x="792" y="1502">transcribe_audio / transcribe_audio_file</text>
+  <path class="edge" d="M 700 1360 H 630 V 1473 H 650"/><text class="edge-label" x="628" y="1434">音频</text>
   <path class="edge" d="M 1310 1455 H 1400"/>
   <path class="edge-dashed" d="M 1582 1390 V 1105 H 838 V 1090"/><text class="edge-label" x="1430" y="1124">召回结果进入上下文</text>
 
@@ -309,11 +314,11 @@
   <rect class="node rust" x="1370" y="1800" width="410" height="130"/>
   <text class="node-title" x="1575" y="1832">执行已授权工具</text>
   <text class="node-text" x="1575" y="1856">项目/本地文件 · 命令 · OCR</text>
-  <text class="node-text" x="1575" y="1879">MCP call · Web search 等插件能力</text>
+  <text class="node-text" x="1575" y="1879">MCP call · 搜索通过命令或 MCP</text>
   <text class="node-text" x="1575" y="1902">结果写入 tool call 与对话消息</text>
   <text class="node-code" x="1575" y="1920">execute_agent_tool_call</text>
 
-  <path class="edge" d="M 560 1375 H 680 V 1785 H 350 V 1865 H 380"/><text class="edge-label" x="638" y="1774">tool_call</text>
+  <path class="edge" d="M 560 1375 H 610 V 1785 H 350 V 1865 H 380"/><text class="edge-label" x="638" y="1774">tool_call</text>
   <path class="edge" d="M 645 1865 H 710"/><path class="edge" d="M 975 1865 H 1025"/>
   <path class="edge" d="M 1305 1865 H 1370"/><text class="edge-label" x="1338" y="1852">批准</text>
   <path class="edge-dashed" d="M 1575 1930 V 1970 H 1000 V 1710 H 1040"/><text class="edge-label" x="1430" y="1960">工具结果 → 继续模型</text>
@@ -347,7 +352,7 @@
   <!-- 5. Storage and integrations -->
   <rect class="section" x="30" y="2190" width="1860" height="370"/>
   <text class="section-title" x="60" y="2229">5. 持久化、扩展能力与可观测闭环</text>
-  <text class="section-subtitle" x="60" y="2255">数据库按领域隔离；command、LLM、MCP、Ops 和关键工具操作统一写观测 span，系统操作另写 7 天滚动日志。</text>
+  <text class="section-subtitle" x="60" y="2255">数据库按领域隔离；部分 command、LLM、MCP、Ops 和工具操作写观测 span，系统操作另写按日日志（保留 7 天）。</text>
 
   <rect class="node storage" x="65" y="2300" width="250" height="92"/>
   <text class="node-title" x="190" y="2333">config DB</text>
@@ -381,7 +386,7 @@
 
   <rect class="node external" x="65" y="2440" width="1770" height="80"/>
   <text class="node-title" x="950" y="2472">外部与本地扩展边界</text>
-  <text class="node-text" x="950" y="2498">LLM / Embedding API　·　MCP stdio / SSE / streamable HTTP　·　PaddleOCR CLI　·　SSH / SCP / SFTP　·　Skills 本地目录 / GitHub</text>
+  <text class="node-text" x="950" y="2498">LLM / Embedding / ASR API　·　MCP stdio / SSE / streamable HTTP　·　PaddleOCR CLI　·　SSH / SCP / SFTP　·　Skills 元数据</text>
 
   <path class="edge-soft" d="M 190 2392 V 2415 H 950 V 2440"/>
   <path class="edge-soft" d="M 760 2392 V 2415"/>
