@@ -79,7 +79,7 @@ export default function SpeechInput({ disabled, onTranscript, setNotice }: Speec
     const id = ++operation.current;
     setStatus("starting");
     try {
-      if (!(await getAsrConfig())) throw new Error("请先在系统设置 → 语音识别中保存 ASR 配置");
+      if (!(await getAsrConfig())) throw new Error("请先在系统设置 → 模型路由中选择语音识别模型");
       if (!valid(id)) return;
       const recorder = await startSpeechRecording((error) => fail(error, id));
       if (!valid(id)) { recorder.cancel(); return; }

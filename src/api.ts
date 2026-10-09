@@ -77,7 +77,7 @@ export function getAsrConfig() {
 }
 
 export function saveAsrConfig(config: AsrConfig) {
-  return invoke<void>("save_asr_config", { config });
+  return invoke<AsrConfig>("save_asr_config", { config });
 }
 
 export function transcribeAudio(fileName: string, audioBase64: string, config?: AsrConfig) {

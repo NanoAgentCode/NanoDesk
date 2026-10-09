@@ -6,14 +6,16 @@ import {
   listAvailableModels,
   testLlmConnectivity,
   testEmbeddingConnectivity,
+  getAsrConfig,
+  saveAsrConfig,
   updateConversationModel
   ,listModelSuppliers, saveModelSupplier, deleteModelSupplier
 } from "../api";
 import { confirmAction } from "../lib/dialogs";
-import type { AvailableModelInfo, ModelConfig, ModelConfigDraft, ModelSupplier, ModelSupplierDraft, Conversation } from "../types";
+import type { AsrConfig, AvailableModelInfo, ModelConfig, ModelConfigDraft, ModelSupplier, ModelSupplierDraft, Conversation } from "../types";
 import { DEFAULT_MODEL_ROUTING_PROFILE, normalizeRoutingProfile } from "../lib/modelRouting";
 import { useModelRouting, type UseModelRoutingReturn } from "./useModelRouting";
-import { isChatModel, isEmbeddingModel } from "../lib/modelCapabilities";
+import { inferModelKind, isAsrModel, isChatModel, isEmbeddingModel } from "../lib/modelCapabilities";
 
 export const emptyModelDraft: ModelConfigDraft = {
   name: "OpenAI",
@@ -100,6 +102,10 @@ export interface UseModelReturn {
   setActiveModelId: React.Dispatch<React.SetStateAction<string>>;
   routing: UseModelRoutingReturn;
   embeddingDraft: ModelConfigDraft;
+  asrConfig: AsrConfig | null;
+  asrLoaded: boolean;
+  handleSelectAsrModel: (modelId: string, supplierId: string) => Promise<void>;
+  handleSaveAsrLanguage: (language: string) => Promise<void>;
   llmTestStatus: { status: "idle" | "testing" | "success" | "error"; message?: string };
   setLlmTestStatus: React.Dispatch<React.SetStateAction<{ status: "idle" | "testing" | "success" | "error"; message?: string }>>;
   modelTestStatuses: Record<string, { status: "idle" | "testing" | "success" | "error"; message?: string }>;
@@ -136,6 +142,17 @@ export function useModel(
   const [activeModelId, setActiveModelId] = useState("");
   const routing = useModelRouting(models, activeModelId);
   const [embeddingDraft, setEmbeddingDraft] = useState<ModelConfigDraft>(emptyEmbeddingDraft);
+  const [asrConfig, setAsrConfig] = useState<AsrConfig | null>(null);
+  const [asrLoaded, setAsrLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setAsrLoaded(false);
+    void getAsrConfig().then((config) => { if (active) setAsrConfig(config); })
+      .catch((error) => { if (active) { setAsrConfig(null); setNotice(`读取 ASR 配置失败：${String(error)}`); } })
+      .finally(() => { if (active) setAsrLoaded(true); });
+    return () => { active = false; };
+  }, [suppliers]);
   const [availableModels, setAvailableModels] = useState<AvailableModelInfo[]>([]);
   const [modelListStatus, setModelListStatus] = useState<{
     status: "idle" | "loading" | "success" | "error";
@@ -284,9 +301,10 @@ export function useModel(
     const supplier = suppliers.find((item) => item.id === supplierId);
     if (!supplier) throw new Error("供应商不存在");
     const existing = models.find((item) => item.provider === supplier.provider && item.base_url === supplier.base_url && item.api_key === supplier.api_key && item.model === modelInfo.id);
-    if (existing) return existing;
-    const saved = await saveModelConfig({ ...emptyModelDraft, name: supplier.name, provider: supplier.provider, base_url: supplier.base_url, api_key: supplier.api_key, model: modelInfo.id, model_kind: modelInfo.suggested_kind, context_window: modelInfo.context_window ?? 32_768 });
-    setModels((current) => current.some((item) => item.id === saved.id) ? current : [saved, ...current]);
+    const kind = modelInfo.suggested_kind === "chat" ? inferModelKind(modelInfo.id) : modelInfo.suggested_kind;
+    if (existing && (kind !== "asr" || existing.model_kind === "asr")) return existing;
+    const saved = await saveModelConfig({ ...(existing ? normalizeModelDraft(existing) : emptyModelDraft), name: supplier.name, provider: supplier.provider, base_url: supplier.base_url, api_key: supplier.api_key, model: modelInfo.id, model_kind: kind, context_window: modelInfo.context_window ?? 32_768 });
+    setModels((current) => current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current]);
     return saved;
   }
 
@@ -536,6 +554,31 @@ export function useModel(
     }
   }
 
+  async function handleSelectAsrModel(modelId: string, supplierId: string) {
+    const latestModels = await listModelConfigs();
+    const selected = latestModels.find((item) => item.id === modelId && isAsrModel(item));
+    const supplier = selected && suppliers.find((item) => item.id === supplierId && item.provider === selected.provider && item.base_url === selected.base_url && item.api_key === selected.api_key);
+    if (!selected || !supplier || supplier.provider !== "openai-compatible") {
+      throw new Error("请选择兼容 OpenAI 的供应商语音识别模型");
+    }
+    const saved = await saveAsrConfig({
+      supplier_id: supplier.id,
+      base_url: "",
+      api_key: "",
+      model: selected.model,
+      language: asrConfig?.language || ""
+    });
+    setAsrConfig(saved);
+    setModels(latestModels);
+    setNotice(`语音识别模型已切换为 ${supplier.name} · ${selected.model}`);
+  }
+
+  async function handleSaveAsrLanguage(language: string) {
+    if (!asrConfig) throw new Error("请先选择语音识别模型");
+    const saved = await saveAsrConfig({ ...asrConfig, language });
+    setAsrConfig(saved);
+  }
+
   return {
     suppliers, supplierDraft, setSupplierDraft, supplierModels, saveSupplier, deleteSupplier, fetchSupplierModels, ensureSupplierModel,
     models,
@@ -546,6 +589,10 @@ export function useModel(
     setActiveModelId,
     routing,
     embeddingDraft,
+    asrConfig,
+    asrLoaded,
+    handleSelectAsrModel,
+    handleSaveAsrLanguage,
     llmTestStatus,
     setLlmTestStatus,
     modelTestStatuses,

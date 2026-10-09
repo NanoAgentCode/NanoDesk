@@ -2,13 +2,6 @@ import type { AsrConfig } from "../types";
 
 export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 export const AUDIO_ACCEPT = ".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm";
-export const DEFAULT_ASR_CONFIG: AsrConfig = {
-  base_url: "https://api.siliconflow.cn/v1/audio/transcriptions",
-  model: "Qwen/Qwen3-ASR-1.7B",
-  api_key: "",
-  language: ""
-};
-
 export function validateAsrConfig(config: AsrConfig): string | null {
   if (!config.base_url.trim()) return "请填写 ASR 服务地址";
   try {

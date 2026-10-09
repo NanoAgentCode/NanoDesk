@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inferModelKind, isChatModel, isEmbeddingModel } from "./modelCapabilities";
+import { inferModelKind, isAsrModel, isChatModel, isEmbeddingModel } from "./modelCapabilities";
 
 describe("model capabilities", () => {
   it("infers common embedding model names conservatively", () => {
@@ -14,5 +14,17 @@ describe("model capabilities", () => {
     expect(isChatModel({ id: "embed", model_kind: "embedding" })).toBe(false);
     expect(isEmbeddingModel({ id: "both", model_kind: "both" })).toBe(true);
     expect(isEmbeddingModel({ id: "embedding-config", model_kind: "embedding" })).toBe(false);
+  });
+
+  it("recognizes ASR models and excludes them from chat and embeddings", () => {
+    for (const name of ["Qwen/Qwen3-ASR-1.7B", "whisper-1", "gpt-4o-mini-transcribe", "FunAudioLLM/SenseVoiceSmall", "TeleAI/TeleSpeechASR"]) {
+      expect(inferModelKind(name)).toBe("asr");
+      const model = { id: "audio", model: name, model_kind: "chat" as const };
+      expect(isAsrModel(model)).toBe(true);
+      expect(isChatModel(model)).toBe(false);
+      expect(isEmbeddingModel(model)).toBe(false);
+    }
+    expect(isAsrModel({ id: "custom", model: "custom-name", model_kind: "asr" })).toBe(true);
+    expect(inferModelKind("gpt-audio")).toBe("chat");
   });
 });

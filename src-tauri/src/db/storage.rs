@@ -251,6 +251,19 @@ mod tests {
     }
 
     #[test]
+    fn persists_asr_model_purpose() {
+        let path = temp_database_path("asr-model-purpose");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let db = Database::open(path).unwrap();
+        let mut draft = model_draft("asr-model", "ASR");
+        draft.model = "Qwen/Qwen3-ASR-1.7B".into();
+        draft.model_kind = "asr".into();
+        let saved = db.save_model_config(draft).unwrap();
+        assert_eq!(saved.model_kind, "asr");
+        assert_eq!(db.get_model_config("asr-model").unwrap().model_kind, "asr");
+    }
+
+    #[test]
     fn fresh_storage_is_split_by_domain() {
         let base_path = temp_database_path("fresh-split");
         fs::create_dir_all(base_path.parent().expect("path should have parent"))

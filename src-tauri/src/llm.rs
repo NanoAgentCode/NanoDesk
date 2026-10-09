@@ -353,6 +353,12 @@ fn infer_model_kind(
         .collect::<Vec<_>>()
         .join(" ")
         .to_ascii_lowercase();
+    if [
+        "asr", "transcrib", "speech-to-text", "speech_to_text",
+        "speech-recognition", "speech_recognition",
+    ].iter().any(|marker| metadata.contains(marker)) || is_asr_model_id(model_id) {
+        return "asr";
+    }
     let supports_embedding = metadata.contains("embed") || metadata.contains("pooling");
     let supports_chat = metadata.contains("chat")
         || metadata.contains("completion")
@@ -810,6 +816,11 @@ fn ensure_api_key(config: &ModelConfig) -> AppResult<()> {
 }
 
 fn ensure_chat_model(config: &ModelConfig) -> AppResult<()> {
+    if config.model_kind == "asr" || is_asr_model_id(&config.model) {
+        return Err(AppError::Message(
+            "所选模型仅支持语音识别，不能用于对话".to_string(),
+        ));
+    }
     if config.model_kind == "embedding" {
         Err(AppError::Message(
             "所选模型仅支持嵌入用途，不能用于对话".to_string(),
@@ -822,6 +833,13 @@ fn ensure_chat_model(config: &ModelConfig) -> AppResult<()> {
 fn is_anthropic_provider(provider: &str) -> bool {
     let provider = provider.trim().to_lowercase();
     provider == "anthropic" || provider == "claude"
+}
+
+pub(crate) fn is_asr_model_id(model_id: &str) -> bool {
+    let id = model_id.to_ascii_lowercase();
+    ["asr", "whisper", "transcrib", "sensevoice", "telespeech"]
+        .iter()
+        .any(|marker| id.contains(marker))
 }
 
 #[cfg(test)]
@@ -860,6 +878,18 @@ mod model_list_tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    #[test]
+    fn classifies_asr_and_rejects_transcription_models_for_chat() {
+        for name in ["Qwen/Qwen3-ASR-1.7B", "whisper-1", "gpt-4o-transcribe", "FunAudioLLM/SenseVoiceSmall"] {
+            assert_eq!(infer_model_kind(name, &[], None, None), "asr");
+            let config = ModelConfig { model: name.into(), ..model_config() };
+            assert!(super::ensure_chat_model(&config).is_err());
+        }
+        assert_eq!(infer_model_kind("custom", &["speech-to-text".into()], None, None), "asr");
+        assert_eq!(infer_model_kind("gpt-audio", &[], None, None), "chat");
+        assert!(super::ensure_chat_model(&ModelConfig { model_kind: "asr".into(), ..model_config() }).is_err());
     }
 
     #[test]

@@ -6,6 +6,7 @@ import { isChatModel, isEmbeddingModel } from "../../lib/modelCapabilities";
 import ModelRoutingSelector from "../ModelRoutingSelector";
 import IconTooltipButton from "../IconTooltipButton";
 import { SupplierModelMultiSelect, SupplierModelSelect } from "./SupplierModelSelectors";
+import SettingsAsrModelCard from "./SettingsAsrModelCard";
 
 interface SettingsRoutingTabProps {
   model: UseModelReturn;
@@ -26,7 +27,7 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
       <div className="model-header-row">
         <div>
           <h3>模型路由</h3>
-          <p className="description description--tight">统一分配供应商模型的固定、智能、兜底和嵌入用途。</p>
+          <p className="description description--tight">统一分配供应商模型的固定、智能、兜底、嵌入和语音识别用途。</p>
         </div>
         <ModelRoutingSelector routing={model.routing} disabled={chatModels.length === 0} />
       </div>
@@ -103,6 +104,10 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
           {model.embeddingTestStatus.status === "error" && <Text size="xs" c="red" mt={6}>连通性异常</Text>}
         </Paper>
       </SimpleGrid>
+
+      <div style={{ order: 4, marginBottom: 16 }}>
+        <SettingsAsrModelCard model={model} />
+      </div>
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="lg" style={{ order: 1 }}>
         {ROUTING_STRATEGY_OPTIONS.map((option) => {

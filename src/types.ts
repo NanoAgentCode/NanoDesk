@@ -38,7 +38,7 @@ export interface ModelRoutingProfile {
   routing_tasks: string[];
 }
 
-export type ModelKind = "chat" | "embedding" | "both";
+export type ModelKind = "chat" | "embedding" | "asr" | "both";
 
 export interface ModelConfig extends ModelRoutingProfile {
   id: string;
@@ -785,6 +785,7 @@ export type ThemeMode = "system" | "light" | "dark";
 export type SettingsTab = string;
 
 export interface AsrConfig {
+  supplier_id?: string | null;
   base_url: string;
   api_key: string;
   model: string;

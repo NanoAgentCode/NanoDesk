@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { ModelConfig, ModelSupplier } from "../../types";
-import { resolveSupplierModelInfo } from "./SupplierModelSelectors";
+import { resolveSupplierModelInfo, supportsModelPurpose } from "./SupplierModelSelectors";
 describe("supplier model cascade values", () => {
+  it("keeps ASR options separate even when an old saved model was classified as chat", () => {
+    const asr = { id: "Qwen/Qwen3-ASR-1.7B", suggested_kind: "chat" as const, context_window: null };
+    expect(supportsModelPurpose(asr, "asr")).toBe(true);
+    expect(supportsModelPurpose(asr, "chat")).toBe(false);
+    expect(supportsModelPurpose(asr, "embedding")).toBe(false);
+    const both = { id: "dual", suggested_kind: "both" as const, context_window: null };
+    expect(supportsModelPurpose(both, "chat")).toBe(true);
+    expect(supportsModelPurpose(both, "embedding")).toBe(true);
+    expect(supportsModelPurpose(both, "asr")).toBe(false);
+  });
   it("keeps supplier and model identifiers distinct", () => {
     expect(`supplier-1\u0000gpt-4o`.split("\u0000")).toEqual(["supplier-1", "gpt-4o"]);
   });

@@ -544,7 +544,11 @@ fn chat_models(db: &Database) -> AppResult<Vec<ModelConfig>> {
     Ok(db
         .list_model_configs()?
         .into_iter()
-        .filter(|model| model.id != EMBEDDING_CONFIG_ID && model.model_kind != "embedding")
+        .filter(|model| {
+            model.id != EMBEDDING_CONFIG_ID
+                && matches!(model.model_kind.as_str(), "chat" | "both")
+                && !crate::llm::is_asr_model_id(&model.model)
+        })
         .collect())
 }
 

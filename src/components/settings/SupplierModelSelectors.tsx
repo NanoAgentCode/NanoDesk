@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MultiSelect, Select } from "@mantine/core";
 import type { AvailableModelInfo, ModelConfig, ModelSupplier } from "../../types";
+import { inferModelKind } from "../../lib/modelCapabilities";
 
 interface BaseProps {
   suppliers: ModelSupplier[];
@@ -9,7 +10,15 @@ interface BaseProps {
   fetchModels: (supplierId: string) => Promise<AvailableModelInfo[]>;
   ensureModel: (supplierId: string, model: AvailableModelInfo) => Promise<ModelConfig>;
   label: string;
-  kind: "chat" | "embedding";
+  kind: "chat" | "embedding" | "asr";
+  disabled?: boolean;
+  onError?: (error: unknown) => void;
+  selectedSupplierModel?: { supplierId: string; model: AvailableModelInfo } | null;
+}
+
+export function supportsModelPurpose(model: AvailableModelInfo, purpose: BaseProps["kind"]): boolean {
+  const kind = model.suggested_kind === "chat" ? inferModelKind(model.id) : model.suggested_kind;
+  return kind === purpose || (kind === "both" && purpose !== "asr");
 }
 const key = (supplierId: string, modelId: string) => `${supplierId}\u0000${modelId}`;
 const split = (value: string) => { const at = value.indexOf("\u0000"); return [value.slice(0, at), value.slice(at + 1)] as const; };
@@ -31,8 +40,11 @@ export function resolveSupplierModelInfo(
 
 function useOptions(props: BaseProps) {
   useEffect(() => { props.suppliers.forEach((s) => { if (!props.discovered[s.id]) void props.fetchModels(s.id).catch(() => undefined); }); }, [props.suppliers, props.discovered, props.fetchModels]);
-  return useMemo(() => props.suppliers.map((supplier) => {
+  return useMemo(() => props.suppliers.filter((supplier) => props.kind !== "asr" || supplier.provider === "openai-compatible").map((supplier) => {
     const available = new Map((props.discovered[supplier.id] || []).map((model) => [model.id, model]));
+    if (props.selectedSupplierModel?.supplierId === supplier.id) {
+      available.set(props.selectedSupplierModel.model.id, props.selectedSupplierModel.model);
+    }
     for (const saved of props.models) {
       if (saved.provider === supplier.provider && saved.base_url === supplier.base_url && saved.api_key === supplier.api_key && !available.has(saved.model)) {
         available.set(saved.model, {
@@ -45,10 +57,10 @@ function useOptions(props: BaseProps) {
     return {
       group: supplier.name,
       items: [...available.values()]
-        .filter((model) => props.kind === "chat" ? model.suggested_kind !== "embedding" : model.suggested_kind !== "chat")
+        .filter((model) => supportsModelPurpose(model, props.kind))
         .map((model) => ({ value: key(supplier.id, model.id), label: model.id }))
     };
-  }).filter((group) => group.items.length > 0), [props.suppliers, props.discovered, props.models, props.kind]);
+  }).filter((group) => group.items.length > 0), [props.suppliers, props.discovered, props.models, props.kind, props.selectedSupplierModel]);
 }
 function selectedKey(id: string, props: BaseProps) {
   const model = props.models.find((item) => item.id === id);
@@ -56,15 +68,20 @@ function selectedKey(id: string, props: BaseProps) {
   const supplier = props.suppliers.find((item) => item.provider === model.provider && item.base_url === model.base_url && item.api_key === model.api_key);
   return supplier ? key(supplier.id, model.model) : null;
 }
-export function SupplierModelSelect(props: BaseProps & { value: string | null; onChange: (id: string | null) => void }) {
+export function SupplierModelSelect(props: BaseProps & { value: string | null; onChange: (id: string | null, supplierId?: string) => void }) {
   const options = useOptions(props);
   const [pendingValue, setPendingValue] = useState<string | undefined>();
-  const committedValue = props.value ? selectedKey(props.value, props) : null;
-  return <Select aria-label={`${props.label}模型`} placeholder="选择供应商 / 模型" data={options} value={pendingValue ?? committedValue} searchable onChange={async (raw) => {
+  const committedValue = props.selectedSupplierModel
+    ? key(props.selectedSupplierModel.supplierId, props.selectedSupplierModel.model.id)
+    : props.value ? selectedKey(props.value, props) : null;
+  return <Select aria-label={`${props.label}模型`} placeholder="选择供应商 / 模型" data={options} value={pendingValue ?? committedValue} disabled={props.disabled || Boolean(pendingValue)} searchable onChange={async (raw) => {
     if (!raw) return props.onChange(null);
     setPendingValue(raw);
     try {
-      const [supplierId, modelId] = split(raw); const info = resolveSupplierModelInfo(supplierId, modelId, props.suppliers, props.discovered, props.models); if (info) props.onChange((await props.ensureModel(supplierId, info)).id);
+      const [supplierId, modelId] = split(raw); const info = resolveSupplierModelInfo(supplierId, modelId, props.suppliers, props.discovered, props.models); if (info) props.onChange((await props.ensureModel(supplierId, info)).id, supplierId);
+    } catch (error) {
+      if (props.onError) props.onError(error);
+      else console.error("选择供应商模型失败", error);
     } finally {
       setPendingValue(undefined);
     }

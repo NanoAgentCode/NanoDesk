@@ -3,15 +3,19 @@ use std::time::Duration;
 use base64::Engine as _;
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
 use crate::error::{AppError, AppResult};
+use crate::models::ModelSupplier;
+use crate::AppState;
 
 const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AsrConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supplier_id: Option<String>,
     pub base_url: String,
     pub api_key: String,
     pub model: String,
@@ -19,6 +23,51 @@ pub struct AsrConfig {
 }
 
 impl AsrConfig {
+    pub fn resolve(mut self, suppliers: &[ModelSupplier]) -> AppResult<Self> {
+        if let Some(id) = self.supplier_id.as_deref() {
+            let supplier = suppliers
+                .iter()
+                .find(|supplier| supplier.id == id)
+                .ok_or_else(|| {
+                    AppError::from(
+                        "ASR 供应商已删除，请在系统设置 → 模型路由中重新选择语音识别模型",
+                    )
+                })?;
+            if supplier.provider != "openai-compatible" {
+                return Err("语音识别需要兼容 OpenAI 的供应商".into());
+            }
+            self.base_url = supplier.base_url.clone();
+            self.api_key = supplier.api_key.clone();
+            return self.normalized();
+        }
+        let mut legacy = self.normalized()?;
+        let matches = suppliers
+            .iter()
+            .filter(|supplier| {
+                supplier.provider == "openai-compatible"
+                    && supplier.api_key.trim() == legacy.api_key
+                    && AsrConfig {
+                        base_url: supplier.base_url.trim().trim_end_matches('/').into(),
+                        ..Default::default()
+                    }
+                    .endpoint()
+                        == legacy.endpoint()
+            })
+            .collect::<Vec<_>>();
+        if matches.len() == 1 {
+            legacy.supplier_id = Some(matches[0].id.clone());
+        }
+        Ok(legacy)
+    }
+
+    pub fn for_storage(mut self) -> Self {
+        if self.supplier_id.is_some() {
+            self.base_url.clear();
+            self.api_key.clear();
+        }
+        self
+    }
+
     pub fn normalized(mut self) -> AppResult<Self> {
         self.base_url = self.base_url.trim().trim_end_matches('/').to_string();
         self.api_key = self.api_key.trim().to_string();
@@ -59,6 +108,7 @@ impl AsrConfig {
 #[tauri::command]
 pub async fn transcribe_audio(
     app: AppHandle,
+    state: State<'_, AppState>,
     file_name: String,
     audio_base64: String,
     config: Option<AsrConfig>,
@@ -67,8 +117,9 @@ pub async fn transcribe_audio(
         Some(config) => Some(config),
         None => crate::settings::load_asr_config(&app)?,
     }
-    .ok_or_else(|| AppError::from("请先在系统设置 → 语音识别中保存 ASR 配置"))?
-    .normalized()?;
+    .ok_or_else(|| AppError::from("请先在系统设置 → 模型路由中选择语音识别模型"))?;
+    let suppliers = state.db.lock().await.list_model_suppliers()?;
+    let config = config.resolve(&suppliers)?;
     if audio_base64.len() > MAX_AUDIO_BYTES.div_ceil(3) * 4 {
         return Err("音频文件不能超过 25 MB".into());
     }
@@ -167,7 +218,81 @@ mod tests {
             model: "Qwen/Qwen3-ASR-1.7B".into(),
             api_key: "test-key".into(),
             language: "".into(),
+            ..Default::default()
         }
+    }
+
+    fn supplier() -> ModelSupplier {
+        ModelSupplier {
+            id: "supplier-1".into(),
+            name: "ASR".into(),
+            provider: "openai-compatible".into(),
+            base_url: "https://api.siliconflow.cn/v1".into(),
+            api_key: "test-key".into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn uses_current_supplier_credentials_and_stores_only_reference() {
+        let selected = AsrConfig {
+            supplier_id: Some("supplier-1".into()),
+            ..config("https://old.example/v1")
+        };
+        let mut current = supplier();
+        current.base_url = "https://new.example/v1".into();
+        current.api_key = "updated-key".into();
+        let resolved = selected.resolve(&[current]).unwrap();
+        assert_eq!(resolved.base_url, "https://new.example/v1");
+        assert_eq!(resolved.api_key, "updated-key");
+        let stored = resolved.for_storage();
+        assert!(stored.api_key.is_empty());
+        assert!(stored.base_url.is_empty());
+        assert_eq!(stored.supplier_id.as_deref(), Some("supplier-1"));
+        assert_eq!(stored.model, "Qwen/Qwen3-ASR-1.7B");
+    }
+
+    #[test]
+    fn deleted_supplier_does_not_fall_back_to_copied_credentials() {
+        let selected = AsrConfig {
+            supplier_id: Some("removed".into()),
+            ..config("https://api.siliconflow.cn/v1")
+        };
+        assert!(selected
+            .resolve(&[supplier()])
+            .unwrap_err()
+            .to_string()
+            .contains("已删除"));
+        let mut incompatible = supplier();
+        incompatible.provider = "anthropic".into();
+        let selected = AsrConfig {
+            supplier_id: Some("supplier-1".into()),
+            ..config("https://api.siliconflow.cn/v1")
+        };
+        assert!(selected.resolve(&[incompatible]).is_err());
+    }
+
+    #[test]
+    fn preserves_legacy_configuration_and_uniquely_matches_existing_supplier() {
+        let legacy = config("https://api.siliconflow.cn/v1/audio/transcriptions");
+        assert!(legacy.clone().resolve(&[]).unwrap().supplier_id.is_none());
+        assert_eq!(
+            legacy
+                .clone()
+                .resolve(&[supplier()])
+                .unwrap()
+                .supplier_id
+                .as_deref(),
+            Some("supplier-1")
+        );
+        let mut duplicate = supplier();
+        duplicate.id = "supplier-2".into();
+        assert!(legacy
+            .resolve(&[supplier(), duplicate])
+            .unwrap()
+            .supplier_id
+            .is_none());
     }
 
     #[test]

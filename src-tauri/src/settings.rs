@@ -1,7 +1,8 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 
 use crate::asr::AsrConfig;
 use crate::error::{AppError, AppResult};
+use crate::AppState;
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -11,16 +12,28 @@ struct AppSettings {
 }
 
 #[tauri::command]
-pub async fn get_asr_config(app: AppHandle) -> AppResult<Option<AsrConfig>> {
-    load_asr_config(&app)
+pub async fn get_asr_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<Option<AsrConfig>> {
+    let suppliers = state.db.lock().await.list_model_suppliers()?;
+    load_asr_config(&app)?
+        .map(|config| config.resolve(&suppliers))
+        .transpose()
 }
 
 #[tauri::command]
-pub async fn save_asr_config(app: AppHandle, config: AsrConfig) -> AppResult<()> {
-    let config = config.normalized()?;
+pub async fn save_asr_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: AsrConfig,
+) -> AppResult<AsrConfig> {
+    let suppliers = state.db.lock().await.list_model_suppliers()?;
+    let config = config.resolve(&suppliers)?;
     let mut settings = load_app_settings(&app)?;
-    settings.asr = Some(config);
-    save_app_settings(&app, &settings)
+    settings.asr = Some(config.clone().for_storage());
+    save_app_settings(&app, &settings)?;
+    Ok(config)
 }
 
 pub fn load_asr_config(app: &AppHandle) -> AppResult<Option<AsrConfig>> {
@@ -90,6 +103,7 @@ mod tests {
             model: "Qwen/Qwen3-ASR-1.7B".into(),
             api_key: "asr-key".into(),
             language: "".into(),
+            ..Default::default()
         });
         let reloaded: AppSettings =
             serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();

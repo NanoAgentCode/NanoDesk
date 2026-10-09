@@ -541,11 +541,11 @@ fn validate_reasoning_effort(value: String) -> AppResult<String> {
 
 fn validate_model_kind(value: String) -> AppResult<String> {
     let value = value.trim().to_lowercase();
-    if matches!(value.as_str(), "chat" | "embedding" | "both") {
+    if matches!(value.as_str(), "chat" | "embedding" | "asr" | "both") {
         Ok(value)
     } else {
         Err(AppError::Message(
-            "模型用途必须是 chat、embedding 或 both".to_string(),
+            "模型用途必须是 chat、embedding、asr 或 both".to_string(),
         ))
     }
 }
