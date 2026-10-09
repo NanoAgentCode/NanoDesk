@@ -109,7 +109,9 @@ Windows 打包：
 npm.cmd run package:win
 ```
 
-`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，并只生成标准 NSIS 安装包：`src-tauri\target\release\bundle\nsis\NanoDesk_0.1.0_x64-setup.exe`。默认跳过独立 CLI、CLI 安装器、离线 NSIS 和 MSI，以减少重复编译与打包时间。
+`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，并只生成标准 NSIS 安装包：`src-tauri\target\release\bundle\nsis\NanoDesk_0.2.0_x64-setup.exe`。默认跳过独立 CLI、CLI 安装器、离线 NSIS 和 MSI，以减少重复编译与打包时间。
+
+版本变更见 [CHANGELOG](CHANGELOG.md)，安装包从 [GitHub Releases](https://github.com/NanoAgentCode/NanoDesk/releases) 下载。
 
 ## 数据位置
 
