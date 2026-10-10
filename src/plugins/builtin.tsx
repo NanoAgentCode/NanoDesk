@@ -1,6 +1,7 @@
-import { Activity, Archive, BarChart3, Bot, Brain, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
+import { Activity, Archive, BarChart3, Bot, Brain, CalendarClock, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
 import { AppPluginRegistry, type FrontendPlugin } from "../core/plugins";
 import OpsPanel from "../components/OpsPanel";
+import AutomationPanel from "../components/AutomationPanel";
 import SettingsThemeTab from "../components/settings/SettingsThemeTab";
 import SettingsMemoryTab from "../components/settings/SettingsMemoryTab";
 import SettingsProfileTab from "../components/settings/SettingsProfileTab";
@@ -156,6 +157,10 @@ const opsPlugin: FrontendPlugin = {
 };
 
 export const appPlugins = new AppPluginRegistry([
+  {
+    manifest: { id: `${APP_PLUGIN_NAMESPACE}.automation`, name: "Automation", version: "0.1.0", capabilities: ["main-view"] },
+    mainViews: [{ id: "automation", label: "定时与事件任务", icon: CalendarClock, component: AutomationPanel }]
+  },
   coreUiPlugin,
   skillsPlugin,
   mcpPlugin,

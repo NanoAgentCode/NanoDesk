@@ -7,6 +7,7 @@ pub const STARTUP_REGISTRY_NAME: &str = env!("APP_STARTUP_REGISTRY_NAME");
 pub const PLUGIN_NAMESPACE: &str = env!("APP_PLUGIN_NAMESPACE");
 pub const MAIN_DATABASE_NAME: &str = concat!(env!("APP_STORAGE_PREFIX"), ".sqlite3");
 pub const RUNTIME_DATABASE_NAME: &str = concat!(env!("APP_STORAGE_PREFIX"), "-runtime.sqlite3");
+pub const AUTOMATION_DATABASE_NAME: &str = concat!(env!("APP_STORAGE_PREFIX"), "-automation.sqlite3");
 pub const OBSERVABILITY_DATABASE_NAME: &str =
     concat!(env!("APP_STORAGE_PREFIX"), "-observability.sqlite3");
 pub const IMAGE_UPLOADS_DIRECTORY: &str =

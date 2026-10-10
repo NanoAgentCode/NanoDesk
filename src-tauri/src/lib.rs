@@ -1,6 +1,7 @@
 mod agent_commands;
 mod agent_runner;
 mod asr;
+mod automation;
 mod brand;
 mod cli;
 mod code_index;
@@ -77,6 +78,7 @@ pub(crate) struct AppState {
     db: Mutex<Database>,
     observability: Mutex<ObservabilityPipeline>,
     runtime: Mutex<RuntimeStore>,
+    automation: Mutex<automation::AutomationStore>,
     mcp: Mutex<McpClientManager>,
     plugins: PluginRegistry,
     ops_ssh_sessions: Mutex<HashMap<String, ops::OpsSshSessionHandle>>,
@@ -2180,6 +2182,10 @@ pub fn run() {
             let db = Database::open(db_path).map_err(|err| err.to_string())?;
             let runtime_path = data_dir.join(brand::RUNTIME_DATABASE_NAME);
             let runtime = RuntimeStore::open(runtime_path).map_err(|err| err.to_string())?;
+            let automation = automation::AutomationStore::open(
+                &data_dir.join(brand::AUTOMATION_DATABASE_NAME),
+            )
+            .map_err(|err| err.to_string())?;
             let observability_path = data_dir.join(brand::OBSERVABILITY_DATABASE_NAME);
             let observability = match SqliteObservabilitySink::open(observability_path) {
                 Ok(sink) => ObservabilityPipeline::new(vec![Box::new(sink)]),
@@ -2199,15 +2205,24 @@ pub fn run() {
                 db: Mutex::new(db),
                 observability: Mutex::new(observability),
                 runtime: Mutex::new(runtime),
+                automation: Mutex::new(automation),
                 mcp: Mutex::new(McpClientManager::default()),
                 plugins,
                 ops_ssh_sessions: Mutex::new(HashMap::new()),
                 chat_stream_interrupts: Mutex::new(ChatStreamInterrupts::default()),
             });
             profile::start_worker(app.handle().clone());
+            automation::start_worker(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            automation::list_automations,
+            automation::save_automation,
+            automation::set_automation_enabled,
+            automation::delete_automation,
+            automation::list_automation_runs,
+            automation::run_automation_now,
+            automation::recover_automation_run,
             list_items,
             search_items,
             create_item,
