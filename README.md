@@ -34,6 +34,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - [定时与事件任务](docs/定时与事件任务.md)：触发规则、后台执行、重试、补执行、文件监听与验收范围。
 - [后台任务执行器](docs/后台任务执行器.md)：聊天任务后台执行、会话切换、流式恢复、审批与取消边界。
 - [架构与模块设计](docs/架构与模块设计.md)：前端、Tauri command、Rust 后端模块分层。
+- [模块化重构记录](docs/模块化重构记录.md)：模块职责、兼容入口、跨层契约和回归验证范围。
 - [数据与存储设计](docs/数据与存储设计.md)：SQLite 数据库、核心表、索引、文件边界和附件存储。
 - [用户画像异步批处理设计](docs/用户画像异步批处理设计.md)：画像与手工记忆边界、低 Token 候选过滤、批调度、租约、预算和删除屏障。
 - [Agent、RAG、MCP 与 Skills](docs/智能体检索增强与扩展工具设计.md)：模型上下文、工具审批、RAG、OCR、MCP 和 Skills。
@@ -147,27 +148,38 @@ temp/                              无项目上下文时的临时工作目录
 
 ```text
 src/                           React + TypeScript 前端
-src/api.ts                     Tauri command 调用封装
+src/api.ts / src/api/           兼容聚合出口与按能力分组的类型化 IPC
 src/theme.ts                   Mantine 主题与组件默认配置
 src/core/plugins.tsx           前端插件契约与微内核注册表
 src/plugins/builtin.tsx        内置 UI 插件装配
 src/hooks/                     对话、模型、项目、RAG、MCP、Skills、Ops 等状态逻辑
+src/hooks/chat/                聊天接口、后台投影与会话消息恢复
+src/components/app/            受控项目、重命名与关闭弹窗
+src/components/automation/     受控自动任务编辑表单
 src/hooks/useAccessMode.ts     三种应用模式状态与本地持久化
 src/lib/backgroundAgent.ts     后台任务 IPC 类型与会话展示投影
 src/components/                聊天区、侧栏、设置页、观测面板、Ops 工作台等 UI
 src/lib/                       系统提示、上下文预算与摘要编排、工具解析、格式化和安全封装
 src-tauri/src/lib.rs           Tauri command 注册、应用状态和启动流程
+src-tauri/src/app_state.rs     共享应用状态与流式取消注册表
+src-tauri/src/commands/        按能力分组的 IPC 适配器
+src-tauri/src/services/        工具、OCR、环境与观测服务
 src-tauri/src/cli.rs           nano 终端交互、模型选择和项目问答上下文
 src-tauri/src/bin/nano.rs      nano 命令行二进制入口
 src-tauri/src/core/plugin.rs   后端插件契约、清单与 Agent 工具扩展点
 src-tauri/src/plugins.rs       内置后端插件装配
 src-tauri/src/db.rs            业务 SQLite schema 与共享数据库入口
 src-tauri/src/db/              分库迁移及条目、配置、会话、RAG、记忆、画像和项目索引存储
+src-tauri/src/db/schema.rs     Schema 初始化与列迁移
 src-tauri/src/code_index.rs    项目代码实体、关系和片段索引
 src-tauri/src/project_index.rs 项目文档片段索引与通用项目索引查询
 src-tauri/src/runtime.rs       Agent run/step/tool call 运行时存储
 src-tauri/src/agent_commands.rs Agent 运行时生命周期与审批 command
-src-tauri/src/background_agent.rs 应用级后台模型/计划/工具执行循环
+src-tauri/src/background_agent/ 协议、所有权、生命周期、决策、执行与上下文
+src-tauri/src/automation/      自动任务协议、调度、扫描、存储与执行
+src-tauri/src/runtime/         run/tool/时间线、恢复及执行请求存储
+src-tauri/src/cli/             CLI 模型、上下文、主题与展示
+src-tauri/src/llm/             模型协议、供应商、SSE、发现与 Embeddings
 src-tauri/src/observability.rs 观测 sink/pipeline 与观测库
 src-tauri/src/logging.rs       按天写入并自动清理的系统操作日志
 src-tauri/src/llm.rs           Chat、streaming 和 embeddings 请求

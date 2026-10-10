@@ -1,5 +1,5 @@
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use uuid::Uuid;
 
 use super::{build_fts_prefix_query, clean_or_default, ensure_affected, Database};
@@ -101,6 +101,57 @@ impl Database {
             .knowledge_conn
             .execute("DELETE FROM items WHERE id = ?1", params![id])?;
         ensure_affected(affected, "item not found")?;
+        Ok(())
+    }
+}
+
+impl Database {
+    pub(super) fn get_item(&self, id: &str) -> AppResult<Option<Item>> {
+        self.knowledge_conn
+            .query_row(
+                "
+                SELECT id, kind, title, body, status, tags_json, created_at, updated_at
+                FROM items WHERE id = ?1
+                ",
+                params![id],
+                Self::row_to_item,
+            )
+            .optional()
+            .map_err(AppError::from)
+    }
+
+    pub(super) fn upsert_item(&self, item: &Item) -> AppResult<()> {
+        let tags_json = serde_json::to_string(&item.tags)?;
+        self.knowledge_conn.execute(
+            "
+            INSERT INTO items (id, kind, title, body, status, tags_json, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            ON CONFLICT(id) DO UPDATE SET
+                kind = excluded.kind,
+                title = excluded.title,
+                body = excluded.body,
+                status = excluded.status,
+                tags_json = excluded.tags_json,
+                updated_at = excluded.updated_at
+            ",
+            params![
+                item.id,
+                item.kind,
+                item.title,
+                item.body,
+                item.status,
+                tags_json,
+                item.created_at.to_rfc3339(),
+                item.updated_at.to_rfc3339()
+            ],
+        )?;
+
+        self.knowledge_conn
+            .execute("DELETE FROM items_fts WHERE id = ?1", params![item.id])?;
+        self.knowledge_conn.execute(
+            "INSERT INTO items_fts (id, title, body, tags) VALUES (?1, ?2, ?3, ?4)",
+            params![item.id, item.title, item.body, item.tags.join(" ")],
+        )?;
         Ok(())
     }
 }

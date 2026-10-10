@@ -1,38 +1,15 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useAppCloseBehavior } from "./hooks/useAppCloseBehavior";
+import ProjectDialogs from "./components/app/ProjectDialogs";
+import RenameConversationDialog from "./components/app/RenameConversationDialog";
+import CloseAppDialog from "./components/app/CloseAppDialog";
+import { Suspense, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import {
-  Alert,
-  Badge,
-  Button,
-  Checkbox,
-  Group,
-  MantineProvider,
-  Modal,
-  Radio,
-  Stack,
-  Text,
-  TextInput,
-  ThemeIcon
-} from "@mantine/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  Archive,
-  Cpu,
-  Edit,
-  Edit3,
-  FolderOpen,
-  FolderPlus,
-  Power,
-  Trash2,
-  Upload
-} from "lucide-react";
+import { Alert, Badge, Button, Group, MantineProvider, Modal, Stack, Text, TextInput, ThemeIcon } from "@mantine/core";
+import { Archive, Cpu, Edit, FolderOpen, Trash2, Upload } from "lucide-react";
 import {
   archiveConversation,
   deleteConversation,
-  minimizeToTray,
   openProjectLocation,
-  quitApp,
-  showAppWindow
 } from "./api";
 import { useEnv } from "./hooks/useEnv";
 import { useMcp } from "./hooks/useMcp";
@@ -53,14 +30,7 @@ import SettingsModal from "./components/settings/SettingsModal";
 import { nanoTheme } from "./theme";
 import { appPlugins } from "./plugins/builtin";
 import { confirmAction } from "./lib/dialogs";
-import {
-  getStoredCloseAction,
-  getStoredClosePreferences,
-  getStoredCloseSkipPrompt,
-  setStoredClosePreferences,
-  subscribeClosePreferencesChanged,
-  type CloseAction
-} from "./lib/closeBehavior";
+
 import type {
   Conversation,
   ProjectEntry,
@@ -183,39 +153,10 @@ function App() {
   const workspace = useWorkspace(setNotice, memory);
   const [workspaceListRatio, setWorkspaceListRatio] = useState(38);
   const { themeMode, resolvedTheme, setThemeMode } = useThemeMode();
-  const [closePromptOpen, setClosePromptOpen] = useState(false);
-  const [closeAction, setCloseAction] = useState<CloseAction>(() => {
-    return getStoredCloseAction();
-  });
-  const [closeDontAsk, setCloseDontAsk] = useState(() => {
-    return getStoredCloseSkipPrompt();
-  });
-  const closePromptOpenRef = useRef(false);
+  const { closePromptOpen, closeAction, setCloseAction, closeDontAsk, setCloseDontAsk,
+    handleCancelClosePrompt, handleConfirmClosePrompt } = useAppCloseBehavior(setNotice);
   const activePluginView = appPlugins.findMainView(activeMainView);
   const ActivePluginView = activePluginView?.component;
-
-  const performCloseAction = useCallback(async (action: CloseAction) => {
-    try {
-      if (action === "tray") {
-        await minimizeToTray();
-        return;
-      }
-      await quitApp();
-    } catch (error) {
-      setNotice(String(error));
-    }
-  }, []);
-
-  useEffect(() => {
-    closePromptOpenRef.current = closePromptOpen;
-  }, [closePromptOpen]);
-
-  useEffect(() => {
-    return subscribeClosePreferencesChanged((preferences) => {
-      setCloseAction(preferences.action);
-      setCloseDontAsk(preferences.skipPrompt);
-    });
-  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -255,42 +196,6 @@ function App() {
   useEffect(() => {
     void loadAll();
   }, []);
-
-  useEffect(() => {
-    const appWindow = getCurrentWindow();
-    let unlistenClose: (() => void) | undefined;
-    let unlistenTrayShow: (() => void) | undefined;
-
-    void appWindow.onCloseRequested((event) => {
-      event.preventDefault();
-      if (closePromptOpenRef.current) {
-        return;
-      }
-
-      const savedPreferences = getStoredClosePreferences();
-      if (savedPreferences.skipPrompt) {
-        void performCloseAction(savedPreferences.action);
-        return;
-      }
-
-      setCloseAction(savedPreferences.action);
-      setCloseDontAsk(savedPreferences.skipPrompt);
-      setClosePromptOpen(true);
-    }).then((unlisten) => {
-      unlistenClose = unlisten;
-    });
-
-    void appWindow.listen(`${APP_STORAGE_PREFIX}-show-window`, () => {
-      void showAppWindow();
-    }).then((unlisten) => {
-      unlistenTrayShow = unlisten;
-    });
-
-    return () => {
-      unlistenClose?.();
-      unlistenTrayShow?.();
-    };
-  }, [performCloseAction]);
 
   useEffect(() => {
     const conversationModelId = activeConversation?.model_config_id || "";
@@ -438,16 +343,6 @@ function App() {
     await chat.loadMessages(conversation.id);
   }
 
-  function handleCancelClosePrompt() {
-    setClosePromptOpen(false);
-  }
-
-  function handleConfirmClosePrompt() {
-    setStoredClosePreferences({ action: closeAction, skipPrompt: closeDontAsk });
-    setClosePromptOpen(false);
-    void performCloseAction(closeAction);
-  }
-
   function openRenameDialog(conversation: Conversation) {
     setRenameTarget(conversation);
     setRenameTitle(conversation.title);
@@ -518,153 +413,14 @@ function App() {
         onResizeReset={() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)}
       />
 
-      {projects.showNewProjectDialog && (
-        <Modal
-          opened
-          onClose={() => projects.setShowNewProjectDialog(false)}
-          size="md"
-          title={
-            <Group gap="sm">
-              <ThemeIcon variant="light" color="teal" size="md">
-                <FolderPlus size={18} />
-              </ThemeIcon>
-              <Text fw={650}>新建项目</Text>
-            </Group>
-          }
-        >
-          <Stack gap="md">
-            <TextInput
-              label="工作目录"
-              value={projects.newProjectWorkdir}
-              readOnly
-              placeholder="选择真实工作目录"
-              rightSection={
-                <Button variant="subtle" size="compact-sm" onClick={() => void projects.handleSelectNewProjectWorkdir()}>
-                  选择
-                </Button>
-              }
-              rightSectionWidth={62}
-            />
-            <TextInput
-              label="项目名称"
-              value={projects.newProjectName}
-              onChange={(event) => projects.setNewProjectName(event.currentTarget.value)}
-              placeholder="逻辑名称，例如：官网改版"
-              autoFocus
-            />
-            <Group justify="flex-end" mt="sm">
-              <Button variant="default" onClick={() => projects.setShowNewProjectDialog(false)}>取消</Button>
-              <Button leftSection={<FolderPlus size={15} />} onClick={() => void projects.handleCreateProject()}>
-                添加并打开
-              </Button>
-            </Group>
-          </Stack>
-        </Modal>
-      )}
+      <ProjectDialogs projects={projects} />
 
-      {projects.pendingProjectRemoval && (
-        <Modal
-          opened
-          onClose={() => projects.setPendingProjectRemoval(null)}
-          size="md"
-          title={
-            <Group gap="sm">
-              <ThemeIcon variant="light" color="red" size="md">
-                <Trash2 size={18} />
-              </ThemeIcon>
-              <Text fw={650}>移除项目入口</Text>
-            </Group>
-          }
-        >
-          <Stack gap="md">
-            <Text size="sm" c="dimmed">
-              将从项目区移除 <strong>{projects.pendingProjectRemoval.name}</strong>。此操作不会删除磁盘文件。
-            </Text>
-            <TextInput
-              label="输入项目名称以确认"
-              value={projects.projectApprovalText}
-              onChange={(event) => projects.setProjectApprovalText(event.currentTarget.value)}
-              placeholder={projects.pendingProjectRemoval.name}
-              autoFocus
-            />
-            <Group justify="flex-end" mt="sm">
-              <Button variant="default" onClick={() => projects.setPendingProjectRemoval(null)}>取消</Button>
-              <Button
-                color="red"
-                leftSection={<Trash2 size={15} />}
-                onClick={projects.handleConfirmRemoveProject}
-                disabled={projects.projectApprovalText.trim() !== projects.pendingProjectRemoval.name}
-              >
-                批准移除
-              </Button>
-            </Group>
-          </Stack>
-        </Modal>
-      )}
+      <RenameConversationDialog renameTarget={renameTarget} renameTitle={renameTitle} setRenameTitle={setRenameTitle}
+        closeRenameDialog={closeRenameDialog} handleConfirmRename={handleConfirmRename} />
 
-      {renameTarget && (
-        <Modal
-          opened
-          onClose={closeRenameDialog}
-          size="md"
-          title={
-            <Group gap="sm">
-              <ThemeIcon variant="light" size="md">
-                <Edit3 size={18} />
-              </ThemeIcon>
-              <Text fw={650}>重命名会话</Text>
-            </Group>
-          }
-        >
-          <Stack gap="lg">
-            <TextInput
-              label="会话名称"
-              value={renameTitle}
-              onChange={(event) => setRenameTitle(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  void handleConfirmRename();
-                }
-              }}
-              autoFocus
-            />
-            <Group justify="flex-end">
-              <Button variant="default" onClick={closeRenameDialog}>取消</Button>
-              <Button leftSection={<Edit3 size={15} />} onClick={() => void handleConfirmRename()}>保存修改</Button>
-            </Group>
-          </Stack>
-        </Modal>
-      )}
-
-      {closePromptOpen && (
-        <Modal
-          opened
-          onClose={handleCancelClosePrompt}
-          size="sm"
-          title={
-            <Group gap="sm">
-              <ThemeIcon variant="light" color="orange" size="md">
-                <Power size={18} />
-              </ThemeIcon>
-              <Text fw={650}>点击关闭按钮</Text>
-            </Group>
-          }
-        >
-          <Stack gap="lg">
-            <Radio.Group value={closeAction} onChange={(value) => setCloseAction(value as CloseAction)} label="关闭按钮行为">
-              <Stack gap="xs" mt="xs">
-                <Radio value="tray" label="最小化到系统托盘" />
-                <Radio value="quit" label="退出应用" />
-              </Stack>
-            </Radio.Group>
-            <Checkbox checked={closeDontAsk} onChange={(event) => setCloseDontAsk(event.currentTarget.checked)} label="不再提示" />
-            <Group justify="flex-end">
-              <Button variant="default" onClick={handleCancelClosePrompt}>取消</Button>
-              <Button leftSection={<Power size={15} />} onClick={handleConfirmClosePrompt}>确定</Button>
-            </Group>
-          </Stack>
-        </Modal>
-      )}
+      <CloseAppDialog closePromptOpen={closePromptOpen} closeAction={closeAction} setCloseAction={setCloseAction}
+        closeDontAsk={closeDontAsk} setCloseDontAsk={setCloseDontAsk} handleCancelClosePrompt={handleCancelClosePrompt}
+        handleConfirmClosePrompt={handleConfirmClosePrompt} />
 
       {showModelConfig && (
         <SettingsModal

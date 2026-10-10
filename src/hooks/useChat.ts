@@ -1,19 +1,18 @@
+import { useBackgroundAgents } from "./chat/useBackgroundAgents";
+import { useChatHistory } from "./chat/useChatHistory";
 import {
-  backgroundIsBusy,
   mergeBackgroundMessages,
   type BackgroundAgentDecision,
   type BackgroundAgentRequest,
   type BackgroundAgentSnapshot
 } from "../lib/backgroundAgent";
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   appendMessage,
   createMemory,
   extractUploadedFile,
   indexRagFile,
-  listAgentRunTimelines,
   listAgentRuns,
   listMessages,
   listRagFiles,
@@ -21,8 +20,6 @@ import {
   updateConversationModel,
   listConversations,
   listArchivedConversations,
-  startBackgroundAgent,
-  listBackgroundAgents,
   respondBackgroundAgent,
   stopBackgroundAgent
 } from "../api";
@@ -36,7 +33,7 @@ import {
   type AttachmentSource
 } from "../lib/attachmentUploads";
 import { findPendingToolApproval, resolveChatDecisionState } from "../lib/chatDecisionState";
-import { useSpeechInput, type UseSpeechInputReturn } from "./useSpeechInput";
+import { useSpeechInput } from "./useSpeechInput";
 import {
   resolveUserMemoryRoute,
   findPendingClarification,
@@ -49,125 +46,14 @@ import { useConversations } from "./useConversations";
 import { useRagFiles } from "./useRagFiles";
 import { useChatInput } from "./useChatInput";
 import { buildMessageContentWithImageAttachments, useChatAttachments } from "./useChatAttachments";
-import type {
-  AgentAccessMode,
-  AgentClarificationAnswer,
-  AgentClarificationRequest,
-  AgentRun,
-  AgentToolCall,
-  Memory,
-  ChatImageAttachment,
-  Conversation,
-  Item,
-  PersistedMessage,
-  ProjectEntry,
-  ProjectFileEntry
-} from "../types";
-import type { UseProjectsReturn } from "./useProjects";
-import type { UseModelReturn } from "./useModel";
-import type { UseSkillsReturn } from "./useSkills";
-import type { UseMcpReturn } from "./useMcp";
+import type { AgentClarificationAnswer, AgentClarificationRequest, AgentRun, ProjectEntry } from "../types";
 
-export interface UseChatReturn {
-  conversations: Conversation[];
-  setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;
-  archivedConversations: Conversation[];
-  setArchivedConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;
-  previewArchivedId: string;
-  setPreviewArchivedId: React.Dispatch<React.SetStateAction<string>>;
-  previewMessages: PersistedMessage[];
-  setPreviewMessages: React.Dispatch<React.SetStateAction<PersistedMessage[]>>;
-  activeConversationId: string;
-  setActiveConversationId: React.Dispatch<React.SetStateAction<string>>;
-  messages: PersistedMessage[];
-  setMessages: React.Dispatch<React.SetStateAction<PersistedMessage[]>>;
-  messageReasoning: Record<string, string>;
-  setMessageReasoning: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  chatInput: string;
-  setChatInput: React.Dispatch<React.SetStateAction<string>>;
-  ragFiles: import("../types").RagFile[];
-  setRagFiles: React.Dispatch<React.SetStateAction<import("../types").RagFile[]>>;
-  isRagDragging: boolean;
-  setIsRagDragging: React.Dispatch<React.SetStateAction<boolean>>;
-  indexingRagFileName: string;
-  setIndexingRagFileName: React.Dispatch<React.SetStateAction<string>>;
-  promptSuggestions: Item[];
-  setPromptSuggestions: React.Dispatch<React.SetStateAction<Item[]>>;
-  selectedPromptIndex: number;
-  setSelectedPromptIndex: React.Dispatch<React.SetStateAction<number>>;
-  promptTriggerIndex: number;
-  setPromptTriggerIndex: React.Dispatch<React.SetStateAction<number>>;
-  busy: boolean;
-  setBusy: React.Dispatch<React.SetStateAction<boolean>>;
-  executingToolMessageId: string | null;
-  setExecutingToolMessageId: React.Dispatch<React.SetStateAction<string | null>>;
-  messageToolCalls: Record<string, AgentToolCall>;
-  setMessageToolCalls: React.Dispatch<React.SetStateAction<Record<string, AgentToolCall>>>;
-  conversationRunIds: Record<string, string>;
-  setConversationRunIds: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  clarificationFallbackIds: string[];
-  activeStreamRequestId: string | null;
-  backgroundRunId: string | null;
-  interruptingGeneration: boolean;
-  uploadingImageAttachment: boolean;
-  uploadingAttachment: boolean;
-  speech: UseSpeechInputReturn;
-  pendingImageAttachments: ChatImageAttachment[];
-  removePendingImageAttachment: (relativePath: string) => void;
-  attachmentProjectPath: string;
-  projectFiles: ProjectFileEntry[];
-  activeConversation: Conversation | undefined;
-  activeConversationProject: ProjectEntry | null;
-  loadMessages: (conversationId: string) => Promise<void>;
-  refreshRagFiles: (conversationId: string) => Promise<void>;
-  refreshConversations: (selectId?: string) => Promise<void>;
-  createConversationForCurrentScope: (project: ProjectEntry | null) => Promise<Conversation>;
-  ensureConversation: (project: ProjectEntry | null) => Promise<string>;
-  getConversationProjectHint: () => ProjectEntry | null;
-  handleNewConversation: () => Promise<void>;
-  handleNewProjectConversation: (project: ProjectEntry) => Promise<void>;
-  handleDeleteConversation: () => Promise<void>;
-  handleArchiveConversation: () => Promise<void>;
-  handleRenameConversation: (id: string, currentTitle: string) => Promise<void>;
-  handleContextArchiveConversation: (conversation: Conversation) => Promise<void>;
-  handleContextDeleteConversation: (conversation: Conversation) => Promise<void>;
-  handleSendMessage: () => Promise<void>;
-  handleInterruptGeneration: () => Promise<void>;
-  handleRegenerateLastResponse: (messageId: string) => Promise<void>;
-  handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
-  handleRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
-  handleRetryTool: (messageId: string) => Promise<void>;
-  handleResumeAgentRun: (runId: string) => Promise<void>;
-  handleClarificationAnswer: (
-    messageId: string,
-    request: AgentClarificationRequest,
-    answers: AgentClarificationAnswer[],
-    automatic?: boolean
-  ) => Promise<void>;
-  handleCloseConversation: () => void;
-  handleRagFiles: (files: FileList | File[]) => Promise<void>;
-  handleDroppedFilePaths: (paths: string[]) => Promise<void>;
-  handleDeleteRagFile: (id: string) => Promise<void>;
-  handleInputChange: (value: string, cursorIndex: number) => Promise<void>;
-  handleChatInputKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  handleChatInputPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
-  insertPrompt: (item: Item) => void;
-  loadArchivedPreview: (conversationId: string) => Promise<void>;
-  resolveConversationModelId: (conversationId?: string | null) => string;
-}
 
-export interface UseChatArgs {
-  setNotice: (message: string) => void;
-  onMemoryCreated: (memory: Memory) => void;
-  projects: UseProjectsReturn;
-  model: UseModelReturn;
-  skills: UseSkillsReturn;
-  mcp: UseMcpReturn;
-  showModelConfig: boolean;
-  activeSettingsTab: string;
-  accessMode: AgentAccessMode;
-  chatVisible?: boolean;
-}
+
+
+
+import type { UseChatArgs, UseChatReturn } from "./chat/types";
+export type { UseChatArgs, UseChatReturn } from "./chat/types";
 
 export function useChat({
   setNotice,
@@ -181,7 +67,6 @@ export function useChat({
   accessMode,
   chatVisible = true
 }: UseChatArgs): UseChatReturn {
-  const messageLoadRequestRef = useRef(0);
   const activeConversationIdRef = useRef("");
   const attachmentScopeRef = useRef("");
   const attachmentBusyRef = useRef(false);
@@ -200,27 +85,19 @@ export function useChat({
   });
 
   // ── State owned by useChat ──
-  const [messages, setMessages] = useState<PersistedMessage[]>([]);
-  const [messageReasoning, setMessageReasoning] = useState<Record<string, string>>({});
   const [localBusy, setBusy] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
-  const [clarificationFallbackIds, setClarificationFallbackIds] = useState<string[]>([]);
   const [interruptingGeneration, setInterruptingGeneration] = useState(false);
-  const [messageToolCalls, setMessageToolCalls] = useState<Record<string, AgentToolCall>>({});
-  const [conversationRunIds, setConversationRunIds] = useState<Record<string, string>>({});
   const [fallbackExecutingId, setExecutingToolMessageId] = useState<string | null>(null);
-  const [backgroundRuns, setBackgroundRuns] = useState<Record<string, BackgroundAgentSnapshot>>({});
-  const backgroundRunsRef = useRef(backgroundRuns);
-  const backgroundRevisionRef = useRef(0);
-  const backgroundEventRef = useRef<(snapshot: BackgroundAgentSnapshot) => void>(() => {});
   activeConversationIdRef.current = conv.activeConversationId;
-  const currentBackground = Object.values(backgroundRuns).find(
-    (snapshot) => snapshot.conversation_id === conv.activeConversationId
-  );
-  const busy = localBusy || backgroundIsBusy(currentBackground);
-  const executingToolMessageId = currentBackground?.executing_tool_message_id || fallbackExecutingId;
-  const backgroundRunId = currentBackground?.run_id || null;
-  const activeStreamRequestId = currentBackground?.stream_message?.id || null;
+  const background = useBackgroundAgents(conv.activeConversationId, receiveBackgroundSnapshot);
+  const history = useChatHistory({ activeConversationIdRef, background, setNotice });
+  const { messages, setMessages, messageReasoning, setMessageReasoning, messageToolCalls, setMessageToolCalls,
+    conversationRunIds, setConversationRunIds, clarificationFallbackIds, setClarificationFallbackIds, loadMessages } = history;
+  const busy = localBusy || background.busy;
+  const executingToolMessageId = background.current?.executing_tool_message_id || fallbackExecutingId;
+  const backgroundRunId = background.current?.run_id || null;
+  const activeStreamRequestId = background.current?.stream_message?.id || null;
   const scopedMessages = messages.filter((message) => message.conversation_id === conv.activeConversationId);
 
   const attachmentScopeKey = `${conv.activeConversationId}:${getAttachmentProjectPath()}`;
@@ -287,76 +164,6 @@ export function useChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conv.activeConversationId, model.activeModelId]);
 
-  // ── Message loading ──
-  async function loadMessages(conversationId: string) {
-    const requestId = ++messageLoadRequestRef.current;
-    try {
-      const revision = backgroundRevisionRef.current;
-      const [nextMessages, snapshots] = await Promise.all([
-        listMessages(conversationId),
-        listBackgroundAgents()
-      ]);
-      if (revision === backgroundRevisionRef.current) {
-        const restored = Object.fromEntries(snapshots.map((snapshot) => [snapshot.run_id, snapshot]));
-        backgroundRunsRef.current = restored;
-        setBackgroundRuns(restored);
-      }
-      const timelines = await listAgentRunTimelines(conversationId, 20).catch((error) => {
-        console.error("Failed to restore agent runtime state:", error);
-        return [];
-      });
-      if (requestId === messageLoadRequestRef.current && activeConversationIdRef.current === conversationId) {
-        const background = Object.values(backgroundRunsRef.current).find(
-          (snapshot) => snapshot.conversation_id === conversationId
-        );
-        setMessages(mergeBackgroundMessages(nextMessages, conversationId, background));
-        setMessageReasoning(
-          Object.fromEntries(
-            nextMessages
-              .filter((message) => message.metadata?.assistant_reasoning)
-              .map((message) => [message.id, message.metadata!.assistant_reasoning!])
-          )
-        );
-        if (background?.stream_message && background.reasoning)
-          setMessageReasoning((current) => ({
-            ...current,
-            [background.stream_message!.id]: background.reasoning
-          }));
-        const restoredToolCalls = timelines
-          .flatMap((timeline) => timeline.tool_calls)
-          .reduce<Record<string, AgentToolCall>>((current, toolCall) => {
-            current[toolCall.message_id] = toolCall;
-            return current;
-          }, {});
-        setMessageToolCalls(restoredToolCalls);
-        const activeRun = timelines.find(
-          (timeline) =>
-            timeline.run.status === "running" ||
-            timeline.run.status === "awaiting_tool" ||
-            timeline.run.status === "awaiting_clarification" ||
-            timeline.run.status === "awaiting_recovery"
-        )?.run;
-        if (activeRun?.status === "awaiting_clarification") {
-          const pending = findPendingClarification(nextMessages);
-          if (pending)
-            setClarificationFallbackIds((current) =>
-              current.includes(pending.messageId) ? current : [...current, pending.messageId]
-            );
-        }
-        setConversationRunIds((current) => {
-          const next = { ...current };
-          if (activeRun) next[conversationId] = activeRun.id;
-          else delete next[conversationId];
-          return next;
-        });
-      }
-    } catch (error) {
-      if (requestId === messageLoadRequestRef.current) {
-        setNotice(String(error));
-      }
-    }
-  }
-
   function buildExecutionRequest(
     run: AgentRun,
     project: ProjectEntry | null,
@@ -400,13 +207,6 @@ export function useChat({
   }
 
   function receiveBackgroundSnapshot(snapshot: BackgroundAgentSnapshot) {
-    backgroundRevisionRef.current++;
-    const next = { ...backgroundRunsRef.current };
-    if (["completed", "failed", "cancelled", "rejected", "awaiting_recovery"].includes(snapshot.status))
-      delete next[snapshot.run_id];
-    else next[snapshot.run_id] = snapshot;
-    backgroundRunsRef.current = next;
-    setBackgroundRuns(next);
     if (snapshot.conversation_id === activeConversationIdRef.current) {
       if (snapshot.stream_message) {
         setMessages((current) => mergeBackgroundMessages(current, activeConversationIdRef.current, snapshot));
@@ -423,60 +223,14 @@ export function useChat({
     }
     if (!snapshot.stream_message) void refreshConversationLists().catch(console.error);
   }
-  backgroundEventRef.current = receiveBackgroundSnapshot;
-
-  useEffect(() => {
-    let mounted = true;
-    const pending = listen<BackgroundAgentSnapshot>("background-agent", (event) => {
-      if (mounted) backgroundEventRef.current(event.payload);
-    });
-    const revision = backgroundRevisionRef.current;
-    void listBackgroundAgents()
-      .then((snapshots) => {
-        if (mounted && revision === backgroundRevisionRef.current) {
-          for (const snapshot of snapshots) backgroundEventRef.current(snapshot);
-        }
-      })
-      .catch(console.error);
-    return () => {
-      mounted = false;
-      void pending.then((unlisten) => unlisten()).catch(console.error);
-    };
-  }, []);
-
   async function launchBackground(
     run: AgentRun,
     project: ProjectEntry | null,
     modelId: string,
     replaceMessageId: string | null = null
   ) {
-    const initial: BackgroundAgentSnapshot = {
-      run_id: run.id,
-      conversation_id: run.conversation_id,
-      status: "running",
-      stream_message: null,
-      reasoning: "",
-      executing_tool_message_id: null,
-      error: null
-    };
-    backgroundRevisionRef.current++;
-    backgroundRunsRef.current = { ...backgroundRunsRef.current, [run.id]: initial };
-    setBackgroundRuns(backgroundRunsRef.current);
-    try {
-      await startBackgroundAgent(buildExecutionRequest(run, project, modelId, replaceMessageId));
-      if (activeConversationIdRef.current === run.conversation_id) await loadMessages(run.conversation_id);
-    } catch (error) {
-      receiveBackgroundSnapshot({
-        run_id: run.id,
-        conversation_id: run.conversation_id,
-        status: "failed",
-        stream_message: null,
-        reasoning: "",
-        executing_tool_message_id: null,
-        error: String(error)
-      });
-      throw error;
-    }
+    await background.launch(buildExecutionRequest(run, project, modelId, replaceMessageId));
+    if (activeConversationIdRef.current === run.conversation_id) await loadMessages(run.conversation_id);
   }
 
   async function decide(

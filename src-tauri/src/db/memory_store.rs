@@ -652,3 +652,61 @@ impl Database {
         })
     }
 }
+
+impl Database {
+    pub(super) fn get_memory(&self, id: &str) -> AppResult<Option<Memory>> {
+        self.knowledge_conn
+            .query_row(
+                "
+                SELECT id, title, content, tags_json, enabled, created_at, updated_at
+                FROM memories WHERE id = ?1
+                ",
+                params![id],
+                Self::row_to_memory,
+            )
+            .optional()
+            .map_err(AppError::from)
+    }
+
+    pub(super) fn upsert_memory(&self, memory: &Memory) -> AppResult<()> {
+        self.with_knowledge_savepoint("memory_record_upsert", || self.upsert_memory_inner(memory))
+    }
+
+    pub(super) fn upsert_memory_inner(&self, memory: &Memory) -> AppResult<()> {
+        let tags_json = serde_json::to_string(&memory.tags)?;
+        self.knowledge_conn.execute(
+            "
+            INSERT INTO memories (id, title, content, tags_json, enabled, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                content = excluded.content,
+                tags_json = excluded.tags_json,
+                enabled = excluded.enabled,
+                updated_at = excluded.updated_at
+            ",
+            params![
+                memory.id,
+                memory.title,
+                memory.content,
+                tags_json,
+                if memory.enabled { 1 } else { 0 },
+                memory.created_at.to_rfc3339(),
+                memory.updated_at.to_rfc3339()
+            ],
+        )?;
+
+        self.knowledge_conn
+            .execute("DELETE FROM memories_fts WHERE id = ?1", params![memory.id])?;
+        self.knowledge_conn.execute(
+            "INSERT INTO memories_fts (id, title, content, tags) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                memory.id,
+                memory.title,
+                memory.content,
+                memory.tags.join(" ")
+            ],
+        )?;
+        self.sync_memory_graph(memory)
+    }
+}
