@@ -430,6 +430,19 @@ impl Database {
         }
         Ok(())
     }
+
+    pub fn append_background_response(&self, draft: MessageDraft, replace_id: Option<&str>) -> AppResult<Message> {
+        self.with_savepoint("background_response", || {
+            if let Some(id) = replace_id {
+                let owns: bool = self.conn.query_row("SELECT EXISTS(SELECT 1 FROM messages WHERE id=?1 AND conversation_id=?2 AND role='assistant')",
+                    params![id,draft.conversation_id], |row|row.get(0))?;
+                if !owns {return Err("待替换回答不属于此会话。".into());}
+            }
+            let message = self.append_message(draft)?;
+            if let Some(id)=replace_id {self.delete_messages(&[id.into()])?;}
+            Ok(message)
+        })
+    }
 }
 
 fn estimate_usage_tokens(text: &str) -> i64 {

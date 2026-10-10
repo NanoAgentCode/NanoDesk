@@ -430,6 +430,8 @@ pub struct MessageMetadata {
     pub context_summary: Option<ContextSummaryMetadata>,
     #[serde(default)]
     pub generation_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_reasoning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

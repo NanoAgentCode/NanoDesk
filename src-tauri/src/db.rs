@@ -1670,6 +1670,7 @@ mod tests {
                 exclude_from_profile: None,
                 context_summary: None,
                 generation_status: Some("interrupted".to_string()),
+                assistant_reasoning: None,
             }),
         })
         .expect("second message should persist");
@@ -1686,6 +1687,7 @@ mod tests {
                     covered_message_count: 1,
                 }),
                 generation_status: None,
+                assistant_reasoning: None,
             }),
         })
         .expect("summary should persist");

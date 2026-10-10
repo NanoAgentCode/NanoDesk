@@ -39,6 +39,12 @@ pub async fn load_base_context(
     project_path: Option<String>,
     query: String,
 ) -> AppResult<BaseContextBundle> {
+    load_base_context_with_state(&state, project_path, query).await
+}
+
+pub(crate) async fn load_base_context_with_state(
+    state: &AppState, project_path: Option<String>, query: String,
+) -> AppResult<BaseContextBundle> {
     let canonical_project_path = project_path
         .as_deref()
         .map(project_root)

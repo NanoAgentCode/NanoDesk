@@ -153,6 +153,7 @@ function App() {
     messageToolCalls,
     clarificationFallbackIds,
     activeStreamRequestId,
+    backgroundRunId,
     interruptingGeneration,
     activeConversation,
     handleNewConversation,
@@ -716,6 +717,7 @@ function App() {
           messageToolCalls={messageToolCalls}
           clarificationFallbackIds={clarificationFallbackIds}
           activeStreamRequestId={activeStreamRequestId}
+          backgroundRunId={backgroundRunId}
           interruptingGeneration={interruptingGeneration}
           attachmentProjectPath={attachmentProjectPath}
           project={activeConversation ? projects.findConversationProject(activeConversation) : projects.activeProject}

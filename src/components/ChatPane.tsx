@@ -65,6 +65,7 @@ interface ChatPaneProps {
   messageToolCalls: Record<string, AgentToolCall>;
   clarificationFallbackIds: string[];
   activeStreamRequestId: string | null;
+  backgroundRunId: string | null;
   interruptingGeneration: boolean;
   attachmentProjectPath: string;
   project: ProjectEntry | null;
@@ -160,6 +161,7 @@ export default function ChatPane({
   messageToolCalls,
   clarificationFallbackIds,
   activeStreamRequestId,
+  backgroundRunId,
   interruptingGeneration,
   attachmentProjectPath,
   project,
@@ -306,6 +308,10 @@ export default function ChatPane({
         </div>
         {activeConversationId && (
           <div className="chat-header-actions">
+            {backgroundRunId && !activeStreamRequestId && (
+              <Button size="compact-xs" variant="subtle" color="red" loading={interruptingGeneration}
+                onClick={() => void handleInterruptGeneration()}>停止任务</Button>
+            )}
             <Tooltip label="Agent Runtime 运行详情" openDelay={450}>
               <MantineActionIcon
                 ref={runtimeToggleBtnRef}

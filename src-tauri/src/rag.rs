@@ -76,6 +76,13 @@ pub async fn search_rag_context(
     model_config_id: String,
     limit: Option<i64>,
 ) -> AppResult<Vec<RagChunkMatch>> {
+    search_rag_with_state(&state, conversation_id, query, model_config_id, limit).await
+}
+
+pub(crate) async fn search_rag_with_state(
+    state: &AppState, conversation_id: String, query: String,
+    model_config_id: String, limit: Option<i64>,
+) -> AppResult<Vec<RagChunkMatch>> {
     let query = query.trim().to_string();
     if query.is_empty() {
         return Ok(Vec::new());

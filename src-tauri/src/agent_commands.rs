@@ -264,6 +264,17 @@ pub(crate) async fn resolve_agent_model_output(
     step_kind: Option<String>,
     input_summary: Option<String>,
 ) -> AppResult<AgentModelOutputResolution> {
+    resolve_model_output(&state, run_id, message_id, content, step_kind, input_summary).await
+}
+
+pub(crate) async fn resolve_model_output(
+    state: &AppState,
+    run_id: String,
+    message_id: String,
+    content: String,
+    step_kind: Option<String>,
+    input_summary: Option<String>,
+) -> AppResult<AgentModelOutputResolution> {
     let parsed_result = match (
         agent_runner::parse_tool_call(&state.plugins, &content),
         agent_runner::parse_clarification(&content),
@@ -326,6 +337,10 @@ pub(crate) async fn resolve_agent_model_output(
             metadata_json: Some(plan_json),
         })?;
     }
+    let effective_plan = task_plan.clone().or_else(|| runtime.get_run(&run_id).ok()
+        .and_then(|run|run.plan_json).and_then(|json|serde_json::from_str::<agent_runner::AgentTaskPlan>(&json).ok()));
+    let unfinished_plan = effective_plan.as_ref().is_some_and(|plan|plan.steps.iter().any(|step|matches!(step.status.as_str(),"pending"|"in_progress")));
+    let blocked_plan = effective_plan.as_ref().is_some_and(|plan|plan.steps.iter().any(|step|step.status=="blocked"));
     let tool_call = if let Some(parsed) = parsed_tool_call {
         let tool_call = runtime.create_tool_call(AgentToolCallDraft {
             run_id: run_id.clone(),
@@ -338,6 +353,12 @@ pub(crate) async fn resolve_agent_model_output(
     } else if clarification.is_some() {
         runtime.finish_run(&run_id, "awaiting_clarification", None)?;
         None
+    } else if blocked_plan {
+        runtime.finish_run(&run_id, "awaiting_recovery", Some("任务计划存在阻塞步骤，请检查后继续。".into()))?;
+        None
+    } else if unfinished_plan {
+        runtime.finish_run(&run_id, "running", None)?;
+        None
     } else {
         runtime.finish_run(&run_id, "completed", None)?;
         None
@@ -347,6 +368,10 @@ pub(crate) async fn resolve_agent_model_output(
         "awaiting_tool"
     } else if clarification.is_some() {
         "awaiting_clarification"
+    } else if blocked_plan {
+        "awaiting_recovery"
+    } else if unfinished_plan {
+        "running"
     } else {
         "completed"
     };

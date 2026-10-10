@@ -1656,6 +1656,7 @@ mod tests {
                 exclude_from_profile: Some(true),
                 context_summary: None,
                 generation_status: None,
+                assistant_reasoning: None,
             }),
         })
         .expect("ordinary memory message should be appended");
@@ -1687,6 +1688,7 @@ mod tests {
                 exclude_from_profile: Some(true),
                 context_summary: None,
                 generation_status: None,
+                assistant_reasoning: None,
             }),
         })
         .expect("system-generated tool result should be appended");

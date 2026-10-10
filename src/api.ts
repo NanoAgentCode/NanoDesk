@@ -1,4 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { BackgroundAgentDecision, BackgroundAgentRequest, BackgroundAgentSnapshot } from "./lib/backgroundAgent";
+export const startBackgroundAgent = (request: BackgroundAgentRequest) => invoke<void>("start_background_agent", { request });
+export const listBackgroundAgents = () => invoke<BackgroundAgentSnapshot[]>("list_background_agents");
+export const respondBackgroundAgent = (decision: BackgroundAgentDecision) => invoke<void>("respond_background_agent", { decision });
+export const stopBackgroundAgent = (runId: string) => invoke<boolean>("stop_background_agent", { runId });
 import type { Automation, AutomationDraft, AutomationRun } from "./lib/automation";
 
 export const listAutomations = () => invoke<Automation[]>("list_automations");

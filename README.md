@@ -17,6 +17,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - 项目工作区：添加或打开已有项目目录，可从项目条目右键菜单在系统资源管理器中打开目录；支持构建轻量文件索引、浏览文件树、读写/重命名/删除项目文件和执行项目命令。
 - 智能文件链接：聊天 Markdown 中的项目相对路径、裸文件名和已有文件链接会自动解析为项目内真实相对路径；外部 URL 会弹出到系统浏览器，避免应用内跳转。
 - Agent 运行时：记录 run、step、tool call，并提供“请求批准 / 帮我批准 / 完全访问”三种应用模式；模式按工具风险决定手动或自动审批，文件读写、命令、OCR 和 MCP 工具始终经过统一安全策略。复杂任务会生成带稳定步骤 ID 和执行状态的结构化计划，并随工具结果持续更新；最新计划与长任务状态一同持久化，可在聊天区和 Agent Runtime 查看。模型失败后可从最近消息继续，工具失败可在次数上限内重试，应用重启时未完成的工具执行会进入“结果未知、等待恢复”状态，避免自动重复副作用。
+- 后台任务执行：普通聊天的模型、计划、审批、工具循环和结果续写由 Rust 执行器持有；切换会话或页面不中断，其他会话可继续提交。切回时恢复流式缓冲，结果只保存到原会话；保留停止、澄清、重试和人工恢复。详见[后台任务执行器](docs/后台任务执行器.md)。
 - 定时与事件任务：独立后台调度支持单次、固定间隔、每日定时及目录文件变化；支持防抖、失败后延迟重试、错过任务合并补执行或跳过。可执行预设 AI 提示词并读取指定 UTF-8 文本生成 Markdown，或执行授权的本地脚本；提供任务管理、立即执行、暂停、执行记录和人工恢复。应用完全退出时不执行，重启后按策略处理；详见[定时与事件任务](docs/定时与事件任务.md)。
 - 结构化澄清：信息不足时，助手可在输入框上方生成带推荐项的选择题；等待选择期间锁定普通输入区，自动模式会代选推荐项并继续执行。
 - `nano` 终端客户端：复用桌面端模型配置、会话存储和 Rust LLM 后端，支持项目问答、退出后恢复项目会话，以及不保存历史的普通临时对话。
@@ -31,6 +32,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 
 - [系统设计文档](docs/系统设计文档.md)：整体定位、模块边界、关键业务链路和系统约束。
 - [定时与事件任务](docs/定时与事件任务.md)：触发规则、后台执行、重试、补执行、文件监听与验收范围。
+- [后台任务执行器](docs/后台任务执行器.md)：聊天任务后台执行、会话切换、流式恢复、审批与取消边界。
 - [架构与模块设计](docs/架构与模块设计.md)：前端、Tauri command、Rust 后端模块分层。
 - [数据与存储设计](docs/数据与存储设计.md)：SQLite 数据库、核心表、索引、文件边界和附件存储。
 - [用户画像异步批处理设计](docs/用户画像异步批处理设计.md)：画像与手工记忆边界、低 Token 候选过滤、批调度、租约、预算和删除屏障。
@@ -151,7 +153,7 @@ src/core/plugins.tsx           前端插件契约与微内核注册表
 src/plugins/builtin.tsx        内置 UI 插件装配
 src/hooks/                     对话、模型、项目、RAG、MCP、Skills、Ops 等状态逻辑
 src/hooks/useAccessMode.ts     三种应用模式状态与本地持久化
-src/hooks/useAgentToolRuntime.ts Agent 工具审批、执行和结果续写
+src/lib/backgroundAgent.ts     后台任务 IPC 类型与会话展示投影
 src/components/                聊天区、侧栏、设置页、观测面板、Ops 工作台等 UI
 src/lib/                       系统提示、上下文预算与摘要编排、工具解析、格式化和安全封装
 src-tauri/src/lib.rs           Tauri command 注册、应用状态和启动流程
@@ -165,6 +167,7 @@ src-tauri/src/code_index.rs    项目代码实体、关系和片段索引
 src-tauri/src/project_index.rs 项目文档片段索引与通用项目索引查询
 src-tauri/src/runtime.rs       Agent run/step/tool call 运行时存储
 src-tauri/src/agent_commands.rs Agent 运行时生命周期与审批 command
+src-tauri/src/background_agent.rs 应用级后台模型/计划/工具执行循环
 src-tauri/src/observability.rs 观测 sink/pipeline 与观测库
 src-tauri/src/logging.rs       按天写入并自动清理的系统操作日志
 src-tauri/src/llm.rs           Chat、streaming 和 embeddings 请求

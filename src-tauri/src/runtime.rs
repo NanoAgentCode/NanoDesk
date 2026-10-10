@@ -129,6 +129,10 @@ impl RuntimeStore {
                 plan_json TEXT,
                 plan_updated_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS agent_execution_requests (
+                run_id TEXT PRIMARY KEY REFERENCES agent_runs(id) ON DELETE CASCADE,
+                request_json TEXT NOT NULL
+            );
 
             CREATE TABLE IF NOT EXISTS agent_steps (
                 id TEXT PRIMARY KEY,
@@ -523,6 +527,23 @@ impl RuntimeStore {
                 row_to_run,
             )
             .map_err(AppError::from)
+    }
+
+    pub fn save_execution_request(&self, run_id: &str, request_json: &str) -> AppResult<()> {
+        self.get_run(run_id)?;
+        self.conn.execute("INSERT INTO agent_execution_requests(run_id,request_json) VALUES(?1,?2)
+            ON CONFLICT(run_id) DO UPDATE SET request_json=excluded.request_json", params![run_id, request_json])?;
+        Ok(())
+    }
+
+    pub fn load_execution_request(&self, run_id: &str) -> AppResult<String> {
+        Ok(self.conn.query_row("SELECT request_json FROM agent_execution_requests WHERE run_id=?1", [run_id], |r| r.get(0))?)
+    }
+    pub fn waiting_execution_requests(&self) -> AppResult<Vec<String>> {
+        let mut statement=self.conn.prepare("SELECT request_json FROM agent_execution_requests e
+            JOIN agent_runs r ON r.id=e.run_id WHERE r.status IN ('awaiting_tool','awaiting_clarification') ORDER BY r.created_at DESC")?;
+        let rows=statement.query_map([],|row|row.get(0))?;
+        Ok(rows.collect::<Result<Vec<_>,_>>()?)
     }
 
     pub fn list_runs(&self, conversation_id: &str, limit: i64) -> AppResult<Vec<AgentRun>> {
@@ -1020,7 +1041,7 @@ fn can_transition_run(current: &str, next: &str) -> bool {
     match current {
         "running" | "awaiting_tool" | "awaiting_clarification" => matches!(
             next,
-            "awaiting_tool"
+            "running" | "awaiting_tool"
                 | "awaiting_clarification"
                 | "awaiting_recovery"
                 | "completed"
@@ -1052,8 +1073,8 @@ fn can_transition_tool_call(current: &str, next: &str) -> bool {
         return true;
     }
     match current {
-        "pending_approval" => matches!(next, "approved" | "rejected"),
-        "approved" => matches!(next, "running" | "rejected"),
+        "pending_approval" => matches!(next, "approved" | "rejected" | "skipped"),
+        "approved" => matches!(next, "running" | "rejected" | "skipped"),
         "running" => matches!(next, "completed" | "failed" | "interrupted"),
         _ => false,
     }

@@ -960,6 +960,7 @@ async fn prepare_cli_context(
                     covered_message_count: summary_plan.covered_message_count,
                 }),
                 generation_status: None,
+                assistant_reasoning: None,
             };
             let content = format!(
                 "【结构化上下文摘要 v{}】\n{}",

@@ -2,6 +2,7 @@ mod agent_commands;
 mod agent_runner;
 mod asr;
 mod automation;
+mod background_agent;
 mod brand;
 mod cli;
 mod code_index;
@@ -79,6 +80,7 @@ pub(crate) struct AppState {
     observability: Mutex<ObservabilityPipeline>,
     runtime: Mutex<RuntimeStore>,
     automation: Mutex<automation::AutomationStore>,
+    background_agents: background_agent::BackgroundAgentManager,
     mcp: Mutex<McpClientManager>,
     plugins: PluginRegistry,
     ops_ssh_sessions: Mutex<HashMap<String, ops::OpsSshSessionHandle>>,
@@ -124,7 +126,7 @@ pub(crate) struct ObservationStart<'a> {
 }
 
 async fn start_observation(
-    state: &State<'_, AppState>,
+    state: &AppState,
     observation: ObservationStart<'_>,
 ) -> OperationContext {
     let ObservationStart {
@@ -173,7 +175,7 @@ fn should_trace_observation(operation: &str, category: &str) -> bool {
 }
 
 async fn finish_observation<T>(
-    state: &State<'_, AppState>,
+    state: &AppState,
     context: OperationContext,
     result: &AppResult<T>,
     output_summary: Option<String>,
@@ -669,6 +671,9 @@ async fn create_conversation(
 
 #[tauri::command]
 async fn delete_conversation(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    if state.background_agents.owns_conversation(&id) {
+        return Err("此会话仍有后台任务，请先停止任务再删除会话。".into());
+    }
     let span = start_observation(
         &state,
         ObservationStart {
@@ -950,32 +955,38 @@ async fn execute_agent_tool_call(
     state: State<'_, AppState>,
     request: AgentToolExecutionRequest,
 ) -> AppResult<AgentToolExecution> {
+    let key = load_tavily_api_key(&app)?;
+    execute_agent_tool_with_state(&state, request, key.as_deref()).await
+}
+
+async fn execute_agent_tool_with_state(
+    state: &AppState,
+    request: AgentToolExecutionRequest,
+    tavily_api_key: Option<&str>,
+) -> AppResult<AgentToolExecution> {
     let running_tool_call = {
         let runtime = state.runtime.lock().await;
         runtime.start_tool_call(&request.tool_call_id)?
     };
 
-    let result = match load_tavily_api_key(&app) {
-        Ok(tavily_api_key) => timeout(
-            AGENT_TOOL_EXECUTION_TIMEOUT,
-            execute_registered_tool(
-                &state,
-                &running_tool_call,
-                &request.project_path,
-                request.allow_command,
-                tavily_api_key.as_deref(),
-            ),
-        )
-        .await
-        .map_err(|_| {
-            crate::error::AppError::Message(format!(
-                "工具执行超过 {} 秒，已中止",
-                AGENT_TOOL_EXECUTION_TIMEOUT.as_secs()
-            ))
-        })
-        .and_then(|result| result),
-        Err(err) => Err(err),
-    };
+    let result = timeout(
+        AGENT_TOOL_EXECUTION_TIMEOUT,
+        execute_registered_tool(
+            state,
+            &running_tool_call,
+            &request.project_path,
+            request.allow_command,
+            tavily_api_key,
+        ),
+    )
+    .await
+    .map_err(|_| {
+        crate::error::AppError::Message(format!(
+            "工具执行超过 {} 秒，已中止",
+            AGENT_TOOL_EXECUTION_TIMEOUT.as_secs()
+        ))
+    })
+    .and_then(|result| result);
 
     match result {
         Ok(result_text) => {
@@ -1025,7 +1036,7 @@ async fn execute_agent_tool_call(
 }
 
 async fn execute_registered_tool(
-    state: &State<'_, AppState>,
+    state: &AppState,
     tool_call: &AgentToolCall,
     project_path: &str,
     allow_command: bool,
@@ -2206,6 +2217,7 @@ pub fn run() {
                 observability: Mutex::new(observability),
                 runtime: Mutex::new(runtime),
                 automation: Mutex::new(automation),
+                background_agents: background_agent::BackgroundAgentManager::default(),
                 mcp: Mutex::new(McpClientManager::default()),
                 plugins,
                 ops_ssh_sessions: Mutex::new(HashMap::new()),
@@ -2213,9 +2225,14 @@ pub fn run() {
             });
             profile::start_worker(app.handle().clone());
             automation::start_worker(app.handle().clone());
+            background_agent::restore_waiting_runs(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            background_agent::start_background_agent,
+            background_agent::list_background_agents,
+            background_agent::respond_background_agent,
+            background_agent::stop_background_agent,
             automation::list_automations,
             automation::save_automation,
             automation::set_automation_enabled,

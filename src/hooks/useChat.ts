@@ -1,59 +1,67 @@
+import {
+  backgroundIsBusy,
+  mergeBackgroundMessages,
+  type BackgroundAgentDecision,
+  type BackgroundAgentRequest,
+  type BackgroundAgentSnapshot
+} from "../lib/backgroundAgent";
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   appendMessage,
-  chat,
-  chatStream,
   createMemory,
-  deleteMessages,
   extractUploadedFile,
   indexRagFile,
-  interruptChatStream,
-  loadBaseContext,
-  planContextPreparation,
-  fitContextMessages,
   listAgentRunTimelines,
   listAgentRuns,
   listMessages,
   listRagFiles,
   readAbsoluteFile,
-  updateConversationModel
+  updateConversationModel,
+  listConversations,
+  listArchivedConversations,
+  startBackgroundAgent,
+  listBackgroundAgents,
+  respondBackgroundAgent,
+  stopBackgroundAgent
 } from "../api";
 import { buildSystemMessage } from "../lib/chatSystemMessage";
-import { createChatStreamAccumulator } from "../lib/chatStreamAccumulator";
-import { prepareBudgetedContext as prepareContextWithinBudget } from "../lib/contextPreparation";
 import { fileToDataUrl } from "../lib/imageAttachments";
 import { appendTranscript } from "../lib/speech";
-import { attachmentName, partitionAttachments, formatAttachmentUploadResult, type AttachmentSource } from "../lib/attachmentUploads";
+import {
+  attachmentName,
+  partitionAttachments,
+  formatAttachmentUploadResult,
+  type AttachmentSource
+} from "../lib/attachmentUploads";
 import { findPendingToolApproval, resolveChatDecisionState } from "../lib/chatDecisionState";
 import { useSpeechInput, type UseSpeechInputReturn } from "./useSpeechInput";
 import {
   resolveUserMemoryRoute,
-  buildAutomaticClarificationAnswers,
   findPendingClarification,
   formatClarificationAnswerMessage,
   getLastResponseRegenerationContext,
   type ParsedToolCall
 } from "../lib/messageHelpers";
-import {
-  safeCreateAgentRun,
-  safeFinishAgentRun,
-  safeResumeAgentRun,
-  safeRecordAgentStep,
-  safeResolveAgentModelOutput
-} from "../lib/agentSafe";
+import { safeCreateAgentRun, safeFinishAgentRun, safeRecordAgentStep } from "../lib/agentSafe";
 import { useConversations } from "./useConversations";
 import { useRagFiles } from "./useRagFiles";
 import { useChatInput } from "./useChatInput";
-import { useAgentToolRuntime } from "./useAgentToolRuntime";
-import {
-  buildMessageContentWithImageAttachments,
-  useChatAttachments
-} from "./useChatAttachments";
+import { buildMessageContentWithImageAttachments, useChatAttachments } from "./useChatAttachments";
 import type {
-  AgentAccessMode, AgentClarificationAnswer, AgentClarificationRequest, AgentRun, AgentToolCall, ChatMessage, ChatStreamEvent, Memory,
-  ChatImageAttachment, Conversation, Item, PersistedMessage, ProjectEntry, ProjectFileEntry
+  AgentAccessMode,
+  AgentClarificationAnswer,
+  AgentClarificationRequest,
+  AgentRun,
+  AgentToolCall,
+  Memory,
+  ChatImageAttachment,
+  Conversation,
+  Item,
+  PersistedMessage,
+  ProjectEntry,
+  ProjectFileEntry
 } from "../types";
 import type { UseProjectsReturn } from "./useProjects";
 import type { UseModelReturn } from "./useModel";
@@ -99,6 +107,7 @@ export interface UseChatReturn {
   setConversationRunIds: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   clarificationFallbackIds: string[];
   activeStreamRequestId: string | null;
+  backgroundRunId: string | null;
   interruptingGeneration: boolean;
   uploadingImageAttachment: boolean;
   uploadingAttachment: boolean;
@@ -174,7 +183,6 @@ export function useChat({
 }: UseChatArgs): UseChatReturn {
   const messageLoadRequestRef = useRef(0);
   const activeConversationIdRef = useRef("");
-  const autoClarificationIdsRef = useRef(new Set<string>());
   const attachmentScopeRef = useRef("");
   const attachmentBusyRef = useRef(false);
   const attachmentLockedRef = useRef(false);
@@ -194,41 +202,34 @@ export function useChat({
   // ── State owned by useChat ──
   const [messages, setMessages] = useState<PersistedMessage[]>([]);
   const [messageReasoning, setMessageReasoning] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
+  const [localBusy, setBusy] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [clarificationFallbackIds, setClarificationFallbackIds] = useState<string[]>([]);
-  const [activeStreamRequestId, setActiveStreamRequestId] = useState<string | null>(null);
   const [interruptingGeneration, setInterruptingGeneration] = useState(false);
-  const {
-    executingToolMessageId,
-    setExecutingToolMessageId,
-    messageToolCalls,
-    setMessageToolCalls,
-    conversationRunIds,
-    setConversationRunIds,
-    prepareResolvedToolCall,
-    handleExecuteTool,
-    handleRejectTool,
-    handleRetryTool
-  } = useAgentToolRuntime({
-    accessMode,
-    busy,
-    setBusy,
-    messages,
-    setMessages,
-    conversations: conv,
-    projects,
-    skills,
-    setNotice,
-    onContinue: triggerLlmContinue
-  });
+  const [messageToolCalls, setMessageToolCalls] = useState<Record<string, AgentToolCall>>({});
+  const [conversationRunIds, setConversationRunIds] = useState<Record<string, string>>({});
+  const [fallbackExecutingId, setExecutingToolMessageId] = useState<string | null>(null);
+  const [backgroundRuns, setBackgroundRuns] = useState<Record<string, BackgroundAgentSnapshot>>({});
+  const backgroundRunsRef = useRef(backgroundRuns);
+  const backgroundRevisionRef = useRef(0);
+  const backgroundEventRef = useRef<(snapshot: BackgroundAgentSnapshot) => void>(() => {});
+  activeConversationIdRef.current = conv.activeConversationId;
+  const currentBackground = Object.values(backgroundRuns).find(
+    (snapshot) => snapshot.conversation_id === conv.activeConversationId
+  );
+  const busy = localBusy || backgroundIsBusy(currentBackground);
+  const executingToolMessageId = currentBackground?.executing_tool_message_id || fallbackExecutingId;
+  const backgroundRunId = currentBackground?.run_id || null;
+  const activeStreamRequestId = currentBackground?.stream_message?.id || null;
+  const scopedMessages = messages.filter((message) => message.conversation_id === conv.activeConversationId);
 
   const attachmentScopeKey = `${conv.activeConversationId}:${getAttachmentProjectPath()}`;
   attachmentScopeRef.current = attachmentScopeKey;
   const { decisionPending: attachmentDecisionPending } = resolveChatDecisionState({
-    accessMode, busy,
-    pendingToolApproval: busy ? null : findPendingToolApproval(messages, messageToolCalls),
-    unresolvedClarification: findPendingClarification(messages),
+    accessMode,
+    busy,
+    pendingToolApproval: busy ? null : findPendingToolApproval(scopedMessages, messageToolCalls),
+    unresolvedClarification: findPendingClarification(scopedMessages),
     clarificationFallbackIds
   });
   attachmentLockedRef.current = busy || attachmentDecisionPending || !chatVisible;
@@ -246,6 +247,8 @@ export function useChat({
   // ── Sync activeConversationId ref ──
   useEffect(() => {
     activeConversationIdRef.current = conv.activeConversationId;
+    setInterruptingGeneration(false);
+    setExecutingToolMessageId(null);
     setMessageReasoning({});
     if (!conv.activeConversationId) {
       setMessages([]);
@@ -256,20 +259,6 @@ export function useChat({
     void rag.refreshRagFiles(conv.activeConversationId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conv.activeConversationId]);
-
-  useEffect(() => {
-    if (accessMode === "ask" || busy) return;
-    const pending = findPendingClarification(messages);
-    if (
-      !pending ||
-      autoClarificationIdsRef.current.has(pending.messageId) ||
-      clarificationFallbackIds.includes(pending.messageId)
-    ) return;
-    autoClarificationIdsRef.current.add(pending.messageId);
-    const answers = buildAutomaticClarificationAnswers(pending.request);
-    void handleClarificationAnswer(pending.messageId, pending.request, answers, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessMode, busy, messages, clarificationFallbackIds]);
 
   // ── Tauri drag-drop listener ──
   useEffect(() => {
@@ -302,13 +291,37 @@ export function useChat({
   async function loadMessages(conversationId: string) {
     const requestId = ++messageLoadRequestRef.current;
     try {
-      const nextMessages = await listMessages(conversationId);
+      const revision = backgroundRevisionRef.current;
+      const [nextMessages, snapshots] = await Promise.all([
+        listMessages(conversationId),
+        listBackgroundAgents()
+      ]);
+      if (revision === backgroundRevisionRef.current) {
+        const restored = Object.fromEntries(snapshots.map((snapshot) => [snapshot.run_id, snapshot]));
+        backgroundRunsRef.current = restored;
+        setBackgroundRuns(restored);
+      }
       const timelines = await listAgentRunTimelines(conversationId, 20).catch((error) => {
         console.error("Failed to restore agent runtime state:", error);
         return [];
       });
       if (requestId === messageLoadRequestRef.current && activeConversationIdRef.current === conversationId) {
-        setMessages(nextMessages);
+        const background = Object.values(backgroundRunsRef.current).find(
+          (snapshot) => snapshot.conversation_id === conversationId
+        );
+        setMessages(mergeBackgroundMessages(nextMessages, conversationId, background));
+        setMessageReasoning(
+          Object.fromEntries(
+            nextMessages
+              .filter((message) => message.metadata?.assistant_reasoning)
+              .map((message) => [message.id, message.metadata!.assistant_reasoning!])
+          )
+        );
+        if (background?.stream_message && background.reasoning)
+          setMessageReasoning((current) => ({
+            ...current,
+            [background.stream_message!.id]: background.reasoning
+          }));
         const restoredToolCalls = timelines
           .flatMap((timeline) => timeline.tool_calls)
           .reduce<Record<string, AgentToolCall>>((current, toolCall) => {
@@ -316,11 +329,20 @@ export function useChat({
             return current;
           }, {});
         setMessageToolCalls(restoredToolCalls);
-        const activeRun = timelines.find((timeline) =>
-          timeline.run.status === "awaiting_tool" ||
-          timeline.run.status === "awaiting_clarification" ||
-          timeline.run.status === "awaiting_recovery"
+        const activeRun = timelines.find(
+          (timeline) =>
+            timeline.run.status === "running" ||
+            timeline.run.status === "awaiting_tool" ||
+            timeline.run.status === "awaiting_clarification" ||
+            timeline.run.status === "awaiting_recovery"
         )?.run;
+        if (activeRun?.status === "awaiting_clarification") {
+          const pending = findPendingClarification(nextMessages);
+          if (pending)
+            setClarificationFallbackIds((current) =>
+              current.includes(pending.messageId) ? current : [...current, pending.messageId]
+            );
+        }
         setConversationRunIds((current) => {
           const next = { ...current };
           if (activeRun) next[conversationId] = activeRun.id;
@@ -335,47 +357,143 @@ export function useChat({
     }
   }
 
-  async function prepareBudgetedContext(
-    history: PersistedMessage[],
-    systemMessage: ChatMessage,
-    modelConfigId: string,
-    conversationId: string,
-    latestUserContent: string
-  ) {
-    const configuredModel = model.models.find((item) => item.id === modelConfigId)
-      ?? { context_window: 32_768, max_tokens: null };
-    const prepared = await prepareContextWithinBudget({
-      history,
-      systemMessage,
-      model: configuredModel,
-      conversationId,
-      latestUserContent
-    }, {
-      planContext: planContextPreparation,
-      fitContext: fitContextMessages,
-      generateSummary: async (prompt, maxTokens) => {
-        const response = await chat(
-          modelConfigId,
-          [{ role: "user", content: prompt }],
-          conversationId,
-          maxTokens
-        );
-        return response.content;
-      },
-      persistSummary: appendMessage
+  function buildExecutionRequest(
+    run: AgentRun,
+    project: ProjectEntry | null,
+    modelId: string,
+    replaceMessageId: string | null = null
+  ): BackgroundAgentRequest {
+    const boundProject: ProjectEntry | null = run.project_path
+      ? project?.path === run.project_path
+        ? project
+        : { id: run.project_path, name: run.project_path, path: run.project_path, opened_at: "" }
+      : null;
+    return {
+      run_id: run.id,
+      conversation_id: run.conversation_id,
+      model_config_id: run.model_config_id || modelId,
+      project_path: run.project_path || skills.tempDir,
+      system_message: buildSystemMessage(
+        [],
+        null,
+        boundProject,
+        [],
+        skills.skills,
+        mcp.mcpServers,
+        [],
+        [],
+        [],
+        skills.tempDir,
+        true
+      ),
+      access_mode: accessMode,
+      allow_command: skills.skills.some((skill) => skill.id === "bash_tool" && skill.enabled),
+      replace_message_id: replaceMessageId
+    };
+  }
+
+  async function refreshConversationLists() {
+    const [next, archived] = await Promise.all([listConversations(), listArchivedConversations()]);
+    conv.setConversations(next);
+    conv.setArchivedConversations(archived);
+    await projects.refreshProjectConversationMap();
+  }
+
+  function receiveBackgroundSnapshot(snapshot: BackgroundAgentSnapshot) {
+    backgroundRevisionRef.current++;
+    const next = { ...backgroundRunsRef.current };
+    if (["completed", "failed", "cancelled", "rejected", "awaiting_recovery"].includes(snapshot.status))
+      delete next[snapshot.run_id];
+    else next[snapshot.run_id] = snapshot;
+    backgroundRunsRef.current = next;
+    setBackgroundRuns(next);
+    if (snapshot.conversation_id === activeConversationIdRef.current) {
+      if (snapshot.stream_message) {
+        setMessages((current) => mergeBackgroundMessages(current, activeConversationIdRef.current, snapshot));
+        if (snapshot.reasoning)
+          setMessageReasoning((current) => ({
+            ...current,
+            [snapshot.stream_message!.id]: snapshot.reasoning
+          }));
+      } else {
+        void loadMessages(snapshot.conversation_id);
+        setInterruptingGeneration(false);
+      }
+      if (snapshot.error) setNotice(snapshot.error);
+    }
+    if (!snapshot.stream_message) void refreshConversationLists().catch(console.error);
+  }
+  backgroundEventRef.current = receiveBackgroundSnapshot;
+
+  useEffect(() => {
+    let mounted = true;
+    const pending = listen<BackgroundAgentSnapshot>("background-agent", (event) => {
+      if (mounted) backgroundEventRef.current(event.payload);
     });
+    const revision = backgroundRevisionRef.current;
+    void listBackgroundAgents()
+      .then((snapshots) => {
+        if (mounted && revision === backgroundRevisionRef.current) {
+          for (const snapshot of snapshots) backgroundEventRef.current(snapshot);
+        }
+      })
+      .catch(console.error);
+    return () => {
+      mounted = false;
+      void pending.then((unlisten) => unlisten()).catch(console.error);
+    };
+  }, []);
 
-    if (prepared.systemTrimmed) {
-      setNotice("动态系统上下文超过预算，已保留核心规则和最新检索结果并裁剪中间部分。");
+  async function launchBackground(
+    run: AgentRun,
+    project: ProjectEntry | null,
+    modelId: string,
+    replaceMessageId: string | null = null
+  ) {
+    const initial: BackgroundAgentSnapshot = {
+      run_id: run.id,
+      conversation_id: run.conversation_id,
+      status: "running",
+      stream_message: null,
+      reasoning: "",
+      executing_tool_message_id: null,
+      error: null
+    };
+    backgroundRevisionRef.current++;
+    backgroundRunsRef.current = { ...backgroundRunsRef.current, [run.id]: initial };
+    setBackgroundRuns(backgroundRunsRef.current);
+    try {
+      await startBackgroundAgent(buildExecutionRequest(run, project, modelId, replaceMessageId));
+      if (activeConversationIdRef.current === run.conversation_id) await loadMessages(run.conversation_id);
+    } catch (error) {
+      receiveBackgroundSnapshot({
+        run_id: run.id,
+        conversation_id: run.conversation_id,
+        status: "failed",
+        stream_message: null,
+        reasoning: "",
+        executing_tool_message_id: null,
+        error: String(error)
+      });
+      throw error;
     }
-    if (prepared.summaryStatus === "created") {
-      setNotice("上下文预算已更新：保留完整历史，并优先使用结构化摘要。");
-    } else if (prepared.summaryStatus === "failed") {
-      console.error("Context summary failed:", prepared.summaryError);
-      setNotice("上下文摘要失败，本次将按预算使用最近历史，原始消息仍完整保留。");
-    }
+  }
 
-    return prepared;
+  async function decide(
+    runId: string,
+    decision: Omit<BackgroundAgentDecision, "run_id" | "fallback_request">
+  ) {
+    const conversationId = conv.activeConversationId;
+    const runs = await listAgentRuns(conversationId, 200);
+    const run = runs.find((candidate) => candidate.id === runId);
+    if (!run) throw new Error("此任务不属于当前会话。");
+    const project = projects.resolveConversationProject(conversationId, conv.getConversationProjectHint());
+    await respondBackgroundAgent({
+      ...decision,
+      run_id: runId,
+      fallback_request: buildExecutionRequest(run, project, conv.resolveConversationModelId(conversationId))
+    });
+    if (activeConversationIdRef.current === conversationId) await loadMessages(conversationId);
   }
 
   // ── Send message ──
@@ -384,6 +502,7 @@ export function useChat({
       setNotice("请先等待附件或语音处理完成，或取消语音输入。");
       return;
     }
+    if (busy) return;
     const textContent = input.chatInput.trim();
     const content = buildMessageContentWithImageAttachments(textContent, attachments.pendingImageAttachments);
     const memoryRoute = resolveUserMemoryRoute(textContent, content);
@@ -395,12 +514,16 @@ export function useChat({
       : model.routing.fixedModelIds.includes(conversationModelId)
         ? conversationModelId
         : model.routing.fixedModelIds[0] || "";
-    const routingDecision = model.routing.enabled && !memoryDraft
-      ? model.routing.resolve(textContent || content, attachments.pendingImageAttachments.length > 0)
-      : null;
+    const routingDecision =
+      model.routing.enabled && !memoryDraft
+        ? model.routing.resolve(textContent || content, attachments.pendingImageAttachments.length > 0)
+        : null;
     const activeModelId = routingDecision?.modelId || effectiveModelId;
 
-    if ((!textContent && attachments.pendingImageAttachments.length === 0) || (!activeModelId && !memoryDraft)) {
+    if (
+      (!textContent && attachments.pendingImageAttachments.length === 0) ||
+      (!activeModelId && !memoryDraft)
+    ) {
       setNotice(activeModelId ? "" : "请先保存并选择一个模型");
       return;
     }
@@ -414,7 +537,7 @@ export function useChat({
       const conversationId = await conv.ensureConversation(projectHint);
       if (activeModelId && activeModelId !== conversationModelId) {
         await updateConversationModel(conversationId, activeModelId);
-        model.setActiveModelId(activeModelId);
+        if (activeConversationIdRef.current === conversationId) model.setActiveModelId(activeModelId);
       }
       if (routingDecision) setNotice(`智能路由：${routingDecision.reason}`);
       const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
@@ -438,13 +561,15 @@ export function useChat({
         const runId = agentRun.id;
         setConversationRunIds((current) => ({ ...current, [conversationId]: runId }));
         void safeRecordAgentStep({
-          run_id: runId, kind: "message", status: "completed",
+          run_id: runId,
+          kind: "message",
+          status: "completed",
           input_summary: `user_chars=${content.length}`,
           output_summary: `message_id=${userMessage.id}`
         });
       }
       const nextMessages = [...persistedMessages, userMessage];
-      setMessages(nextMessages);
+      if (activeConversationIdRef.current === conversationId) setMessages(nextMessages);
 
       if (memoryDraft) {
         const savedMemory = await createMemory(memoryDraft);
@@ -452,15 +577,18 @@ export function useChat({
         setNotice("已保存");
         if (agentRun) {
           void safeRecordAgentStep({
-            run_id: agentRun.id, kind: "memory", status: "completed",
-            input_summary: savedMemory.title, output_summary: `memory_id=${savedMemory.id}`
+            run_id: agentRun.id,
+            kind: "memory",
+            status: "completed",
+            input_summary: savedMemory.title,
+            output_summary: `memory_id=${savedMemory.id}`
           });
           void safeFinishAgentRun(agentRun.id, "completed");
         }
         if (projectForRequest) {
           await projects.refreshProjectConversationMap();
         } else {
-          await conv.refreshConversations(conversationId);
+          await refreshConversationLists();
         }
         return;
       }
@@ -471,137 +599,17 @@ export function useChat({
         attachments.clearPendingImageAttachments();
       }
 
-      const baseContext = await loadBaseContext(projectForRequest?.path || null, content);
-      const ragMatches = await rag.loadRagMatches(conversationId, content, activeModelId);
-      const requestSystemMessage = buildSystemMessage(
-        baseContext.memories,
-        baseContext.profile_context || null,
-        projectForRequest,
-        baseContext.project_files,
-        skills.skills,
-        mcp.mcpServers,
-        ragMatches,
-        baseContext.code_matches,
-        baseContext.project_index_matches,
-        skills.tempDir
-      );
-      const preparedContext = await prepareBudgetedContext(
-        nextMessages,
-        requestSystemMessage,
-        activeModelId,
-        conversationId,
-        content
-      );
-      const displayMessages = preparedContext.summaryMessage
-        ? [...nextMessages, preparedContext.summaryMessage]
-        : nextMessages;
-      if (preparedContext.summaryMessage) setMessages(displayMessages);
-      const modelMessages: ChatMessage[] = [
-        preparedContext.systemMessage,
-        ...preparedContext.contextMessages.map((message) => ({ role: message.role, content: message.content }))
-      ];
-
-      const requestId = crypto.randomUUID();
-      const stream = createChatStreamAccumulator(requestId);
-      const temporaryAssistantMessage: PersistedMessage = {
-        id: requestId, conversation_id: conversationId, role: "assistant", content: "", created_at: new Date().toISOString()
-      };
-      setMessages([...displayMessages, temporaryAssistantMessage]);
-
-      const unlisten = await listen<ChatStreamEvent>("chat-stream", (event) => {
-        const streamed = stream.accept(event.payload);
-        if (!streamed) return;
-        if (activeConversationIdRef.current !== conversationId) return;
-        if (event.payload.type === "delta") {
-          setMessages((current) => current.map((m) => m.id === requestId ? { ...m, content: streamed.content } : m));
-        }
-        if (event.payload.type === "reasoning_delta") {
-          setMessageReasoning((current) => ({ ...current, [requestId]: streamed.reasoning }));
-        }
-        if (event.payload.type === "interrupted") {
-          setMessages((current) => current.map((message) => message.id === requestId
-            ? { ...message, metadata: { ...message.metadata, generation_status: "interrupted" } }
-            : message));
-        }
-        if (event.payload.type === "error") setNotice(event.payload.message);
-      });
-      setActiveStreamRequestId(requestId);
-
-      if (agentRun) {
-        void safeRecordAgentStep({
-          run_id: agentRun.id, kind: "model", status: "running",
-          input_summary: `messages=${modelMessages.length}`,
-          metadata_json: JSON.stringify({ model_config_id: activeModelId })
-        });
-      }
-      try {
-        await chatStream(
-          requestId,
-          activeModelId,
-          modelMessages,
-          conversationId,
-          preparedContext.outputReserve
-        );
-      } finally {
-        unlisten();
-        setActiveStreamRequestId((current) => current === requestId ? null : current);
-        setInterruptingGeneration(false);
-      }
-      const { content: streamedContent, reasoning: streamedReasoning, interrupted } = stream.snapshot();
-
-      if (!streamedContent.trim() && !interrupted) {
-        if (agentRun) {
-          void safeRecordAgentStep({
-            run_id: agentRun.id, kind: "model", status: "failed",
-            input_summary: `messages=${modelMessages.length}`, output_summary: "empty_response"
-          });
-          void safeFinishAgentRun(agentRun.id, "failed", "empty_response");
-        }
-        setMessages(displayMessages);
-        setMessageReasoning((current) => { const { [requestId]: _, ...rest } = current; return rest; });
-        return;
-      }
-
-      const assistantMessage = await appendMessage({
-        conversation_id: conversationId,
-        role: "assistant",
-        content: streamedContent,
-        metadata: interrupted ? { generation_status: "interrupted" } : undefined
-      });
-      if (agentRun) {
-        if (interrupted) {
-          void safeFinishAgentRun(agentRun.id, "cancelled", "user_interrupted");
-          setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
-        } else {
-          const resolution = await safeResolveAgentModelOutput(agentRun.id, assistantMessage.id, streamedContent, "model", `messages=${modelMessages.length}`);
-          if (resolution?.tool_call) {
-            const prepared = await prepareResolvedToolCall(
-              resolution.tool_call as AgentToolCall,
-              projectForRequest?.path || skills.tempDir
-            );
-            setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: prepared }));
-          } else if (resolution?.status === "completed") {
-            setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
-          }
-        }
-      }
-
-      if (activeConversationIdRef.current === conversationId) {
-        setMessages([...displayMessages, assistantMessage]);
-      }
-      if (streamedReasoning.trim() && activeConversationIdRef.current === conversationId) {
-        setMessageReasoning((current) => {
-          const { [requestId]: _, ...rest } = current;
-          return { ...rest, [assistantMessage.id]: streamedReasoning };
-        });
-      }
-      if (projectForRequest) await projects.refreshProjectConversationMap();
-      else await conv.refreshConversations(conversationId);
+      if (!agentRun) throw new Error("无法创建后台任务。");
+      await launchBackground(agentRun, projectForRequest, activeModelId);
+      await refreshConversationLists();
     } catch (error) {
       if (agentRun) {
         void safeRecordAgentStep({
-          run_id: agentRun.id, kind: "error", status: "failed",
-          input_summary: "handle_send_message", output_summary: String(error)
+          run_id: agentRun.id,
+          kind: "error",
+          status: "failed",
+          input_summary: "handle_send_message",
+          output_summary: String(error)
         });
         void safeFinishAgentRun(agentRun.id, "failed", String(error));
       }
@@ -612,268 +620,82 @@ export function useChat({
   }
 
   async function handleInterruptGeneration() {
-    if (!activeStreamRequestId || interruptingGeneration) return;
+    if (!backgroundRunId || interruptingGeneration) return;
     setInterruptingGeneration(true);
     try {
-      const interrupted = await interruptChatStream(activeStreamRequestId);
-      if (!interrupted) {
+      if (!(await stopBackgroundAgent(backgroundRunId))) {
         setInterruptingGeneration(false);
-        setNotice("当前回复已经结束，无需打断。");
+        setNotice("任务已经结束。");
       }
     } catch (error) {
       setInterruptingGeneration(false);
-      setNotice(`打断模型输出失败：${String(error)}`);
+      setNotice(String(error));
     }
   }
 
   async function handleRegenerateLastResponse(messageId: string) {
     if (busy) return;
     const conversationId = conv.activeConversationId;
-    const modelConfigId = conv.resolveConversationModelId(conversationId);
-    if (!conversationId || !modelConfigId) {
-      setNotice("当前会话没有可用模型，无法重新生成。");
+    const modelId = conv.resolveConversationModelId(conversationId);
+    if (!conversationId || !modelId) {
+      setNotice("当前会话没有可用模型。");
       return;
     }
-
     setBusy(true);
-    let regenerationRunId: string | null = null;
+    let run: AgentRun | null = null;
     try {
-      const persistedMessages = await listMessages(conversationId);
-      const regeneration = getLastResponseRegenerationContext(persistedMessages, messageId);
+      const history = await listMessages(conversationId);
+      const regeneration = getLastResponseRegenerationContext(history, messageId);
       if (!regeneration) {
-        setNotice("只能重新生成最后一条助手回答。");
+        setNotice("只能重新生成最后一条普通助手回答。");
         return;
       }
-      const { previousMessages, triggerMessage } = regeneration;
-
-      setMessages(previousMessages);
-      setMessageReasoning((current) => {
-        const { [messageId]: _, ...rest } = current;
-        return rest;
-      });
-      const projectHint = conv.getConversationProjectHint();
-      const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
-      const agentRun = await safeCreateAgentRun({
+      const project = projects.resolveConversationProject(conversationId, conv.getConversationProjectHint());
+      run = await safeCreateAgentRun({
         conversation_id: conversationId,
-        project_path: projectForRequest?.path || null,
-        model_config_id: modelConfigId,
-        trigger_message_id: triggerMessage.id
+        project_path: project?.path || null,
+        model_config_id: modelId,
+        trigger_message_id: regeneration.triggerMessage.id
       });
-      regenerationRunId = agentRun?.id || null;
-      if (agentRun) {
-        setConversationRunIds((current) => ({ ...current, [conversationId]: agentRun.id }));
-      }
-      await triggerLlmContinue(
-        conversationId,
-        previousMessages,
-        projectHint,
-        agentRun?.id,
-        messageId
-      );
+      if (!run) throw new Error("无法创建后台任务。");
+      await launchBackground(run, project, modelId, messageId);
     } catch (error) {
-      if (regenerationRunId) {
-        await safeFinishAgentRun(regenerationRunId, "failed", String(error));
-        setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
-      }
-      setMessages(await listMessages(conversationId).catch(() => messages));
-      setNotice(`重新生成失败：${String(error)}`);
+      if (run) await safeFinishAgentRun(run.id, "failed", String(error));
+      setNotice(String(error));
     } finally {
       setBusy(false);
     }
   }
 
-  // ── Continue LLM after tool execution ──
-  async function triggerLlmContinue(
-    conversationId: string,
-    currentMessages: PersistedMessage[],
-    projectHint: ProjectEntry | null = null,
-    runId?: string | null,
-    replaceMessageId?: string | null
-  ) {
-    const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
-    const modelConfigId = conv.resolveConversationModelId(conversationId);
-    const retrievalQuery = [...currentMessages].reverse().find((message) => message.role === "user")?.content || "";
-    const baseContext = await loadBaseContext(projectForRequest?.path || null, retrievalQuery);
-    const ragMatches = await rag.loadRagMatches(conversationId, retrievalQuery, modelConfigId);
-    const requestSystemMessage = buildSystemMessage(
-      baseContext.memories,
-      baseContext.profile_context || null,
-      projectForRequest,
-      baseContext.project_files,
-      skills.skills,
-      mcp.mcpServers,
-      ragMatches,
-      baseContext.code_matches,
-      baseContext.project_index_matches,
-      skills.tempDir
-    );
-    const preparedContext = await prepareBudgetedContext(
-      currentMessages,
-      requestSystemMessage,
-      modelConfigId,
-      conversationId,
-      retrievalQuery
-    );
-    const displayMessages = preparedContext.summaryMessage
-      ? [...currentMessages, preparedContext.summaryMessage]
-      : currentMessages;
-    const modelMessages: ChatMessage[] = [
-      preparedContext.systemMessage,
-      ...preparedContext.contextMessages.map((message) => ({ role: message.role, content: message.content }))
-    ];
-
-    const requestId = crypto.randomUUID();
-    const stream = createChatStreamAccumulator(requestId);
-    let streamFailed = false;
-    const temporaryAssistantMessage: PersistedMessage = {
-      id: requestId, conversation_id: conversationId, role: "assistant", content: "", created_at: new Date().toISOString()
-    };
-    setMessages([...displayMessages, temporaryAssistantMessage]);
-
-    const unlisten = await listen<ChatStreamEvent>("chat-stream", (event) => {
-      const streamed = stream.accept(event.payload);
-      if (!streamed) return;
-      if (activeConversationIdRef.current !== conversationId) return;
-      if (event.payload.type === "delta") {
-        setMessages((current) => current.map((m) => m.id === requestId ? { ...m, content: streamed.content } : m));
-      }
-      if (event.payload.type === "reasoning_delta") {
-        setMessageReasoning((current) => ({ ...current, [requestId]: streamed.reasoning }));
-      }
-      if (event.payload.type === "interrupted") {
-        setMessages((current) => current.map((message) => message.id === requestId
-          ? { ...message, metadata: { ...message.metadata, generation_status: "interrupted" } }
-          : message));
-      }
-      if (event.payload.type === "error") { streamFailed = true; setNotice(event.payload.message); }
-    });
-    setActiveStreamRequestId(requestId);
-
+  async function toolDecision(messageId: string, action: "approve" | "reject" | "retry") {
+    const tool = messageToolCalls[messageId];
+    if (!tool) {
+      setNotice("找不到工具执行记录，请重新打开此会话。");
+      return;
+    }
     try {
-      setBusy(true);
-      if (runId) {
-        void safeRecordAgentStep({
-          run_id: runId, kind: "model_continue", status: "running",
-          input_summary: `messages=${modelMessages.length}`,
-          metadata_json: JSON.stringify({ conversation_id: conversationId })
-        });
-      }
-      await chatStream(
-        requestId,
-        modelConfigId,
-        modelMessages,
-        conversationId,
-        preparedContext.outputReserve
-      );
-    } catch (err) {
-      streamFailed = true;
-      console.error("Continue streaming failed:", err);
-      setNotice(`Conversation reply failed: ${String(err)}`);
-      if (runId) {
-        void safeRecordAgentStep({
-          run_id: runId, kind: "model_continue", status: "failed",
-          input_summary: `messages=${modelMessages.length}`, output_summary: String(err)
-        });
-        void safeFinishAgentRun(runId, "failed", String(err));
-      }
-    } finally {
-      unlisten();
-      setBusy(false);
-      setActiveStreamRequestId((current) => current === requestId ? null : current);
-      setInterruptingGeneration(false);
-      const { content: streamedContent, reasoning: streamedReasoning, error: streamError, interrupted } = stream.snapshot();
-      streamFailed ||= Boolean(streamError);
-      let assistantMessage: PersistedMessage | null = null;
-      if (!streamFailed && (streamedContent.trim() || interrupted)) {
-        assistantMessage = await appendMessage({
-          conversation_id: conversationId,
-          role: "assistant",
-          content: streamedContent,
-          metadata: interrupted ? { generation_status: "interrupted" } : undefined
-        });
-        if (replaceMessageId) await deleteMessages([replaceMessageId]);
-      }
-      if (runId && assistantMessage) {
-        if (interrupted) {
-          void safeFinishAgentRun(runId, "cancelled", "user_interrupted");
-          setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
-        } else {
-          const resolution = await safeResolveAgentModelOutput(runId, assistantMessage.id, streamedContent, "model_continue", `messages=${modelMessages.length}`);
-          if (resolution?.tool_call) {
-            const prepared = await prepareResolvedToolCall(
-              resolution.tool_call as AgentToolCall,
-              projectForRequest?.path || skills.tempDir
-            );
-            setMessageToolCalls((current) => ({ ...current, [assistantMessage.id]: prepared }));
-          } else if (resolution?.status === "completed") {
-            setConversationRunIds((current) => { const { [conversationId]: _, ...rest } = current; return rest; });
-          }
-        }
-      }
-      const finalMessages = await listMessages(conversationId);
-      setMessages(finalMessages);
-      setMessageReasoning((current) => {
-        const next = { ...current };
-        delete next[requestId];
-        if (replaceMessageId) delete next[replaceMessageId];
-        if (assistantMessage && streamedReasoning.trim()) next[assistantMessage.id] = streamedReasoning;
-        return next;
-      });
-      if (projectForRequest) await projects.refreshProjectConversationMap();
-      else await conv.refreshConversations(conversationId);
+      await decide(tool.run_id, { action, tool_call_id: tool.id });
+    } catch (error) {
+      setNotice(String(error));
     }
   }
-
+  async function handleExecuteTool(messageId: string, _toolCall: ParsedToolCall) {
+    await toolDecision(messageId, "approve");
+  }
+  async function handleRejectTool(messageId: string, _toolCall: ParsedToolCall) {
+    await toolDecision(messageId, "reject");
+  }
+  async function handleRetryTool(messageId: string) {
+    await toolDecision(messageId, "retry");
+  }
   async function handleResumeAgentRun(runId: string) {
     if (busy) return;
-    const conversationId = conv.activeConversationId;
-    if (!conversationId) return;
-    setBusy(true);
-    let resumedRunId: string | null = null;
     try {
-      const previousRuns = await listAgentRuns(conversationId, 20);
-      const previousRun = previousRuns.find((run) => run.id === runId);
-      if (!previousRun) {
-        throw new Error("当前会话中找不到该任务");
-      }
-      const resumed = await safeResumeAgentRun(runId);
-      if (!resumed) {
-        throw new Error("任务不再处于可恢复状态");
-      }
-      resumedRunId = resumed.id;
-      setConversationRunIds((current) => ({ ...current, [conversationId]: resumed.id }));
-      if (previousRun.status === "failed" || previousRun.status === "awaiting_recovery") {
-        setMessageToolCalls((current) => Object.fromEntries(
-          Object.entries(current).map(([messageId, toolCall]) => [
-            messageId,
-            toolCall.run_id === resumed.id && (toolCall.status === "failed" || toolCall.status === "interrupted")
-              ? { ...toolCall, status: "skipped", result_summary: "user_skipped_failure" }
-              : toolCall
-          ])
-        ));
-      }
-      await appendMessage({
-        conversation_id: conversationId,
-        role: "user",
-        content: previousRun.status === "awaiting_recovery"
-          ? "[任务恢复] 用户选择不重试上一个失败或中断步骤，请根据现有上下文继续，并避免假定该步骤已经成功。"
-          : "[任务恢复] 用户选择从最近已持久化的消息继续此前失败的任务，请先确认当前上下文再继续。",
-        metadata: { exclude_from_profile: true }
-      });
-      const currentMessages = await listMessages(conversationId);
-      setMessages(currentMessages);
-      const projectHint = conv.getConversationProjectHint();
-      await triggerLlmContinue(conversationId, currentMessages, projectHint, resumed.id);
+      await decide(runId, { action: "resume" });
     } catch (error) {
-      if (resumedRunId) {
-        await safeFinishAgentRun(resumedRunId, "failed", String(error));
-      }
-      setNotice(`任务恢复失败：${String(error)}`);
-    } finally {
-      setBusy(false);
+      setNotice(String(error));
     }
   }
-
   async function handleClarificationAnswer(
     messageId: string,
     request: AgentClarificationRequest,
@@ -881,43 +703,18 @@ export function useChat({
     automatic = false
   ) {
     if (busy) return;
-    setBusy(true);
     try {
-      const projectHint = conv.getConversationProjectHint();
-      const conversationId = await conv.ensureConversation(projectHint);
-      const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
-      let runId = conversationRunIds[conversationId] || null;
-      if (!runId) {
-        const runs = await listAgentRuns(conversationId, 20);
-        runId = runs.find((run) => run.status === "awaiting_clarification")?.id || null;
-      }
-      const answerMessage = await appendMessage({
-        conversation_id: conversationId,
-        role: "user",
-        content: formatClarificationAnswerMessage(messageId, request, answers, automatic),
-        metadata: { exclude_from_profile: true }
+      const runs = await listAgentRuns(conv.activeConversationId, 200);
+      const run = runs.find((candidate) => candidate.status === "awaiting_clarification");
+      if (!run) throw new Error("找不到等待澄清的任务。");
+      await decide(run.id, {
+        action: "clarify",
+        message_id: messageId,
+        answer: formatClarificationAnswerMessage(messageId, request, answers, automatic)
       });
-      if (runId) {
-        setConversationRunIds((current) => ({ ...current, [conversationId]: runId! }));
-        await safeRecordAgentStep({
-          run_id: runId,
-          kind: "clarification",
-          status: "completed",
-          input_summary: `questions=${request.questions.length}`,
-          output_summary: automatic ? "policy_auto_selected" : "user_selected",
-          metadata_json: JSON.stringify({ message_id: messageId, answer_message_id: answerMessage.id, automatic })
-        });
-      }
-      const updatedMessages = await listMessages(conversationId);
-      setMessages(updatedMessages);
       setClarificationFallbackIds((current) => current.filter((id) => id !== messageId));
-      await triggerLlmContinue(conversationId, updatedMessages, projectForRequest, runId);
     } catch (error) {
-      console.error("Clarification answer failed:", error);
-      setClarificationFallbackIds((current) => current.includes(messageId) ? current : [...current, messageId]);
-      setNotice(`提交澄清结果失败：${String(error)}`);
-    } finally {
-      setBusy(false);
+      setNotice(String(error));
     }
   }
 
@@ -1079,7 +876,7 @@ export function useChat({
     activeConversationProject: conv.activeConversationProject,
 
     // Messages
-    messages,
+    messages: scopedMessages,
     setMessages,
     messageReasoning,
     setMessageReasoning,
@@ -1109,6 +906,7 @@ export function useChat({
     conversationRunIds, setConversationRunIds,
     clarificationFallbackIds,
     activeStreamRequestId,
+    backgroundRunId,
     interruptingGeneration,
     uploadingImageAttachment: attachments.uploadingImageAttachment,
     uploadingAttachment,

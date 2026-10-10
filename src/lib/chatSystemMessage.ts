@@ -25,7 +25,8 @@ export function buildSystemMessage(
   ragMatches: RagChunkMatch[] = [],
   codeMatches: CodeSearchResult[] = [],
   projectIndexMatches: ProjectIndexSearchResult[] = [],
-  tempDir?: string
+  tempDir?: string,
+  deferRetrieval = false
 ): ChatMessage {
   const runtimeContext = buildRuntimeContext();
 
@@ -72,7 +73,7 @@ export function buildSystemMessage(
         "- 如果你生成、编辑或展示图片、HTML、PDF、表格、文档等静态资源，请在回答中使用 Markdown 链接指向项目内真实相对路径（如 [预览图](screenshots/page.png)）；可以预览的文件仍要保留预览入口或预览说明。",
         projectFiles.length > 0
           ? `- 当前项目文件列表（最多 300 项，已跳过 node_modules、.git、target、dist 等大目录）：\n${formatProjectFileTree(projectFiles)}`
-          : "- 当前项目文件列表为空，或暂时无法读取。"
+          : deferRetrieval ? "" : "- 当前项目文件列表为空，或暂时无法读取。"
       ].join("\n")
     : "";
 

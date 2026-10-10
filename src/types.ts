@@ -278,6 +278,7 @@ export interface MessageMetadata {
   exclude_from_profile?: boolean | null;
   context_summary?: ContextSummaryMetadata | null;
   generation_status?: "interrupted" | null;
+  assistant_reasoning?: string | null;
 }
 
 export interface AvailableModelInfo {
