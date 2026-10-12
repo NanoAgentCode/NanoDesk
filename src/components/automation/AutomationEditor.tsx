@@ -16,6 +16,8 @@ import { FolderOpen } from "lucide-react";
 import type { useAutomationController } from "../../hooks/useAutomationController";
 
 export type AutomationEditorProps = ReturnType<typeof useAutomationController>["editor"];
+import TaskBudgetFields from "../TaskBudgetFields";
+import { DEFAULT_TASK_BUDGET } from "../../lib/taskBudget";
 export default function AutomationEditor({
   editing,
   draft,
@@ -261,6 +263,8 @@ export default function AutomationEditor({
             onChange={(v) => patch({ retry_delay_seconds: Number(v) })}
           />
         </Group>
+        <Switch label="单独配置此任务预算" checked={!!draft.budget} onChange={(e) => patch({ budget: e.currentTarget.checked ? { ...DEFAULT_TASK_BUDGET } : null })} />
+        {draft.budget && <TaskBudgetFields value={draft.budget} disabled={busy} onChange={(budget) => patch({ budget })} />}
         <Switch
           label="启用任务"
           checked={draft.enabled}

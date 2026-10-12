@@ -43,6 +43,7 @@
   "getProfileProcessingStatus",
   "getProfileSettings",
   "getProjectIndexStats",
+  "getTaskSettings",
   "getTavilyApiKey",
   "getUsageAnalysis",
   "getUserProfile",
@@ -114,6 +115,7 @@
   "saveModelSupplier",
   "saveOpsServer",
   "saveProfileSettings",
+  "saveTaskSettings",
   "saveTavilyApiKey",
   "searchCodeIndex",
   "searchItems",
@@ -139,6 +141,7 @@
   "updateConversationModel",
   "updateItem",
   "updateMemory",
+  "updateTaskBudget",
   "uploadOpsFile",
   "writeLocalFile",
   "writeProjectFile"

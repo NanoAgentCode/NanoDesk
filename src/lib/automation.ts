@@ -16,6 +16,7 @@ export interface AutomationDraft {
   missed_policy: "skip" | "latest";
   max_retries: number;
   retry_delay_seconds: number;
+  budget?: import("./taskBudget").TaskBudget | null;
 }
 export interface Automation {
   id: string;
@@ -25,6 +26,7 @@ export interface Automation {
   last_error: string | null;
 }
 export interface AutomationRun {
+  budget?: import("./taskBudget").TaskBudgetRecord | null;
   id: string;
   automation_id: string;
   status: string;
@@ -53,6 +55,7 @@ export function triggerLabel(trigger: AutomationTrigger): string {
   }
 }
 export const statusLabels: Record<string, string> = {
+  budget_paused: "预算超限暂停",
   queued: "待执行",
   running: "执行中",
   retry_wait: "等待重试",

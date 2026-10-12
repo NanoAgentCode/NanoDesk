@@ -57,6 +57,7 @@ pub struct AgentToolCall {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentRunTimeline {
+    pub budget: Option<crate::task_budget::TaskBudgetRecord>,
     pub run: AgentRun,
     pub steps: Vec<AgentStep>,
     pub tool_calls: Vec<AgentToolCall>,
@@ -97,7 +98,7 @@ pub struct AgentToolCallDraft {
 }
 
 pub struct RuntimeStore {
-    conn: Connection,
+    pub(crate) conn: Connection,
 }
 
 

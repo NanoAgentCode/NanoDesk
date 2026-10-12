@@ -35,7 +35,11 @@ pub fn start_worker(app: AppHandle) {
                             .as_ref()
                             .err()
                             .is_some_and(|error| error.contains("Command timed out"));
-                    let finished = if unknown_command {
+                    let budget_error = result.as_ref().err().is_some_and(|e| e.contains("任务预算") || e.contains("成本预算"));
+                    let succeeded = result.is_ok();
+                    let finished = if budget_error {
+                        state.automation.lock().await.pause_budget(&run.id, result.as_ref().err().cloned().unwrap())
+                    } else if unknown_command {
                         state.automation.lock().await.interrupt(
                             &run.id,
                             "命令超时，可能已产生部分操作；请检查结果后手动处理。".into(),
@@ -47,7 +51,7 @@ pub fn start_worker(app: AppHandle) {
                             Utc::now().timestamp(),
                         )
                     };
-                    if let Err(error) = finished {
+                    if let Err(error) = &finished {
                         crate::logging::warn(
                             "automation",
                             "failed to persist task outcome",
@@ -59,6 +63,7 @@ pub fn start_worker(app: AppHandle) {
                         "task attempt finished",
                         serde_json::json!({ "run_id": run.id, "failed": failed }),
                     );
+                    if finished.is_ok() && succeeded { crate::task_notifications::notify_completed(&app, &run.id, &run.config.name).await; }
                     let _ = app.emit("automation-changed", &run.id);
                 }
                 Ok(None) => tokio::time::sleep(Duration::from_secs(1)).await,

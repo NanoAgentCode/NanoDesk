@@ -775,6 +775,7 @@ export interface AgentEventLog {
 }
 
 export interface AgentRunTimeline {
+  budget?: import("./lib/taskBudget").TaskBudgetRecord | null;
   run: AgentRun;
   steps: AgentStep[];
   tool_calls: AgentToolCall[];

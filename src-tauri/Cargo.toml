@@ -36,6 +36,7 @@ calamine = "0.26"
 ssh2 = "0.9"
 base64 = "0.22"
 rpassword = "7"
+tauri-plugin-notification = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"

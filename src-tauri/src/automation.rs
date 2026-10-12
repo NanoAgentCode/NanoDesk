@@ -1,11 +1,11 @@
 //! Stable facade for persistent local scheduled and file-triggered automation.
-mod types;
+pub(crate) mod types;
 mod store;
 mod validation;
 mod schedule;
 mod files;
 pub(crate) mod commands;
-mod execution;
+pub(crate) mod execution;
 mod worker;
 
 pub(crate) use store::AutomationStore;

@@ -1,5 +1,6 @@
 // Compatibility facade. New consumers may import a capability directly from ./api/<domain>.
 export * from "./api/agents";
+export * from "./api/taskBudget";
 export * from "./api/automation";
 export * from "./api/speech";
 export * from "./api/items";

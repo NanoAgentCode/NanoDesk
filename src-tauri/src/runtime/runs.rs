@@ -98,6 +98,7 @@ impl RuntimeStore {
     }
 
     pub fn resume_run(&self, id: &str) -> AppResult<AgentRun> {
+        if let Some(budget) = self.task_budget(id)? { budget.check()?; }
         let previous = self.get_run(id)?;
         let now = Utc::now().to_rfc3339();
         let changed = self.conn.execute(

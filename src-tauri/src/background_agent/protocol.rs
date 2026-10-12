@@ -11,6 +11,8 @@ pub struct BackgroundAgentRequest {
     pub access_mode: String,
     pub allow_command: bool,
     pub replace_message_id: Option<String>,
+    #[serde(default)]
+    pub budget: Option<crate::task_budget::TaskBudget>,
 }
 
 #[derive(Debug, Clone, Serialize)]

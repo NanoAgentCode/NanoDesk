@@ -1,4 +1,5 @@
 //! Tauri IPC adapters, grouped by capability. Command names remain unchanged.
+pub(crate) mod task_budget;
 pub(crate) mod agent_tools;
 pub(crate) mod chat;
 pub(crate) mod conversations;

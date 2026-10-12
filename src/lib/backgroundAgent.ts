@@ -9,6 +9,7 @@ export interface BackgroundAgentRequest {
   access_mode: "ask" | "auto" | "full";
   allow_command: boolean;
   replace_message_id: string | null;
+  budget?: import("./taskBudget").TaskBudget;
 }
 export interface BackgroundAgentSnapshot {
   run_id: string;

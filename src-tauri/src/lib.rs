@@ -34,6 +34,8 @@ mod skills;
 mod tool_policy;
 
 mod app_state;
+mod task_budget;
+mod task_notifications;
 mod commands;
 mod services;
 mod desktop;
@@ -56,6 +58,7 @@ use tokio::sync::Mutex;
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Err(err) = show_main_window(app) {
                 logging::error(
@@ -132,6 +135,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::task_budget::get_task_settings,
+            commands::task_budget::save_task_settings,
+            commands::task_budget::update_task_budget,
             background_agent::commands::start_background_agent,
             background_agent::commands::list_background_agents,
             background_agent::commands::respond_background_agent,

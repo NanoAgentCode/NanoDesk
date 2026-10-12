@@ -27,6 +27,7 @@ import {
   Sparkles,
   X
 } from "lucide-react";
+import ConversationTaskBudgetButton from "./ConversationTaskBudgetButton";
 import MarkdownMessage from "./MarkdownMessage";
 import AgentRuntimePanel from "./AgentRuntimePanel";
 import AccessModeSelector from "./AccessModeSelector";
@@ -308,6 +309,7 @@ export default function ChatPane({
         </div>
         {activeConversationId && (
           <div className="chat-header-actions">
+            <ConversationTaskBudgetButton conversationId={activeConversationId} disabled={busy} />
             {backgroundRunId && !activeStreamRequestId && (
               <Button size="compact-xs" variant="subtle" color="red" loading={interruptingGeneration}
                 onClick={() => void handleInterruptGeneration()}>停止任务</Button>

@@ -40,6 +40,14 @@ pub async fn start_background_agent(
         .lock()
         .await
         .get_model_config(&request.model_config_id)?;
+    {
+        let runtime = state.runtime.lock().await;
+        runtime.save_execution_request(&run.id, &serde_json::to_string(&request)?)?;
+        if let Err(error) = runtime.ensure_task_budget(&run.id, Some(&request.model_config_id), request.budget.as_ref()).and_then(|budget| budget.check()) {
+            runtime.finish_run(&run.id, "failed", Some(error.to_string()))?;
+            return Err(error);
+        }
+    }
     let control = state
         .background_agents
         .register(&run.id, &run.conversation_id)?;
@@ -87,6 +95,7 @@ pub async fn respond_background_agent(
         }
         Err(error) => return Err(error),
     };
+    state.runtime.lock().await.ensure_task_budget(&request.run_id, Some(&request.model_config_id), request.budget.as_ref())?;
     // Reserve ownership before changing state on recovery, including after restart.
     let existing = state.background_agents.control(&decision.run_id);
     let control = match existing.clone() {

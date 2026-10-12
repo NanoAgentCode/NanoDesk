@@ -21,7 +21,7 @@ pub(super) fn spawn(app: AppHandle, request: BackgroundAgentRequest, control: Ar
         if let Err(error) = result {
             let _ = state.runtime.lock().await.finish_run(
                 &request.run_id,
-                "failed",
+                if error.to_string().contains("任务预算") { "awaiting_recovery" } else { "failed" },
                 Some(error.to_string()),
             );
             crate::logging::warn(
@@ -33,6 +33,10 @@ pub(super) fn spawn(app: AppHandle, request: BackgroundAgentRequest, control: Ar
         let final_run = state.runtime.lock().await.get_run(&request.run_id);
         state.background_agents.remove(&request.run_id);
         if let Ok(run) = final_run {
+            if run.status == "completed" {
+                let name = state.db.lock().await.list_conversations(run.project_path.as_deref()).map(|items| items.into_iter().find(|c| c.id == run.conversation_id).map(|c| c.title).unwrap_or_else(|| "聊天任务".into())).unwrap_or_else(|_| "聊天任务".into());
+                crate::task_notifications::notify_completed(&app, &run.id, &name).await;
+            }
             let _ = app.emit(
                 "background-agent",
                 BackgroundAgentSnapshot {

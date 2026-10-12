@@ -17,6 +17,7 @@ pub(super) async fn prepare_model_context(
     state: &AppState,
     request: &BackgroundAgentRequest,
     model: &ModelConfig,
+    budget: &mut crate::task_budget::TaskBudgetRecord,
 ) -> AppResult<(Vec<ChatMessage>, u32)> {
     let history = state
         .db
@@ -128,17 +129,20 @@ pub(super) async fn prepare_model_context(
                     },
                 )
                 .await;
+                let prompt = build_summary_prompt(&source);
+                let output = budget.reserve_model(prompt.len() as u64 + 8, SUMMARY_OUTPUT_TOKENS)?;
+                state.runtime.lock().await.put_task_budget(&request.run_id, budget)?;
                 let response = crate::llm::send_chat_completion(
                     model.clone(),
                     ChatRequest {
                         model_config_id: model.id.clone(),
                         messages: vec![ChatMessage {
                             role: "user".into(),
-                            content: build_summary_prompt(&source),
+                            content: prompt,
                         }],
                         temperature: Some(0.1),
                         trace_id: Some(request.run_id.clone()),
-                        max_tokens: Some(SUMMARY_OUTPUT_TOKENS),
+                        max_tokens: Some(output),
                         top_p: None,
                         reasoning_effort: None,
                     },
@@ -154,6 +158,8 @@ pub(super) async fn prepare_model_context(
                 )
                 .await;
                 let response = response?;
+                budget.settle_model(output, response.output_tokens.map(|t| t.max(0) as u64).unwrap_or(response.content.len() as u64));
+                state.runtime.lock().await.put_task_budget(&request.run_id, budget)?;
                 if response.content.trim().is_empty() {
                     return Err(AppError::from("模型返回了空摘要"));
                 }
@@ -196,6 +202,7 @@ pub(super) async fn prepare_model_context(
         .await;
         match summary_result {
             Ok(messages) => context_messages = messages,
+            Err(error) if error.to_string().contains("任务预算") || error.to_string().contains("成本预算") => return Err(error),
             Err(error) => crate::logging::warn(
                 "background-agent",
                 "context summary failed",

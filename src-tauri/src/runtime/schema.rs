@@ -78,6 +78,7 @@ impl RuntimeStore {
         )?;
         self.ensure_column("agent_runs", "plan_json", "TEXT")?;
         self.ensure_column("agent_runs", "plan_updated_at", "TEXT")?;
+        self.init_task_budgets()?;
         Ok(())
     }
 

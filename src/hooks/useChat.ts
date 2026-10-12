@@ -6,6 +6,7 @@ import {
   type BackgroundAgentRequest,
   type BackgroundAgentSnapshot
 } from "../lib/backgroundAgent";
+import { getConversationTaskBudget } from "../lib/taskBudget";
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -195,6 +196,7 @@ export function useChat({
       ),
       access_mode: accessMode,
       allow_command: skills.skills.some((skill) => skill.id === "bash_tool" && skill.enabled),
+      budget: getConversationTaskBudget(run.conversation_id),
       replace_message_id: replaceMessageId
     };
   }

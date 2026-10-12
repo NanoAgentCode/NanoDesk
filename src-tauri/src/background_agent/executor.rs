@@ -13,10 +13,29 @@ use crate::{
 };
 use chrono::Utc;
 use std::sync::{atomic::Ordering, Arc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 pub(super) async fn drive<F>(
+    state: &AppState,
+    request: BackgroundAgentRequest,
+    control: Arc<Control>,
+    key: Option<String>,
+    emit: F,
+) -> AppResult<()>
+where F: FnMut(BackgroundAgentSnapshot) {
+    let id = request.run_id.clone();
+    let result = drive_inner(state, request, control, key, emit).await;
+    if let Err(error) = &result {
+        if error.to_string().contains("任务预算") || error.to_string().contains("成本预算") {
+            state.runtime.lock().await.pause_chat_task_budget(&id, error.to_string())?;
+            return Ok(());
+        }
+    }
+    result
+}
+
+async fn drive_inner<F>(
     state: &AppState,
     mut request: BackgroundAgentRequest,
     control: Arc<Control>,
@@ -40,13 +59,18 @@ where
         executing_tool_message_id: None,
         error: None,
     };
-    let mut rounds = 0;
+    let mut budget = state.runtime.lock().await.ensure_task_budget(&request.run_id, Some(&request.model_config_id), request.budget.as_ref())?;
     loop {
         if control.stopped.load(Ordering::SeqCst) {
             cancel_task(state, &request).await?;
             return Ok(());
         }
         let run = state.runtime.lock().await.get_run(&request.run_id)?;
+        if !matches!(run.status.as_str(), "running" | "awaiting_tool" | "awaiting_clarification") { return Ok(()); }
+        if let Err(error) = budget.check() {
+            state.runtime.lock().await.pause_chat_task_budget(&request.run_id, error.to_string())?;
+            return Ok(());
+        }
         if run.status == "awaiting_tool" {
             let tools = state
                 .runtime
@@ -93,6 +117,8 @@ where
                 tokio::select! { _ = control.wake.notified() => {}, _ = tokio::time::sleep(Duration::from_secs(1)) => {} }
                 continue;
             }
+            let tool_started = Instant::now();
+            if tool.status != "rejected" { budget.steps += 1; state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?; }
             let result = if tool.status == "rejected" {
                 Ok("用户拒绝了执行该工具请求。".into())
             } else {
@@ -102,7 +128,7 @@ where
                 snapshot.reasoning.clear();
                 emit(snapshot.clone());
                 // Let an in-flight side effect reach a recorded outcome before honoring stop.
-                crate::execute_agent_tool_with_state(
+                let tool_future = crate::execute_agent_tool_with_state(
                     state,
                     AgentToolExecutionRequest {
                         tool_call_id: tool.id.clone(),
@@ -110,10 +136,16 @@ where
                         allow_command: request.allow_command,
                     },
                     key.as_deref(),
-                )
-                .await
-                .map(|execution| execution.result_text)
+                );
+                tokio::pin!(tool_future);
+                let mut checkpoint = tokio::time::interval(Duration::from_secs(1));
+                loop { tokio::select! {
+                    result = &mut tool_future => break result.map(|execution| execution.result_text),
+                    _ = checkpoint.tick() => state.runtime.lock().await.checkpoint_task_time(&request.run_id, budget.elapsed_ms + tool_started.elapsed().as_millis() as u64)?,
+                }}
             };
+            budget.elapsed_ms += tool_started.elapsed().as_millis() as u64;
+            state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;
             snapshot.executing_tool_message_id = None;
             match result {
                 Ok(text) => {
@@ -193,15 +225,6 @@ where
         if run.status != "running" {
             return Ok(());
         }
-        if rounds >= 64 {
-            state.runtime.lock().await.finish_run(
-                &request.run_id,
-                "awaiting_recovery",
-                Some("已达到本次 64 轮执行上限，可检查后继续。".into()),
-            )?;
-            return Ok(());
-        }
-        rounds += 1;
         snapshot.status = "running".into();
         snapshot.stream_message = None;
         snapshot.reasoning.clear();
@@ -212,17 +235,20 @@ where
             .lock()
             .await
             .start_profile_foreground_lease(&lease, 30)?;
+        let context_started = Instant::now();
+        let remaining = budget.remaining_seconds();
+        let context_base_ms = budget.elapsed_ms;
         let prepared = {
-            let context_future = prepare_model_context(state, &request, &model);
+            let context_future = prepare_model_context(state, &request, &model, &mut budget);
             tokio::pin!(context_future);
             let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
-            let context_timeout = tokio::time::sleep(Duration::from_secs(300));
+            let context_timeout = tokio::time::sleep(Duration::from_secs_f64(remaining.min(300.0)));
             tokio::pin!(context_timeout);
             loop {
                 tokio::select! {
                     result=&mut context_future=>break Some(result),
-                    _=heartbeat.tick()=>if let Err(error)=state.db.lock().await.start_profile_foreground_lease(&lease,30){break Some(Err(error));},
-                    _=&mut context_timeout=>break Some(Err(AppError::from("后台上下文准备超过 300 秒"))),
+                    _=heartbeat.tick()=>{ state.runtime.lock().await.checkpoint_task_time(&request.run_id, context_base_ms + context_started.elapsed().as_millis() as u64)?; if let Err(error)=state.db.lock().await.start_profile_foreground_lease(&lease,30){break Some(Err(error));} },
+                    _=&mut context_timeout=>break Some(Err(AppError::from(if remaining <= 300.0 { "任务预算已达到时间上限，请调整预算后继续。" } else { "后台上下文准备超过 300 秒" }))),
                     _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst) { break None; }
                 }
             }
@@ -232,10 +258,18 @@ where
             .lock()
             .await
             .finish_profile_foreground_lease(&lease)?;
+        budget.elapsed_ms += context_started.elapsed().as_millis() as u64;
+        if prepared.as_ref().and_then(|r| r.as_ref().err()).is_some_and(|e| e.to_string().contains("任务预算已达到时间")) { budget.elapsed_ms = budget.elapsed_ms.max(budget.limits.max_seconds * 1000); }
+        state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;
         let Some(prepared) = prepared else {
             continue;
         };
         let (messages, max_tokens) = prepared?;
+        let input_estimate = messages.iter().map(|m| m.content.len() as u64 + 8).sum();
+        let max_tokens = budget.reserve_model(input_estimate, max_tokens)?;
+        state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;
+        let remaining = budget.remaining_seconds();
+        let stream_started = Instant::now();
         let request_id = Uuid::new_v4().to_string();
         snapshot.stream_message = Some(Message {
             id: request_id.clone(),
@@ -295,17 +329,21 @@ where
             );
             tokio::pin!(future);
             let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
-            let timeout = tokio::time::sleep(Duration::from_secs(300));
+            let timeout = tokio::time::sleep(Duration::from_secs_f64(remaining.min(300.0)));
             tokio::pin!(timeout);
             loop {
                 tokio::select! {
                     result=&mut future=>break result,
-                    _=heartbeat.tick()=>if let Err(error)=state.db.lock().await.start_profile_foreground_lease(&lease,30){break Err(error);},
-                    _=&mut timeout=>break Err(AppError::from("后台模型调用超过 300 秒")),
+                    _=heartbeat.tick()=>{ state.runtime.lock().await.checkpoint_task_time(&request.run_id, budget.elapsed_ms + stream_started.elapsed().as_millis() as u64)?; if let Err(error)=state.db.lock().await.start_profile_foreground_lease(&lease,30){break Err(error);} },
+                    _=&mut timeout=>break Err(AppError::from(if remaining <= 300.0 { "任务预算已达到时间上限，请调整预算后继续。" } else { "后台模型调用超过 300 秒" })),
                     _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst){break Ok(());}
                 }
             }
         };
+        budget.elapsed_ms += stream_started.elapsed().as_millis() as u64;
+        if stream_result.as_ref().err().is_some_and(|e| e.to_string().contains("任务预算已达到时间")) { budget.elapsed_ms = budget.elapsed_ms.max(budget.limits.max_seconds * 1000); }
+        if stream_result.is_ok() { budget.settle_model(max_tokens, (content.len() + reasoning.len()) as u64); }
+        state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;
         crate::finish_observation(
             state,
             observation,

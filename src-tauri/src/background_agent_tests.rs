@@ -141,6 +141,7 @@ impl Fixture {
             access_mode: mode.into(),
             allow_command: true,
             replace_message_id: None,
+            budget: None,
         };
         runtime
             .save_execution_request(&request.run_id, &serde_json::to_string(&request).unwrap())
@@ -213,6 +214,192 @@ fn write_turn() -> String {
 }
 fn completed_report() -> String {
     "<task_plan>{\"goal\":\"Deliver report\",\"steps\":[{\"id\":\"write\",\"title\":\"Write report\",\"status\":\"completed\"},{\"id\":\"verify\",\"title\":\"Verify report\",\"status\":\"completed\"}]}</task_plan>Report completed.".into()
+}
+
+#[tokio::test]
+async fn task_step_budget_pauses_before_tool_side_effect_and_resumes_without_reset() {
+    let server = MockModel::start(vec![(vec![write_turn()], 0), (vec![completed_report()], 0)]);
+    let mut fixture = Fixture::new(&server.url, "full");
+    fixture.request.budget = Some(crate::task_budget::TaskBudget { max_steps: 1, ..Default::default() });
+    fixture.start().await.unwrap().unwrap();
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        let run = runtime.get_run(&fixture.request.run_id).unwrap();
+        assert_eq!(run.status, "awaiting_recovery");
+        assert!(run.error.unwrap().contains("步数"));
+        assert!(!fixture.root.join("work/out/report.md").exists());
+        let mut budget = runtime.task_budget(&fixture.request.run_id).unwrap().unwrap();
+        assert_eq!(budget.steps, 1);
+        assert!(runtime.resume_run(&fixture.request.run_id).is_err());
+        budget.limits.max_steps = 4;
+        runtime.put_task_budget(&fixture.request.run_id, &budget).unwrap();
+    }
+    let control = fixture.state.background_agents.register(&fixture.request.run_id, &fixture.request.conversation_id).unwrap();
+    apply_decision(&fixture.state, &fixture.request, &BackgroundAgentDecision {
+        run_id: fixture.request.run_id.clone(), action: "resume".into(), tool_call_id: None,
+        message_id: None, answer: None, fallback_request: None,
+    }).await.unwrap();
+    drive(&fixture.state, fixture.request.clone(), control, None, |_| {}).await.unwrap();
+    fixture.state.background_agents.remove(&fixture.request.run_id);
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        assert_eq!(runtime.get_run(&fixture.request.run_id).unwrap().status, "completed");
+        assert_eq!(runtime.task_budget(&fixture.request.run_id).unwrap().unwrap().steps, 3);
+        assert!(fixture.root.join("work/out/report.md").exists());
+    }
+    assert_eq!(server.worker.join().unwrap().len(), 2);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn task_time_budget_interrupts_stream_preserves_partial_result_and_pauses() {
+    let server = MockModel::start(vec![(vec!["partial ".into(); 10], 250)]);
+    let mut fixture = Fixture::new(&server.url, "full");
+    fixture.request.budget = Some(crate::task_budget::TaskBudget { max_seconds: 1, ..Default::default() });
+    fixture.start().await.unwrap().unwrap();
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        let run = runtime.get_run(&fixture.request.run_id).unwrap();
+        assert_eq!(run.status, "awaiting_recovery");
+        assert!(run.error.unwrap().contains("时间"));
+        assert!(runtime.task_budget(&fixture.request.run_id).unwrap().unwrap().elapsed_ms >= 1000);
+    }
+    let history = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    assert!(history.iter().any(|m| m.role == "assistant" && m.content.contains("partial")));
+    server.worker.join().unwrap();
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn scheduled_command_retries_cannot_reset_task_budget() {
+    use crate::automation::types::{Action, AutomationDraft, MissedPolicy, Trigger};
+    let fixture = Fixture::new("http://127.0.0.1:1", "full");
+    let job = fixture.state.automation.lock().await.save(AutomationDraft {
+        id: None, name: "budget command".into(), enabled: true, project_path: fixture.request.project_path.clone(),
+        action: Action::Command { command: "echo budget-test".into() }, trigger: Trigger::Interval { seconds: 60 },
+        missed_policy: MissedPolicy::Latest, max_retries: 2, retry_delay_seconds: 10,
+        budget: Some(crate::task_budget::TaskBudget { max_steps: 1, ..Default::default() }),
+    }, 100).unwrap();
+    let run = fixture.state.automation.lock().await.enqueue_manual(&job.id, 100).unwrap();
+    let output = crate::automation::execution::execute_in_state(&fixture.state, &run, None).await.unwrap();
+    assert!(output.contains("budget-test"));
+    let error = crate::automation::execution::execute_in_state(&fixture.state, &run, None).await.unwrap_err();
+    assert!(error.to_string().contains("步数"));
+    let record = fixture.state.runtime.lock().await.task_budget(&run.id).unwrap().unwrap();
+    assert_eq!(record.steps, 1); assert_eq!(record.estimated_cost, Some(0.0));
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn task_cost_budget_limits_actual_model_request_and_tracks_spending() {
+    let server = MockModel::start(vec![(vec!["Done".into()], 0)]);
+    let mut fixture = Fixture::new(&server.url, "full");
+    fixture.request.budget = Some(crate::task_budget::TaskBudget { max_cost: Some(0.01), ..Default::default() });
+    let mut settings = crate::task_budget::TaskSettings::default();
+    settings.model_prices.insert(fixture.request.model_config_id.clone(), crate::task_budget::ModelPrice { input_per_million: 0.0, output_per_million: 100.0 });
+    fixture.state.runtime.lock().await.save_task_settings(&settings).unwrap();
+    fixture.start().await.unwrap().unwrap();
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0]["max_tokens"].as_u64().unwrap() <= 100);
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        assert_eq!(runtime.get_run(&fixture.request.run_id).unwrap().status, "completed");
+        let record = runtime.task_budget(&fixture.request.run_id).unwrap().unwrap();
+        assert_eq!(record.steps, 1);
+        assert!(record.estimated_cost.unwrap() > 0.0 && record.estimated_cost.unwrap() <= 0.01);
+    }
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn unpriced_model_cannot_start_a_cost_limited_task() {
+    let mut fixture = Fixture::new("http://127.0.0.1:1", "full");
+    fixture.request.budget = Some(crate::task_budget::TaskBudget { max_cost: Some(0.01), ..Default::default() });
+    fixture.start().await.unwrap().unwrap();
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        assert_eq!(runtime.get_run(&fixture.request.run_id).unwrap().status, "awaiting_recovery");
+        let record = runtime.task_budget(&fixture.request.run_id).unwrap().unwrap();
+        assert_eq!(record.steps, 0); assert_eq!(record.estimated_cost, None);
+    }
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn scheduled_ai_budget_restricts_output_and_persists_cost() {
+    use crate::automation::types::{Action, AutomationDraft, MissedPolicy, Trigger};
+    let server = MockModel::start(vec![(vec!["# Budgeted report".into()], 0)]);
+    let fixture = Fixture::new(&server.url, "full");
+    let mut settings = crate::task_budget::TaskSettings::default();
+    settings.model_prices.insert(fixture.request.model_config_id.clone(), crate::task_budget::ModelPrice { input_per_million: 0.0, output_per_million: 100.0 });
+    fixture.state.runtime.lock().await.save_task_settings(&settings).unwrap();
+    let job = fixture.state.automation.lock().await.save(AutomationDraft {
+        id: None, name: "priced AI".into(), enabled: true, project_path: fixture.request.project_path.clone(),
+        action: Action::Ai { model_config_id: fixture.request.model_config_id.clone(), prompt: "Create report".into(), context_files: vec![] },
+        trigger: Trigger::Interval { seconds: 60 }, missed_policy: MissedPolicy::Latest, max_retries: 0, retry_delay_seconds: 10,
+        budget: Some(crate::task_budget::TaskBudget { max_cost: Some(0.01), ..Default::default() }),
+    }, 100).unwrap();
+    let run = fixture.state.automation.lock().await.enqueue_manual(&job.id, 100).unwrap();
+    let result = crate::automation::execution::execute_in_state(&fixture.state, &run, None).await.unwrap();
+    assert!(result.contains("Budgeted report"));
+    let requests = server.worker.join().unwrap();
+    assert!(requests[0]["max_tokens"].as_u64().unwrap() <= 100);
+    let record = fixture.state.runtime.lock().await.task_budget(&run.id).unwrap().unwrap();
+    assert_eq!(record.steps, 1);
+    assert!(record.estimated_cost.unwrap() <= 0.01);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn scheduled_command_time_limit_retains_usage_and_blocks_repeat() {
+    use crate::automation::types::{Action, AutomationDraft, MissedPolicy, Trigger};
+    let fixture = Fixture::new("http://127.0.0.1:1", "full");
+    let command = if cfg!(windows) { "Start-Sleep -Seconds 3; Write-Output finished" } else { "sleep 3; echo finished" };
+    let job = fixture.state.automation.lock().await.save(AutomationDraft {
+        id: None, name: "timed command".into(), enabled: true, project_path: fixture.request.project_path.clone(),
+        action: Action::Command { command: command.into() }, trigger: Trigger::Interval { seconds: 60 },
+        missed_policy: MissedPolicy::Latest, max_retries: 1, retry_delay_seconds: 10,
+        budget: Some(crate::task_budget::TaskBudget { max_seconds: 1, ..Default::default() }),
+    }, 100).unwrap();
+    let run = fixture.state.automation.lock().await.enqueue_manual(&job.id, 100).unwrap();
+    let error = crate::automation::execution::execute_in_state(&fixture.state, &run, None).await.unwrap_err();
+    assert!(error.to_string().contains("时间上限"));
+    let record = fixture.state.runtime.lock().await.task_budget(&run.id).unwrap().unwrap();
+    assert!(record.elapsed_ms >= 1000);
+    assert_eq!(record.steps, 1);
+    assert!(crate::automation::execution::execute_in_state(&fixture.state, &run, None).await.unwrap_err().to_string().contains("时间上限"));
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn budget_resume_preserves_pending_clarification_and_its_message() {
+    let clarification = "<clarification>{\"questions\":[{\"id\":\"format\",\"prompt\":\"Which format?\",\"options\":[{\"id\":\"short\",\"label\":\"Short\",\"recommended\":true},{\"id\":\"long\",\"label\":\"Long\"}]}]}</clarification>";
+    let server = MockModel::start(vec![(vec![clarification.into()], 0), (vec!["Done".into()], 0)]);
+    let mut fixture = Fixture::new(&server.url, "ask");
+    fixture.request.budget = Some(crate::task_budget::TaskBudget { max_steps: 1, ..Default::default() });
+    fixture.start().await.unwrap().unwrap();
+    let message_id = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap().last().unwrap().id.clone();
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        let mut record = runtime.task_budget(&fixture.request.run_id).unwrap().unwrap();
+        assert_eq!(record.paused_from.as_deref(), Some("awaiting_clarification"));
+        record.limits.max_steps = 2;
+        runtime.put_task_budget(&fixture.request.run_id, &record).unwrap();
+    }
+    apply_decision(&fixture.state, &fixture.request, &BackgroundAgentDecision {
+        run_id: fixture.request.run_id.clone(), action: "resume".into(), tool_call_id: None,
+        message_id: None, answer: None, fallback_request: None,
+    }).await.unwrap();
+    assert_eq!(fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap().last().unwrap().id, message_id);
+    apply_decision(&fixture.state, &fixture.request, &BackgroundAgentDecision {
+        run_id: fixture.request.run_id.clone(), action: "clarify".into(), tool_call_id: None,
+        message_id: Some(message_id), answer: Some("Short".into()), fallback_request: None,
+    }).await.unwrap();
+    fixture.start().await.unwrap().unwrap();
+    assert_eq!(fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status, "completed");
+    assert_eq!(server.worker.join().unwrap().len(), 2);
+    fixture.cleanup();
 }
 
 #[tokio::test]
@@ -887,6 +1074,7 @@ fn execution_snapshot_survives_restart_and_does_not_follow_active_model() {
             access_mode: "ask".into(),
             allow_command: false,
             replace_message_id: None,
+            budget: None,
         };
         runtime
             .save_execution_request(&id, &serde_json::to_string(&request).unwrap())

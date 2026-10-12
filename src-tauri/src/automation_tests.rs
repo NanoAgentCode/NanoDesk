@@ -16,7 +16,32 @@ fn draft(root: &Path) -> AutomationDraft {
         missed_policy: MissedPolicy::Latest,
         max_retries: 2,
         retry_delay_seconds: 10,
+        budget: None,
     }
+}
+
+#[test]
+fn budget_pause_is_not_retried_or_retriggered_and_survives_restart() {
+    let root = std::env::temp_dir();
+    let path = root.join(format!("automation-budget-{}.sqlite3", Uuid::new_v4()));
+    let (job_id, run_id) = {
+        let mut store = AutomationStore::open(&path).unwrap();
+        let job = store.save(draft(&root), 100).unwrap();
+        let run = store.enqueue_manual(&job.id, 100).unwrap();
+        store.claim(100).unwrap().unwrap();
+        store.pause_budget(&run.id, "任务预算已达到成本上限".into()).unwrap();
+        assert!(store.claim(1000).unwrap().is_none());
+        assert!(store.enqueue_manual(&job.id, 1000).is_err());
+        (job.id, run.id)
+    };
+    {
+        let mut store = AutomationStore::open(&path).unwrap();
+        assert_eq!(store.get_run(&run_id).unwrap().status, "budget_paused");
+        assert!(store.enqueue_manual(&job_id, 1000).is_err());
+        store.recover(&run_id, false, 1000).unwrap();
+        assert_eq!(store.get_run(&run_id).unwrap().status, "dismissed");
+    }
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]

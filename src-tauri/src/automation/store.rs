@@ -90,7 +90,7 @@ impl AutomationStore {
         let rows = stmt.query_map([id], |r| r.get::<_, String>(0))?;
         rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
     }
-    fn get_run(&self, id: &str) -> AppResult<AutomationRun> {
+    pub(crate) fn get_run(&self, id: &str) -> AppResult<AutomationRun> {
         let data: String =
             self.conn
                 .query_row("SELECT data FROM automation_runs WHERE id=?1", [id], |r| {
@@ -107,7 +107,7 @@ impl AutomationStore {
     fn active(&self, id: &str) -> AppResult<bool> {
         Ok(self.conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM automation_runs WHERE automation_id=?1
-            AND status IN ('queued','running','retry_wait','interrupted'))",
+            AND status IN ('queued','running','retry_wait','interrupted','budget_paused'))",
             [id],
             |r| r.get(0),
         )?)
@@ -193,6 +193,7 @@ impl AutomationStore {
     }
     fn new_run(&self, job: &Automation, now: i64, reason: String) -> AppResult<AutomationRun> {
         let run = AutomationRun {
+            budget: None,
             id: Uuid::new_v4().to_string(),
             automation_id: job.id.clone(),
             status: "queued".into(),
@@ -221,7 +222,7 @@ impl AutomationStore {
     }
     pub fn recover(&mut self, id: &str, retry: bool, now: i64) -> AppResult<()> {
         let mut run = self.get_run(id)?;
-        if !matches!(run.status.as_str(), "interrupted" | "failed") {
+        if !matches!(run.status.as_str(), "interrupted" | "failed" | "budget_paused") {
             return Err("只能处理失败或结果未知的记录。".into());
         }
         if retry {
@@ -230,7 +231,7 @@ impl AutomationStore {
                 return Err("请先启用任务。".into());
             }
             let other: bool = self.conn.query_row("SELECT EXISTS(SELECT 1 FROM automation_runs
-                WHERE automation_id=?1 AND id<>?2 AND status IN ('queued','running','retry_wait','interrupted'))",
+                WHERE automation_id=?1 AND id<>?2 AND status IN ('queued','running','retry_wait','interrupted','budget_paused'))",
                 params![run.automation_id, id], |r| r.get(0))?;
             if other {
                 return Err("此任务已有其他执行记录，请先处理。".into());
@@ -324,6 +325,7 @@ impl AutomationStore {
         let tx = self.conn.transaction()?;
         if let Some(reason) = reason {
             let run = AutomationRun {
+            budget: None,
                 id: Uuid::new_v4().to_string(),
                 automation_id: id.into(),
                 status: "queued".into(),
@@ -398,6 +400,11 @@ impl AutomationStore {
                 }
             }
         }
+        self.put_run(&run)
+    }
+    pub(super) fn pause_budget(&self, id: &str, error: String) -> AppResult<()> {
+        let mut run = self.get_run(id)?;
+        run.status = "budget_paused".into(); run.error = Some(error);
         self.put_run(&run)
     }
     pub(super) fn interrupt(&mut self, id: &str, error: String) -> AppResult<()> {

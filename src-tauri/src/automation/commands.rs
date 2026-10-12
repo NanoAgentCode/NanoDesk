@@ -54,7 +54,10 @@ pub async fn list_automation_runs(
     state: State<'_, AppState>,
     automation_id: Option<String>,
 ) -> AppResult<Vec<AutomationRun>> {
-    state.automation.lock().await.runs(automation_id.as_deref())
+    let mut runs = state.automation.lock().await.runs(automation_id.as_deref())?;
+    let runtime = state.runtime.lock().await;
+    for run in &mut runs { run.budget = runtime.task_budget(&run.id)?; }
+    Ok(runs)
 }
 #[tauri::command]
 pub async fn run_automation_now(
@@ -73,9 +76,10 @@ pub async fn recover_automation_run(
     id: String,
     retry: bool,
 ) -> AppResult<()> {
-    state
-        .automation
-        .lock()
-        .await
-        .recover(&id, retry, Utc::now().timestamp())
+    if retry {
+        let run = state.automation.lock().await.get_run(&id)?;
+        let model = match &run.config.action { Action::Ai { model_config_id, .. } => Some(model_config_id.as_str()), _ => None };
+        state.runtime.lock().await.ensure_task_budget(&id, model, run.config.budget.as_ref())?.check()?;
+    }
+    state.automation.lock().await.recover(&id, retry, Utc::now().timestamp())
 }

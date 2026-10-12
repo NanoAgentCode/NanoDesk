@@ -3,6 +3,7 @@ use crate::error::AppResult;
 use std::collections::BTreeMap;
 
 pub(super) fn validate(config: &AutomationDraft, now: i64) -> AppResult<()> {
+    if let Some(budget) = &config.budget { budget.validate()?; }
     if config.name.trim().is_empty() || config.name.len() > 200 {
         return Err("任务名称不能为空且不能超过 200 字节。".into());
     }

@@ -43,6 +43,7 @@
   "get_profile_processing_status",
   "get_profile_settings",
   "get_project_index_stats",
+  "get_task_settings",
   "get_tavily_api_key",
   "get_usage_analysis",
   "get_user_profile",
@@ -113,6 +114,7 @@
   "save_model_supplier",
   "save_ops_server",
   "save_profile_settings",
+  "save_task_settings",
   "save_tavily_api_key",
   "search_code_index",
   "search_items",
@@ -138,6 +140,7 @@
   "update_conversation_model",
   "update_item",
   "update_memory",
+  "update_task_budget",
   "upload_ops_file",
   "write_local_file",
   "write_project_file"

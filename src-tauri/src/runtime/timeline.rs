@@ -13,6 +13,7 @@ impl RuntimeStore {
                 let tool_calls = self.list_tool_calls(&run.id)?;
                 let events = build_event_log_entries(&run, &steps, &tool_calls);
                 Ok(AgentRunTimeline {
+                    budget: self.task_budget(&run.id)?,
                     run,
                     steps,
                     tool_calls,

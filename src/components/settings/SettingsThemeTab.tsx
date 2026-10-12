@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { Checkbox, Group, Radio, SegmentedControl, Stack, Switch, Text } from "@mantine/core";
+import TaskSettingsSection from "./TaskSettingsSection";
 import { themeLabels } from "../../lib/appHelpers";
 import type { ThemeMode } from "../../types";
 import { getAutostart, setAutostart } from "../../api";
@@ -122,6 +123,7 @@ export default function SettingsThemeTab({ themeMode, setThemeMode }: SettingsTh
           label="开机自启动"
         />
       </Stack>
+      <TaskSettingsSection />
     </div>
   );
 }

@@ -52,6 +52,8 @@ pub struct AutomationDraft {
     pub missed_policy: MissedPolicy,
     pub max_retries: u32,
     pub retry_delay_seconds: i64,
+    #[serde(default)]
+    pub budget: Option<crate::task_budget::TaskBudget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -74,6 +76,8 @@ pub struct Automation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomationRun {
+    #[serde(default)]
+    pub budget: Option<crate::task_budget::TaskBudgetRecord>,
     pub id: String,
     pub automation_id: String,
     pub status: String,

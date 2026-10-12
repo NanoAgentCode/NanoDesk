@@ -3,6 +3,8 @@ import { Badge, Button, Group, Modal, Stack, Switch, Text } from "@mantine/core"
 import { CalendarClock, Plus } from "lucide-react";
 import { runAutomationNow, setAutomationEnabled } from "../api/automation";
 import { useAutomationController } from "../hooks/useAutomationController";
+import TaskBudgetCard from "./TaskBudgetCard";
+import { taskUsageLabel } from "../lib/taskBudget";
 import AutomationEditor from "./automation/AutomationEditor";
 import { type AutomationRun, reasonLabel, statusLabels, triggerLabel } from "../lib/automation";
 import "./AutomationPanel.css";
@@ -127,7 +129,7 @@ export default function AutomationPanel({ setNotice }: { setNotice: (message: st
                   color={
                     run.status === "completed"
                       ? "green"
-                      : ["failed", "interrupted"].includes(run.status)
+                      : ["failed", "interrupted", "budget_paused"].includes(run.status)
                         ? "red"
                         : "blue"
                   }
@@ -142,6 +144,7 @@ export default function AutomationPanel({ setNotice }: { setNotice: (message: st
                 {reasonLabel(run.reason)}
               </Text>
               {run.status === "retry_wait" && <Text size="xs">下次重试：{dateLabel(run.available_at)}</Text>}
+              {run.budget && <Text size="xs">{taskUsageLabel(run.budget)}</Text>}
               {run.error && (
                 <Text size="xs" c="red" lineClamp={3}>
                   {run.error}
@@ -151,7 +154,7 @@ export default function AutomationPanel({ setNotice }: { setNotice: (message: st
                 <Button size="xs" variant="subtle" onClick={() => setDetail(run)}>
                   详情 / 成果
                 </Button>
-                {["failed", "interrupted"].includes(run.status) && (
+                {["failed", "interrupted", "budget_paused"].includes(run.status) && (
                   <>
                     <Button
                       size="xs"
@@ -195,6 +198,7 @@ export default function AutomationPanel({ setNotice }: { setNotice: (message: st
             </Text>
             <Text size="sm">触发原因：{reasonLabel(detail.reason)}</Text>
             <Text size="sm">{detail.error}</Text>
+            {detail.budget && <TaskBudgetCard id={detail.id} kind="automation" record={detail.budget} editable={["failed", "interrupted", "budget_paused"].includes(detail.status)} />}
             <pre className="automation-output">{detail.output || "暂无成果输出"}</pre>
           </Stack>
         )}

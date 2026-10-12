@@ -3,6 +3,7 @@ import { Button } from "@mantine/core";
 import { ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 import type { AgentRunTimeline } from "../types";
 import ObservabilityDetailPanel from "./ObservabilityDetailPanel";
+import TaskBudgetCard from "./TaskBudgetCard";
 import TaskPlanCard from "./TaskPlanCard";
 import { parseTaskPlan } from "../lib/messageHelpers";
 import {
@@ -82,6 +83,8 @@ export default function AgentRuntimePanel({
             </div>
             <small>{formatShortTime(activeTimeline.run.created_at)}</small>
           </div>
+          {activeTimeline.budget && <TaskBudgetCard id={activeTimeline.run.id} kind="chat" record={activeTimeline.budget} editable={!busy && ["failed", "awaiting_recovery"].includes(activeTimeline.run.status)} />}
+          {activeTimeline.run.error && <p role="status">{activeTimeline.run.error}</p>}
           {persistedPlan && <TaskPlanCard plan={persistedPlan} compact />}
           {timelineEvents.map((event) => {
             const rowId = `runtime-${event.id}`;
@@ -121,7 +124,7 @@ export default function AgentRuntimePanel({
                 disabled={busy}
                 onClick={() => void onResumeRun(activeTimeline.run.id)}
               >
-                {activeTimeline.run.status === "awaiting_recovery" ? "跳过失败步骤并继续" : "从最近消息继续任务"}
+                {activeTimeline.run.status === "awaiting_recovery" ? activeTimeline.run.error?.includes("任务预算") ? "按调整后的预算继续" : "跳过失败步骤并继续" : "从最近消息继续任务"}
               </Button>
             </div>
           )}

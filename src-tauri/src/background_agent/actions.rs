@@ -11,6 +11,9 @@ pub(super) async fn apply_decision(
 ) -> AppResult<()> {
     let runtime = state.runtime.lock().await;
     let run = runtime.get_run(&request.run_id)?;
+    if decision.action != "reject" {
+        if let Some(budget) = runtime.task_budget(&run.id)? { budget.check()?; }
+    }
     match decision.action.as_str() {
         "approve" | "reject" | "retry" => {
             let id = decision.tool_call_id.as_deref().ok_or("缺少工具调用 ID")?;
@@ -73,10 +76,21 @@ pub(super) async fn apply_decision(
             runtime.finish_run(&run.id, "running", None)?;
         }
         "resume" => {
+            let mut budget = runtime.task_budget(&run.id)?;
+            let paused_from = budget.as_ref().and_then(|b| b.paused_from.clone());
             runtime.resume_run(&run.id)?;
+            if let Some(status @ ("awaiting_tool" | "awaiting_clarification")) = paused_from.as_deref() {
+                runtime.finish_run(&run.id, status, None)?;
+            }
+            if let Some(budget) = budget.as_mut() {
+                budget.paused_from = None;
+                runtime.put_task_budget(&run.id, budget)?;
+            }
             drop(runtime);
-            state.db.lock().await.append_message(internal_message(&run.conversation_id,
-                "[任务恢复] 用户选择从持久化消息继续，并跳过此前失败或结果未知的工具。不要假定该操作成功。".into()))?;
+            if paused_from.is_none() {
+                state.db.lock().await.append_message(internal_message(&run.conversation_id,
+                    "[任务恢复] 用户选择从持久化消息继续，并跳过此前失败或结果未知的工具。不要假定该操作成功。".into()))?;
+            }
         }
         _ => return Err("未知后台任务操作。".into()),
     }
