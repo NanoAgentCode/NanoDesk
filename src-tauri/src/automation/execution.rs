@@ -60,16 +60,9 @@ async fn execute_limited(run: &AutomationRun, model: Option<crate::models::Model
     let root = crate::project_files::project_root(&run.config.project_path)?;
     match &run.config.action {
         Action::Command { command } => {
-            crate::tool_policy::evaluate_tool_call(
-                "execute_command",
-                &BTreeMap::from([("command".into(), command.clone())]),
-                &crate::tool_policy::ToolPolicyContext::new(
-                    run.config.project_path.clone(),
-                    true,
-                    Default::default(),
-                ),
-            )?;
-            crate::shell::run_project_command(&root, command, key.as_deref()).await
+            crate::services::execution::execute_command(
+                &run.config.project_path, command, true, key.as_deref(),
+            ).await
         }
         Action::Ai {
             model_config_id,
