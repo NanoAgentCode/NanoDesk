@@ -57,6 +57,7 @@ export interface UseChatReturn {
   clarificationFallbackIds: string[];
   activeStreamRequestId: string | null;
   backgroundRunId: string | null;
+  runningConversationIds: string[];
   interruptingGeneration: boolean;
   uploadingImageAttachment: boolean;
   uploadingAttachment: boolean;

@@ -393,6 +393,7 @@ function App() {
       <Sidebar
         projects={projects}
         conversations={conversations}
+        runningConversationIds={chat.runningConversationIds}
         activeConversationId={activeConversationId}
         setActiveConversationId={setActiveConversationId}
         handleNewConversation={handleNewConversation}

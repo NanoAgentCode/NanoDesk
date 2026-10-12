@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { listBackgroundAgents, startBackgroundAgent } from "../../api/agents";
 import {
   backgroundIsBusy,
+  runningConversationIds,
   type BackgroundAgentRequest,
   type BackgroundAgentSnapshot
 } from "../../lib/backgroundAgent";
@@ -82,6 +83,6 @@ export function useBackgroundAgents(
   }, []);
 
   const current = Object.values(runs).find((snapshot) => snapshot.conversation_id === conversationId);
-  return { current, busy: backgroundIsBusy(current), refresh, getForConversation, launch };
+  return { runningConversationIds: runningConversationIds(Object.values(runs)), current, busy: backgroundIsBusy(current), refresh, getForConversation, launch };
 }
 export type BackgroundAgentClient = ReturnType<typeof useBackgroundAgents>;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backgroundIsBusy, mergeBackgroundMessages, type BackgroundAgentSnapshot } from "./backgroundAgent";
+import { backgroundIsBusy, mergeBackgroundMessages, runningConversationIds, type BackgroundAgentSnapshot } from "./backgroundAgent";
 import type { PersistedMessage } from "../types";
 
 const snapshot: BackgroundAgentSnapshot = {
@@ -18,6 +18,15 @@ const snapshot: BackgroundAgentSnapshot = {
   }
 };
 describe("background conversation projection", () => {
+  it("tracks concurrent conversations independently and excludes waiting and finished tasks", () => {
+    const make = (conversation_id: string, status: string) => ({ ...snapshot, conversation_id, status });
+    expect(runningConversationIds([make("a", "running"), make("b", "running"), make("a", "running")])).toEqual(["a", "b"]);
+    expect(runningConversationIds([make("a", "completed"), make("b", "running")])).toEqual(["b"]);
+    for (const status of ["failed", "cancelled", "rejected", "awaiting_approval", "awaiting_clarification", "awaiting_recovery"]) {
+      expect(runningConversationIds([make("a", status)])).toEqual([]);
+    }
+    expect(runningConversationIds([])).toEqual([]);
+  });
   it("never inserts A output into the newly selected B conversation", () => {
     const b: PersistedMessage[] = [
       {

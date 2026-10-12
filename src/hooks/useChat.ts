@@ -661,6 +661,7 @@ export function useChat({
     clarificationFallbackIds,
     activeStreamRequestId,
     backgroundRunId,
+    runningConversationIds: background.runningConversationIds,
     interruptingGeneration,
     uploadingImageAttachment: attachments.uploadingImageAttachment,
     uploadingAttachment,

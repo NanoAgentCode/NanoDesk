@@ -664,3 +664,19 @@
     linear-gradient(155deg, #061b36 0%, #021126 54%, #031a33 100%);
   box-shadow: 12px 0 34px rgba(4, 27, 56, 0.18);
 }
+.conversation-running-indicator {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--accent-cyan);
+}
+.conversation-running-indicator svg {
+  animation: conversation-running-spin 1s linear infinite;
+}
+@keyframes conversation-running-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .conversation-running-indicator svg { animation: none; }
+}

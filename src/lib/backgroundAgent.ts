@@ -38,6 +38,10 @@ export function mergeBackgroundMessages(
     ? messages.map((item) => (item.id === message.id ? message : item))
     : [...messages, message];
 }
+export function runningConversationIds(snapshots: BackgroundAgentSnapshot[]): string[] {
+  return [...new Set(snapshots.filter(backgroundIsBusy).map((snapshot) => snapshot.conversation_id))];
+}
+
 export function backgroundIsBusy(snapshot?: BackgroundAgentSnapshot): boolean {
   return snapshot?.status === "running";
 }

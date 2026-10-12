@@ -3,11 +3,13 @@ import { ActionIcon, Button, Tooltip, UnstyledButton } from "@mantine/core";
 import type { Conversation, ProjectEntry } from "../types";
 import type { UseProjectsReturn } from "../hooks/useProjects";
 import type { MainViewContribution } from "../core/plugins";
+import ConversationRunningIndicator from "./ConversationRunningIndicator";
 import { APP_NAME } from "../config/brand";
 
 interface SidebarProps {
   projects: UseProjectsReturn;
   conversations: Conversation[];
+  runningConversationIds?: readonly string[];
   activeConversationId: string;
   setActiveConversationId: (id: string) => void;
   handleNewConversation: () => Promise<void>;
@@ -31,6 +33,7 @@ interface SidebarProps {
 export default function Sidebar({
   projects,
   conversations,
+  runningConversationIds = [],
   activeConversationId,
   setActiveConversationId,
   handleNewConversation,
@@ -206,6 +209,7 @@ export default function Sidebar({
                           >
                             <MessageSquare size={14} className="chat-icon" />
                             <span className="chat-title">{conversation.title}</span>
+                            <ConversationRunningIndicator running={runningConversationIds.includes(conversation.id)} />
                           </UnstyledButton>
                         ))}
                       </div>
@@ -258,6 +262,7 @@ export default function Sidebar({
               >
                 <MessageSquare size={14} className="chat-icon" />
                 {!isCollapsed && <span className="chat-title">{conversation.title}</span>}
+                <ConversationRunningIndicator running={runningConversationIds.includes(conversation.id)} />
               </UnstyledButton>
             ))}
             {!isCollapsed && conversations.length === 0 && <div className="empty">暂无对话</div>}
