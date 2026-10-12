@@ -82,6 +82,7 @@ export default function SettingsThemeTab({ themeMode, setThemeMode }: SettingsTh
 
       <Text component="h4" fw={650} size="sm" mt="lg" mb="xs">界面主题</Text>
       <SegmentedControl
+        className="settings-theme-control"
         fullWidth
         mb="xl"
         value={themeMode}

@@ -46,6 +46,13 @@
   background: var(--bg-pane);
 }
 .theme-tab-content .theme-switcher { max-width: 500px; margin-top: 10px; }
+/* Keep the selection background in label coordinates when the modal uses zoom. */
+.settings-theme-control .mantine-SegmentedControl-indicator {
+  display: none;
+}
+.settings-theme-control[data-initialized] .mantine-SegmentedControl-label[data-active]::before {
+  display: block;
+}
 .archive-tab-content { overflow: hidden !important; }
 .archive-split-layout {
   flex: 1; display: grid;
