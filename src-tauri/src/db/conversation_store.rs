@@ -38,7 +38,7 @@ impl Database {
                 let model_name = model_config_id
                     .as_deref()
                     .and_then(|id| self.get_model_config(id).ok())
-                    .map(|config| config.name)
+                    .map(|config| format!("{} - {}", clean_or_default(config.model, "未命名模型"), clean_or_default(config.name, "未命名提供商")))
                     .unwrap_or_else(|| "未指定模型".to_string());
                 UsageModelCount {
                     model_config_id,
@@ -93,7 +93,7 @@ impl Database {
                         model_name: model_config_id
                             .as_deref()
                             .and_then(|id| self.get_model_config(id).ok())
-                            .map(|config| config.name)
+                            .map(|config| format!("{} - {}", clean_or_default(config.model, "未命名模型"), clean_or_default(config.name, "未命名提供商")))
                             .unwrap_or_else(|| "未指定模型".to_string()),
                         model_config_id,
                         tokens,
@@ -507,5 +507,38 @@ mod usage_tests {
         assert_eq!(analysis.token_trend[0].total_tokens, 5);
         assert_eq!(analysis.token_trend[0].models[0].model_name, "未指定模型");
         assert_eq!(analysis.token_trend[0].models[0].tokens, 5);
+
+        for (id, model) in [("deepseek", "deepseek-ai/DeepSeek-V3"), ("qwen", "Qwen/Qwen3")] {
+            db.config_conn.execute(
+                "INSERT INTO model_configs (id, name, provider, base_url, model, api_key, created_at, updated_at)
+                 VALUES (?1, '硅基流动', 'openai-compatible', 'https://example.com', ?2, '', ?3, ?3)",
+                rusqlite::params![id, model, chrono::Utc::now().to_rfc3339()],
+            ).expect("model should be created");
+            db.sync_model_config_references().expect("model references should sync");
+            let conversation = db.create_conversation(ConversationDraft {
+                title: Some(model.to_string()),
+                model_config_id: Some(id.to_string()),
+                project_path: None,
+            }).expect("model conversation should be created");
+            db.append_message(MessageDraft {
+                conversation_id: conversation.id,
+                role: "assistant".to_string(),
+                content: "abcdefgh".to_string(),
+                metadata: None,
+            }).expect("model response should be saved");
+        }
+
+        let analysis = db.get_usage_analysis().expect("model usage should load");
+        assert_eq!(analysis.conversation_count, 3);
+        assert_eq!(analysis.message_count, 4);
+        assert_eq!(analysis.total_tokens, 9);
+        for (id, expected) in [("deepseek", "deepseek-ai/DeepSeek-V3 - 硅基流动"), ("qwen", "Qwen/Qwen3 - 硅基流动")] {
+            let usage = analysis.model_usage.iter().find(|item| item.model_config_id.as_deref() == Some(id)).unwrap();
+            assert_eq!(usage.model_name, expected);
+            assert_eq!(usage.count, 1);
+            let trend = analysis.token_trend[0].models.iter().find(|item| item.model_config_id.as_deref() == Some(id)).unwrap();
+            assert_eq!(trend.model_name, expected);
+            assert_eq!(trend.tokens, 2);
+        }
     }
 }

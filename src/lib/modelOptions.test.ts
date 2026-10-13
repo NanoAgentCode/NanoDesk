@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChatModelOptions } from "./modelOptions";
+import { buildChatModelOptions, buildTaskPriceModelOptions } from "./modelOptions";
 import type { ModelConfig } from "../types";
 
 function model(overrides: Partial<ModelConfig>): ModelConfig {
@@ -31,6 +31,26 @@ function model(overrides: Partial<ModelConfig>): ModelConfig {
     ...overrides
   };
 }
+
+describe("buildTaskPriceModelOptions", () => {
+  it("distinguishes models from the same provider and preserves price configuration IDs", () => {
+    expect(buildTaskPriceModelOptions([
+      model({ id: "deepseek", model: "deepseek-ai/DeepSeek-V3", name: "硅基流动" }),
+      model({ id: "qwen", model: "Qwen/Qwen3", name: "硅基流动", model_kind: "both" }),
+      model({ id: "embedding", model_kind: "embedding" })
+    ])).toEqual([
+      { value: "deepseek", label: "deepseek-ai/DeepSeek-V3 - 硅基流动" },
+      { value: "qwen", label: "Qwen/Qwen3 - 硅基流动" }
+    ]);
+  });
+
+  it("trims names and provides labels for blank values", () => {
+    expect(buildTaskPriceModelOptions([model({ model: " glm-4.5 ", name: " 官方 " }), model({ id: "blank", model: "", name: "" })])).toEqual([
+      { value: "config-1", label: "glm-4.5 - 官方" },
+      { value: "blank", label: "未命名模型 - 未命名提供商" }
+    ]);
+  });
+});
 
 describe("buildChatModelOptions", () => {
   it("groups actual model identifiers by LLM configuration name", () => {

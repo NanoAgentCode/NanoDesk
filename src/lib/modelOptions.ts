@@ -1,6 +1,13 @@
 import type { ModelConfig } from "../types";
 import { isChatModel } from "./modelCapabilities";
 
+export function buildTaskPriceModelOptions(models: ModelConfig[]) {
+  return models.filter((item) => ["chat", "both"].includes(item.model_kind)).map((item) => ({
+    value: item.id,
+    label: `${item.model.trim() || "未命名模型"} - ${item.name.trim() || "未命名提供商"}`
+  }));
+}
+
 export function buildChatModelOptions(models: ModelConfig[], allowedModelIds?: string[]) {
   const groups = new Map<string, Array<{ value: string; label: string }>>();
   const allowedIds = allowedModelIds ? new Set(allowedModelIds) : null;

@@ -4,6 +4,7 @@ import { getTaskSettings, saveTaskSettings } from "../../api/taskBudget";
 import { listModelConfigs } from "../../api/models";
 import { DEFAULT_TASK_BUDGET, type TaskSettings } from "../../lib/taskBudget";
 import TaskBudgetFields from "../TaskBudgetFields";
+import { buildTaskPriceModelOptions } from "../../lib/modelOptions";
 
 export default function TaskSettingsSection() {
   const [settings, setSettings] = useState<TaskSettings>({ default_budget: DEFAULT_TASK_BUDGET, model_prices: {} });
@@ -16,7 +17,7 @@ export default function TaskSettingsSection() {
     let active = true;
     void Promise.all([getTaskSettings(), listModelConfigs()]).then(([next, configs]) => {
       if (!active) return;
-      setSettings(next); setModels(configs.filter((m) => ["chat", "both"].includes(m.model_kind)).map((m) => ({ value: m.id, label: m.name })));
+      setSettings(next); setModels(buildTaskPriceModelOptions(configs));
       setLoaded(true);
     }).catch((e) => { if (active) setMessage(String(e)); });
     return () => { active = false; };
