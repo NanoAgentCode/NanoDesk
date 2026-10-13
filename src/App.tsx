@@ -44,6 +44,8 @@ import {
   parseSidebarWidth
 } from "./lib/sidebarSizing";
 import { APP_STORAGE_PREFIX } from "./config/brand";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { registerWindowShortcuts } from "./lib/windowShortcuts";
 
 const SIDEBAR_COLLAPSED_KEY = `${APP_STORAGE_PREFIX}-sidebar-collapsed`;
 const SIDEBAR_WIDTH_KEY = `${APP_STORAGE_PREFIX}-sidebar-width`;
@@ -54,6 +56,12 @@ function App() {
   const runtimeToggleBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const [notice, setNotice] = useState("");
+  useEffect(() => registerWindowShortcuts(
+    window,
+    () => getCurrentWindow().minimize(),
+    setNotice,
+    () => document.querySelector('[role="dialog"]') !== null
+  ), []);
   const [showModelConfig, setShowModelConfig] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("theme");
   const [activeMainView, setActiveMainView] = useState("chat");
@@ -514,7 +522,7 @@ function App() {
           size="lg"
           withCloseButton={false}
           closeOnClickOutside={false}
-          closeOnEscape={false}
+          closeOnEscape
           title={
             <Group gap="sm">
               <ThemeIcon variant="light" color="orange" size="md">
