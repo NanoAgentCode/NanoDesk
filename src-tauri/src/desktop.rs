@@ -106,7 +106,12 @@ pub(crate) fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
     let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])
         .map_err(|err| err.to_string())?;
 
-    let mut tray = TrayIconBuilder::with_id(brand::TRAY_ID)
+    let tray = TrayIconBuilder::with_id(brand::TRAY_ID)
+        .icon(tauri::image::Image::new_owned(
+            include_bytes!("../icons/tray-light.rgba").to_vec(),
+            32,
+            32,
+        ))
         .menu(&menu)
         .tooltip(brand::DISPLAY_NAME)
         .show_menu_on_left_click(false)
@@ -139,10 +144,6 @@ pub(crate) fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
                 }
             }
         });
-
-    if let Some(icon) = app.default_window_icon().cloned() {
-        tray = tray.icon(icon);
-    }
 
     tray.build(app).map_err(|err| err.to_string())?;
     Ok(())
