@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Group, NumberInput, Select, Stack, Text } from "@mantine/core";
+import { Button, Checkbox, Group, NumberInput, Stack, Text } from "@mantine/core";
 import { getTaskSettings, saveTaskSettings } from "../../api/taskBudget";
 import { listModelConfigs } from "../../api/models";
 import { DEFAULT_TASK_BUDGET, type TaskSettings } from "../../lib/taskBudget";
 import TaskBudgetFields from "../TaskBudgetFields";
-import { buildTaskPriceModelOptions } from "../../lib/modelOptions";
+import ConfiguredModelSelect from "../ConfiguredModelSelect";
+import type { ModelConfig } from "../../types";
 
 export default function TaskSettingsSection() {
   const [settings, setSettings] = useState<TaskSettings>({ default_budget: DEFAULT_TASK_BUDGET, model_prices: {} });
-  const [models, setModels] = useState<{ value: string; label: string }[]>([]);
+  const [models, setModels] = useState<ModelConfig[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -17,7 +18,7 @@ export default function TaskSettingsSection() {
     let active = true;
     void Promise.all([getTaskSettings(), listModelConfigs()]).then(([next, configs]) => {
       if (!active) return;
-      setSettings(next); setModels(buildTaskPriceModelOptions(configs));
+      setSettings(next); setModels(configs);
       setLoaded(true);
     }).catch((e) => { if (active) setMessage(String(e)); });
     return () => { active = false; };
@@ -27,7 +28,7 @@ export default function TaskSettingsSection() {
     <Text component="h4" id="general-budget-heading" fw={650}>任务预算与通知</Text>
     <Text size="xs" c="dimmed">默认预算用于新聊天任务及未单独配置预算的定时任务。费用只计模型调用，按单价估算；不是供应商账单。</Text>
     <TaskBudgetFields value={settings.default_budget} disabled={!loaded || busy} onChange={(default_budget) => setSettings({ ...settings, default_budget })} />
-    <Select label="模型计费单价" placeholder="选择模型" data={models} value={model} onChange={setModel} disabled={!loaded || busy} />
+    <ConfiguredModelSelect label="模型计费单价" placeholder="选择模型" models={models} value={model} onChange={setModel} disabled={!loaded || busy} />
     {model && <>
       <Checkbox label="已配置该模型单价（元 / 百万 Token）" checked={!!price} disabled={busy} onChange={(e) => {
         const prices = { ...settings.model_prices };

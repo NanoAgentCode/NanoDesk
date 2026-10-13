@@ -18,7 +18,7 @@ import type { useAutomationController } from "../../hooks/useAutomationControlle
 export type AutomationEditorProps = ReturnType<typeof useAutomationController>["editor"];
 import TaskBudgetFields from "../TaskBudgetFields";
 import { DEFAULT_TASK_BUDGET } from "../../lib/taskBudget";
-import { buildTaskPriceModelOptions } from "../../lib/modelOptions";
+import ConfiguredModelSelect from "../ConfiguredModelSelect";
 export default function AutomationEditor({
   editing,
   draft,
@@ -88,11 +88,11 @@ export default function AutomationEditor({
         />
         {draft.action.kind === "ai" ? (
           <>
-            <Select
+            <ConfiguredModelSelect
               label="模型"
               placeholder="选择已配置的聊天模型"
               value={draft.action.model_config_id}
-              data={buildTaskPriceModelOptions(models)}
+              models={models}
               onChange={(id) => {
                 if (draft.action.kind === "ai")
                   patch({ action: { ...draft.action, model_config_id: id || "" } });

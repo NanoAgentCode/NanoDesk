@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { UseModelReturn } from "../../hooks/useModel";
 import type { ModelSupplier, ModelSupplierDraft } from "../../types";
 import IconTooltipButton from "../IconTooltipButton";
+import SettingsSectionHeader from "./SettingsSectionHeader";
 interface Props { model: UseModelReturn; setShowModelConfig: (show: boolean) => void }
 const emptySupplier = { name: "OpenAI", provider: "openai-compatible", base_url: "https://api.openai.com/v1", api_key: "" };
 
@@ -46,7 +47,7 @@ export default function SettingsModelTab({ model }: Props) {
     return <div><strong>共 {models.length} 个模型</strong><div className="supplier-model-tooltip-list">{models.map((item) => <div key={item.id}>{item.id}</div>)}</div></div>;
   }
   return <div className="settings-tab-content model-tab-content">
-    <div className="model-header-row"><h3>供应商管理</h3><IconTooltipButton label="新建供应商" onClick={() => model.setSupplierDraft(emptySupplier)}><Plus size={18} /></IconTooltipButton></div>
+    <SettingsSectionHeader title="供应商管理"><IconTooltipButton label="新建供应商" onClick={() => model.setSupplierDraft(emptySupplier)}><Plus size={18} /></IconTooltipButton></SettingsSectionHeader>
     <p className="description description--tight">这里只维护供应商连接；模型在“模型路由”中从供应商实时获取并选择。</p>
     <div className="model-config-grid llm-config-grid"><aside className="model-config-list">
       {model.suppliers.map((s) => {

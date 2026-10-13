@@ -6,6 +6,7 @@ import {
   TextInput
 } from "@mantine/core";
 import IconTooltipButton from "../IconTooltipButton";
+import SettingsSectionHeader from "./SettingsSectionHeader";
 import { formatMcpTransportLabel } from "../../lib/formatters";
 import type { UseMcpReturn } from "../../hooks/useMcp";
 import type { McpServerDraft } from "../../types";
@@ -84,10 +85,9 @@ export default function SettingsMcpTab({ mcp }: SettingsMcpTabProps) {
 
   return (
     <div className="settings-tab-content model-tab-content">
-      <div className="model-header-row">
-        <h3>MCP 配置</h3>
+      <SettingsSectionHeader title="MCP 配置">
         <IconTooltipButton label="添加 MCP 服务器" onClick={mcp.handleNewMcpServer}><Plus size={18} /></IconTooltipButton>
-      </div>
+      </SettingsSectionHeader>
       <p className="description description--tight">连接符合 Model Context Protocol 规范的工具服务器，支持 stdio、SSE 和 Streamable HTTP。</p>
       <div className="model-config-grid mcp-config-grid">
         <aside className="model-config-list">

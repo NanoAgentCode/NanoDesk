@@ -3,10 +3,14 @@ import type { ReactNode } from "react";
 import { Select } from "@mantine/core";
 import { describe, expect, it } from "vitest";
 import AutomationEditor, { type AutomationEditorProps } from "./AutomationEditor";
+import ConfiguredModelSelect from "../ConfiguredModelSelect";
 
 function findModelSelect(node: ReactNode): Record<string, unknown> | undefined {
   for (const child of Children.toArray(node)) {
     if (!isValidElement<{ label?: string; children?: ReactNode }>(child)) continue;
+    if (child.type === ConfiguredModelSelect) {
+      return findModelSelect(ConfiguredModelSelect(child.props as Parameters<typeof ConfiguredModelSelect>[0]));
+    }
     if (child.type === Select && child.props.label === "模型") return child.props;
     const found = findModelSelect(child.props.children);
     if (found) return found;

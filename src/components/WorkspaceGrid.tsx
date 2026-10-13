@@ -1,5 +1,6 @@
 import { Search, Save, Trash2, Plus } from "lucide-react";
 import IconTooltipButton from "./IconTooltipButton";
+import WorkspaceItemRow from "./WorkspaceItemRow";
 import { kindLabels, statusLabels, workspaceLabels } from "../lib/appHelpers";
 import type { ItemKind } from "../types";
 import type { UseWorkspaceReturn } from "../hooks/useWorkspace";
@@ -32,18 +33,15 @@ export default function WorkspaceGrid({ workspace, memory, workspaceRef }: Works
           {workspace.activeKind === "memory" ? (
             <>
               {memory.memoryItems.map((item) => (
-                <button
+                <WorkspaceItemRow
                   key={item.id}
-                  className={item.id === memory.selectedMemoryId ? "item-row selected" : "item-row"}
-                  onClick={() => memory.setSelectedMemoryId(item.id)}
-                >
-                  <div className="item-row-header">
-                    <span className="badge-memory">记忆</span>
-                    <span className="status-indicator">{item.enabled ? "用于上下文" : "不用于上下文"}</span>
-                  </div>
-                  <strong>{item.title}</strong>
-                  <small>{item.content || "暂无内容"}</small>
-                </button>
+                  selected={item.id === memory.selectedMemoryId}
+                  onSelect={() => memory.setSelectedMemoryId(item.id)}
+                  badge={<span className="badge-memory">记忆</span>}
+                  status={item.enabled ? "用于上下文" : "不用于上下文"}
+                  title={item.title}
+                  preview={item.content || "暂无内容"}
+                />
               ))}
               {memory.memoryItems.length === 0 && (
                 <div className="empty">{workspace.query.trim() ? "没有匹配的记忆" : "暂无记忆"}</div>
@@ -52,18 +50,15 @@ export default function WorkspaceGrid({ workspace, memory, workspaceRef }: Works
           ) : (
             <>
               {workspace.items.map((item) => (
-                <button
+                <WorkspaceItemRow
                   key={item.id}
-                  className={item.id === workspace.selectedId ? "item-row selected" : "item-row"}
-                  onClick={() => workspace.setSelectedId(item.id)}
-                >
-                  <div className="item-row-header">
-                    <span className={`badge-${item.kind}`}>{kindLabels[item.kind as ItemKind] || item.kind}</span>
-                    <span className="status-indicator">{statusLabels[item.status] || item.status}</span>
-                  </div>
-                  <strong>{item.title}</strong>
-                  <small>{item.body || "暂无内容"}</small>
-                </button>
+                  selected={item.id === workspace.selectedId}
+                  onSelect={() => workspace.setSelectedId(item.id)}
+                  badge={<span className={`badge-${item.kind}`}>{kindLabels[item.kind as ItemKind] || item.kind}</span>}
+                  status={statusLabels[item.status] || item.status}
+                  title={item.title}
+                  preview={item.body || "暂无内容"}
+                />
               ))}
               {workspace.items.length === 0 && <div className="empty">暂无内容</div>}
             </>
