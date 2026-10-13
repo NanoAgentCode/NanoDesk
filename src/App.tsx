@@ -45,6 +45,7 @@ import {
 } from "./lib/sidebarSizing";
 import { APP_STORAGE_PREFIX } from "./config/brand";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import WindowControls from "./components/WindowControls";
 import { registerWindowShortcuts } from "./lib/windowShortcuts";
 
 const SIDEBAR_COLLAPSED_KEY = `${APP_STORAGE_PREFIX}-sidebar-collapsed`;
@@ -398,6 +399,7 @@ function App() {
         }
       }}
     >
+      <WindowControls />
       <Sidebar
         projects={projects}
         conversations={conversations}

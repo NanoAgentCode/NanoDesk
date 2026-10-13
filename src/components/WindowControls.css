@@ -1,0 +1,18 @@
+.window-controls {
+  grid-area: window;
+  display: flex;
+  color: var(--text-primary);
+  background: var(--bg-app);
+}
+.window-drag-region { flex: 1; }
+.window-controls button {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+.window-controls button:hover { background: var(--control-bg-subtle); }
+.window-controls .window-close:hover { background: #c42b1c; color: white; }

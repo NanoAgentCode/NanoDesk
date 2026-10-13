@@ -680,3 +680,13 @@
 @media (prefers-reduced-motion: reduce) {
   .conversation-running-indicator svg { animation: none; }
 }
+
+.sidebar-brand-icon { width: 34px; height: 34px; flex: 0 0 auto; }
+.sidebar-brand-name {
+  margin: 0;
+  color: #f2f8ff;
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sidebar-brand { flex: 1; user-select: none; }

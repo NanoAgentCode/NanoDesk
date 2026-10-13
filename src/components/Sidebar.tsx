@@ -5,6 +5,7 @@ import type { UseProjectsReturn } from "../hooks/useProjects";
 import type { MainViewContribution } from "../core/plugins";
 import ConversationRunningIndicator from "./ConversationRunningIndicator";
 import { APP_NAME } from "../config/brand";
+import brandIcon from "../../src-tauri/icons/icon.svg";
 
 interface SidebarProps {
   projects: UseProjectsReturn;
@@ -56,9 +57,9 @@ export default function Sidebar({
   return (
     <aside className={isCollapsed ? "sidebar collapsed" : "sidebar"}>
       <div className="sidebar-topbar">
-        <div className="sidebar-brand" aria-label={APP_NAME}>
-          <span className="nano-brand-mark" aria-hidden="true"><i /></span>
-          {!isCollapsed && <p className="sidebar-slogan">本地优先，智能协作</p>}
+        <div className="sidebar-brand" aria-label={APP_NAME} data-tauri-drag-region>
+          <img className="sidebar-brand-icon" src={brandIcon} alt="" draggable={false} data-tauri-drag-region />
+          {!isCollapsed && <p className="sidebar-brand-name" data-tauri-drag-region>{APP_NAME}</p>}
         </div>
         <Tooltip label={isCollapsed ? "展开侧边栏" : "收起侧边栏"} position="right">
           <ActionIcon

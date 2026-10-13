@@ -2,6 +2,8 @@ use std::{env, fs, path::PathBuf};
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("missing manifest dir"));
+    // Windows embeds the ICO in resource.lib; rebuild it when icon assets change.
+    println!("cargo:rerun-if-changed=icons");
     let config_path = manifest_dir.join("..").join("brand.config.json");
     println!("cargo:rerun-if-changed={}", config_path.display());
 
