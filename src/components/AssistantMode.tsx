@@ -11,6 +11,8 @@ import type { Conversation } from "../types";
 import "./AssistantMode.css";
 import brandIcon from "./assistant-icon.svg";
 import { registerAssistantContextMenu } from "../lib/assistantContextMenu";
+import { createAssistantBlurTimer } from "../lib/assistantFocus";
+import { useBackgroundAgents } from "../hooks/chat/useBackgroundAgents";
 
 export default function AssistantMode() {
   const [expanded, setExpanded] = useState(false);
@@ -29,6 +31,29 @@ export default function AssistantMode() {
   const origin = useRef({ x: 0, y: 0 });
   const mention = getConversationMention(text, cursor);
   const suggestions = filterAssistantConversations(conversations, mention?.query || "");
+  const background = useBackgroundAgents("", () => {});
+  const running = busy || background.runningConversationIds.length > 0;
+
+  useEffect(() => {
+    if (!expanded || choosingFiles) return;
+    let disposed = false;
+    let revision = 0;
+    const timer = createAssistantBlurTimer(() => setExpanded(false));
+    const nativeWindow = getCurrentWindow();
+    const subscription = nativeWindow.onFocusChanged(({ payload }) => {
+      if (disposed) return;
+      revision++; timer.setFocused(payload);
+    });
+    void subscription.then(async () => {
+      const initialRevision = revision;
+      const focused = await nativeWindow.isFocused();
+      if (!disposed && revision === initialRevision) timer.setFocused(focused);
+    }).catch((err) => { if (!disposed) setError(String(err)); });
+    return () => {
+      disposed = true; timer.dispose();
+      void subscription.then((stop) => stop()).catch(console.error);
+    };
+  }, [expanded, choosingFiles]);
 
   useEffect(() => registerAssistantContextMenu(document, (err) => setError(String(err))), []);
 
@@ -84,7 +109,7 @@ export default function AssistantMode() {
     } catch (err) { setError(String(err)); }
     finally { setChoosingFiles(false); }
   }
-  if (!expanded) return <button className="assistant-orb" type="button" aria-label="打开桌面助手" title="点击提问，拖动移动"
+  if (!expanded) return <button className={`assistant-orb${running ? " assistant-orb--running" : ""}`} type="button" aria-label="打开桌面助手" aria-busy={running} title={running ? "任务进行中；点击提问，拖动移动" : "点击提问，拖动移动"}
     onPointerDown={(event) => { dragged.current = false; origin.current = { x: event.clientX, y: event.clientY }; }}
     onPointerMove={(event) => {
       if (event.buttons === 1 && !dragged.current && Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 5) {
@@ -104,8 +129,8 @@ export default function AssistantMode() {
         {!suggestions.length && <p>{loading ? "正在读取会话…" : "没有匹配的会话"}</p>}
       </div>
     </section>}
-    <div className="assistant-toolbar"><span data-tauri-drag-region>桌面助手</span>
-      <button type="button" aria-label="打开主窗口" onClick={() => void showAppWindow().catch((err) => setError(String(err)))}><ExternalLink size={14} /></button>
+    <div className="assistant-toolbar"><span data-tauri-drag-region>NanoDesk</span>
+      <button type="button" aria-label="打开主窗口" onClick={() => void showAppWindow().then(() => setExpanded(false)).catch((err) => setError(String(err)))}><ExternalLink size={14} /></button>
       <button type="button" aria-label="收起助手" disabled={busy} onClick={() => setExpanded(false)}><X size={16} /></button>
     </div>
     <div className="assistant-input-bar">

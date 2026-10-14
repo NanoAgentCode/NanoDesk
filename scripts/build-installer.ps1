@@ -71,6 +71,8 @@ try {
   Write-Host "==> Using linker: $((Get-Command link.exe -ErrorAction SilentlyContinue).Source)"
 
   Write-Host "==> Building $($Brand.displayName) desktop app and NSIS installer only"
+  # Keep the version used when starting this build; source files may change while it runs.
+  $Version = (Get-Content -LiteralPath (Join-Path $Root "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).version
   & cmd.exe /d /s /c 'npm.cmd run tauri build -- --bundles nsis'
 
   if ($LASTEXITCODE -ne 0) {
@@ -81,7 +83,6 @@ try {
   $DesktopExe = Join-Path $ReleaseDir "$($Brand.desktopBinaryName).exe"
   $BundleDir = Join-Path $ReleaseDir "bundle"
   $NsisDir = Join-Path $BundleDir "nsis"
-  $Version = (Get-Content -LiteralPath (Join-Path $Root "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).version
   $ExpectedNsis = Join-Path $NsisDir "$($Brand.displayName)_${Version}_x64-setup.exe"
   if (-not (Test-Path -LiteralPath $ExpectedNsis)) {
     throw "NSIS installer was not found: $ExpectedNsis"
