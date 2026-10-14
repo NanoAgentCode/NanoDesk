@@ -253,13 +253,13 @@ export function useChat({
   }
 
   // ── Send message ──
-  async function handleSendMessage() {
+  async function handleSendMessage(assistantText?: string) {
     if (attachmentBusyRef.current || speech.isBusy()) {
       setNotice("请先等待附件或语音处理完成，或取消语音输入。");
       return;
     }
     if (busy) return;
-    const textContent = input.chatInput.trim();
+    const textContent = (typeof assistantText === "string" ? assistantText : input.chatInput).trim();
     const content = buildMessageContentWithImageAttachments(textContent, attachments.pendingImageAttachments);
     const memoryRoute = resolveUserMemoryRoute(textContent, content);
     const explicitProfileInstruction = memoryRoute.kind === "profile";
@@ -370,6 +370,7 @@ export function useChat({
         void safeFinishAgentRun(agentRun.id, "failed", String(error));
       }
       setNotice(String(error));
+      if (typeof assistantText === "string") throw error;
     } finally {
       setBusy(false);
     }
@@ -691,6 +692,7 @@ export function useChat({
     // Message / tool handlers
     loadMessages,
     handleSendMessage,
+    handleAssistantMessage: (text: string) => handleSendMessage(text),
     handleInterruptGeneration,
     handleRegenerateLastResponse,
     handleExecuteTool,

@@ -276,6 +276,8 @@ pub fn run() {
             commands::observability::clear_observability_spans,
             commands::observability::get_usage_analysis,
             desktop::show_app_window,
+            desktop::set_assistant_visible,
+            desktop::resize_assistant,
             desktop::minimize_to_tray,
             desktop::quit_app,
             desktop::get_autostart,

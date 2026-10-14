@@ -5,6 +5,7 @@ import TaskSettingsSection from "./TaskSettingsSection";
 import { themeLabels } from "../../lib/appHelpers";
 import type { ThemeMode } from "../../types";
 import { getAutostart, setAutostart } from "../../api";
+import { getStoredAssistantVisible, setAssistantVisible } from "../../api/assistant";
 import {
   getStoredCloseAction,
   getStoredCloseSkipPrompt,
@@ -21,6 +22,9 @@ interface SettingsThemeTabProps {
 
 export default function SettingsThemeTab({ themeMode, setThemeMode }: SettingsThemeTabProps) {
   const [autostart, setAutostartState] = useState(false);
+  const [assistantVisible, setAssistantVisibleState] = useState(getStoredAssistantVisible);
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantError, setAssistantError] = useState("");
   const [autostartBusy, setAutostartBusy] = useState(false);
   const [autostartLoaded, setAutostartLoaded] = useState(false);
   const [closeAction, setCloseAction] = useState<CloseAction>(() => getStoredCloseAction());
@@ -103,6 +107,20 @@ export default function SettingsThemeTab({ themeMode, setThemeMode }: SettingsTh
       <section className="general-settings-section" aria-labelledby="general-system-heading">
         <Text component="h4" id="general-system-heading" fw={650} size="sm" mb="sm">系统选项</Text>
         <Stack gap="md">
+          <Switch
+            checked={assistantVisible}
+            disabled={assistantBusy}
+            label="显示桌面助手"
+            description="桌面常驻图标，点击开始新聊天，输入 @ 继续已有会话。"
+            onChange={(event) => {
+              const visible = event.currentTarget.checked;
+              setAssistantBusy(true); setAssistantError("");
+              void setAssistantVisible(visible).then(() => setAssistantVisibleState(visible))
+                .catch((error) => setAssistantError(`桌面助手设置失败：${String(error)}`))
+                .finally(() => setAssistantBusy(false));
+            }}
+          />
+          {assistantError && <Text c="red" size="sm" role="alert">{assistantError}</Text>}
           <Radio.Group
             value={closeAction}
             onChange={(value) => handleCloseActionChange(value as CloseAction)}

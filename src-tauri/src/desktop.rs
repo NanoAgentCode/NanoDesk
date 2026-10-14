@@ -7,7 +7,63 @@ use tauri::tray::MouseButton;
 use tauri::tray::MouseButtonState;
 use tauri::tray::TrayIconBuilder;
 use tauri::tray::TrayIconEvent;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, LogicalSize, LogicalPosition};
+
+static ASSISTANT_WINDOW_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[tauri::command]
+// WebView2 window creation must run in an async command to avoid a Windows deadlock.
+pub(crate) async fn set_assistant_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    let _guard = ASSISTANT_WINDOW_LOCK.lock().await;
+    if let Some(window) = app.get_webview_window("assistant") {
+        return if visible { window.show() } else { window.hide() }.map_err(|err| err.to_string());
+    }
+    if !visible { return Ok(()); }
+    let window = WebviewWindowBuilder::new(&app, "assistant", WebviewUrl::App("index.html?assistant".into()))
+        .title("NanoDesk 桌面助手")
+        .inner_size(76.0, 76.0)
+        .decorations(false).transparent(true).shadow(false)
+        .always_on_top(true).skip_taskbar(true).resizable(false).visible(false)
+        .build().map_err(|err| err.to_string())?;
+    if let Some(monitor) = window.primary_monitor().map_err(|err| err.to_string())? {
+        let scale = monitor.scale_factor();
+        let area = monitor.work_area();
+        window.set_position(LogicalPosition::new(
+            (area.position.x as f64 + area.size.width as f64) / scale - 96.0,
+            (area.position.y as f64 + area.size.height as f64) / scale - 96.0,
+        )).map_err(|err| err.to_string())?;
+    }
+    window.show().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn resize_assistant(app: AppHandle, presentation: String) -> Result<(), String> {
+    let (mut width, mut height) = match presentation.as_str() {
+        "icon" => (76.0_f64, 76.0_f64),
+        "input" => (660.0, 158.0),
+        "picker" => (660.0, 410.0),
+        _ => return Err("unknown assistant presentation".into()),
+    };
+    let window = app.get_webview_window("assistant").ok_or("assistant window not found")?;
+    let scale = window.scale_factor().map_err(|err| err.to_string())?;
+    let position = window.outer_position().map_err(|err| err.to_string())?;
+    let size = window.outer_size().map_err(|err| err.to_string())?;
+    let mut x = (position.x as f64 + size.width as f64) / scale - width;
+    let mut y = (position.y as f64 + size.height as f64) / scale - height;
+    if let Some(monitor) = window.current_monitor().map_err(|err| err.to_string())? {
+        let area = monitor.work_area();
+        let left = area.position.x as f64 / scale;
+        let top = area.position.y as f64 / scale;
+        width = width.min(area.size.width as f64 / scale);
+        height = height.min(area.size.height as f64 / scale);
+        x = x.clamp(left, left + area.size.width as f64 / scale - width);
+        y = y.clamp(top, top + area.size.height as f64 / scale - height);
+    }
+    window.set_size(LogicalSize::new(width, height)).map_err(|err| err.to_string())?;
+    window.set_position(LogicalPosition::new(x, y)).map_err(|err| err.to_string())?;
+    if presentation != "icon" { window.set_focus().map_err(|err| err.to_string())?; }
+    Ok(())
+}
 
 pub(crate) fn show_main_window(app: &AppHandle) -> Result<(), String> {
     let window = app

@@ -1,0 +1,31 @@
+body.assistant-surface { min-width: 0; background: transparent; overflow: hidden; color-scheme: light; color: #253858; }
+.assistant-surface #root { height: 100vh; background: transparent; }
+.assistant-orb { margin: 10px; width: 56px; height: 56px; border-radius: 50%; background: white; box-shadow: 0 3px 12px #17376330; display: grid; place-items: center; padding: 12px; touch-action: none; }
+.assistant-orb img { width: 32px; height: 32px; pointer-events: none; }
+.assistant-panel { position: absolute; bottom: 10px; left: 10px; right: 10px; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
+.assistant-toolbar { display: flex; align-items: center; gap: 4px; color: #365582; padding: 0 14px 6px; font-size: 12px; }
+.assistant-toolbar span { margin-right: auto; cursor: move; background: #fff; border-radius: 10px; padding: 3px 8px; }
+.assistant-toolbar button { display: grid; place-items: center; background: #fff; border-radius: 50%; width: 24px; height: 24px; color: #365582; }
+.assistant-input-bar { background: #fff; border-radius: 40px; padding: 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 16px #17376324; }
+.assistant-new, .assistant-send { flex-shrink: 0; border-radius: 50%; width: 46px; height: 46px; display: grid; place-items: center; }
+.assistant-new { background: #f3f4f5; color: #333; }
+.assistant-send { background: #377ffa; color: #fff; }
+.assistant-panel button:disabled { opacity: .45; cursor: default; }
+.assistant-input-bar input { width: 100%; min-width: 40px; flex: 1; background: transparent; border: none; outline: none; font-size: 16px; color: #285ca8; padding: 4px 0; }
+.assistant-input-bar input::placeholder { color: #8191a8; font-size: 14px; }
+.assistant-input-bar input:focus-visible { outline: none; }
+.assistant-input-bar:focus-within { box-shadow: 0 4px 16px #17376324, 0 0 0 1px #b7d1fb; }
+.assistant-target { display: flex; align-items: center; gap: 5px; background: #eef5ff; color: #285ca8; border-radius: 15px; padding: 8px; max-width: 180px; }
+.assistant-target span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-picker { background: #fff; border-radius: 18px; margin-bottom: 8px; padding: 10px; box-shadow: 0 4px 16px #17376324; }
+.assistant-picker-heading { padding: 6px 8px 10px; font-size: 13px; display: flex; justify-content: space-between; color: #60718b; }
+.assistant-picker-heading span { font-size: 11px; }
+.assistant-picker [role="listbox"] { max-height: 200px; overflow: auto; }
+.assistant-picker button { display: flex; align-items: center; width: 100%; gap: 10px; padding: 10px; border-radius: 10px; background: transparent; text-align: left; color: #285ca8; }
+.assistant-picker button.active, .assistant-picker button:hover { background: #edf4ff; }
+.assistant-picker button span { min-width: 0; }
+.assistant-picker strong, .assistant-picker small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-picker small { color: #8191a8; font-size: 11px; margin-top: 4px; }
+.assistant-picker p { padding: 12px; font-size: 13px; color: #8191a8; }
+.assistant-error { margin: 5px 14px 0; padding: 4px 8px; border-radius: 8px; color: #a42b35; background: #fff2f2; font-size: 12px; }
+.assistant-panel button:focus-visible, .assistant-orb:focus-visible { outline: 2px solid #377ffa; outline-offset: 2px; }

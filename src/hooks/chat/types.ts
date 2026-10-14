@@ -82,6 +82,7 @@ export interface UseChatReturn {
   handleContextArchiveConversation: (conversation: Conversation) => Promise<void>;
   handleContextDeleteConversation: (conversation: Conversation) => Promise<void>;
   handleSendMessage: () => Promise<void>;
+  handleAssistantMessage: (text: string) => Promise<void>;
   handleInterruptGeneration: () => Promise<void>;
   handleRegenerateLastResponse: (messageId: string) => Promise<void>;
   handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;

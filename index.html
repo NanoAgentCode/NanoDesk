@@ -6,6 +6,9 @@
     <title>%APP_DISPLAY_NAME%</title>
     <script>
       (function () {
+        if (new URLSearchParams(window.location.search).has("assistant")) {
+          document.documentElement.classList.add("assistant-document");
+        }
         try {
           var mode = localStorage.getItem("%APP_STORAGE_PREFIX%-theme") || "system";
           var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -19,6 +22,10 @@
       })();
     </script>
     <style>
+      html.assistant-document,
+      html.assistant-document body,
+      html.assistant-document #root { background: transparent; min-width: 0; overflow: hidden; }
+      html.assistant-document #nano-startup { display: none; }
       :root {
         color-scheme: dark;
         --startup-bg: #070b12;
