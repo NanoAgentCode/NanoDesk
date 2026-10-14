@@ -24,7 +24,7 @@ describe("assistant background submission", () => {
     mocks.emitTo.mockResolvedValue(undefined);
     mocks.show.mockResolvedValue(undefined);
   });
-  it.each([null, "existing", "project"])("sends to %s without showing the main window", async (conversationId) => {
+  it.each([null, "existing", "project"].flatMap((id) => [[id, false, false], [id, true, false], [id, true, true]] as const))("sends to %s with files=%s failure=%s without showing the main window", async (conversationId, withFiles, uploadFailed) => {
     const target = { id: conversationId || "new", title: "测试", archived: false, model_config_id: "model" };
     mocks.list.mockResolvedValue([target]);
     const send = vi.fn().mockResolvedValue(undefined);
@@ -33,8 +33,10 @@ describe("assistant background submission", () => {
       createConversationForCurrentScope: vi.fn().mockResolvedValue(target),
       refreshConversations: vi.fn().mockResolvedValue(undefined), setActiveConversationId: vi.fn(),
       activeConversationId: target.id, activeConversation: target,
-      resolveConversationModelId: () => "model", handleAssistantMessage: send
+      resolveConversationModelId: () => "model", handleAssistantMessage: send,
+      handleAssistantAttachments: vi.fn().mockResolvedValue(undefined)
     } as unknown as UseChatReturn;
+    if (uploadFailed) vi.mocked(chat.handleAssistantAttachments).mockRejectedValueOnce(new Error("附件处理失败"));
     const projects = { projects: [{ path: "D:/project" }], refreshProjectConversationMap: vi.fn().mockResolvedValue(undefined) } as unknown as UseProjectsReturn;
     const model = { models: [{ id: "model" }], activeModelId: "model", routing: { enabled: false, fixedModelIds: ["model"] } } as unknown as UseModelReturn;
     const openChat = vi.fn();
@@ -42,14 +44,31 @@ describe("assistant background submission", () => {
     useAssistantHandoff(chat, projects, model, openChat, notice);
     mocks.effects[0]();
     const receive = mocks.listen.mock.calls[0][1];
-    receive({ payload: { id: "request", text: "后台处理", conversationId } });
+    receive({ payload: { id: "request", text: "后台处理", conversationId, ...(withFiles ? { filePaths: ["D:/test.pdf"] } : {}) } });
     await vi.waitFor(() => expect(mocks.setPending).toHaveBeenCalledWith(expect.objectContaining({ targetId: target.id })));
     expect(mocks.show).not.toHaveBeenCalled();
     mocks.pending = mocks.setPending.mock.calls[0][0];
     mocks.effects = [];
     useAssistantHandoff(chat, projects, model, openChat, notice);
     mocks.effects[1]();
-    await vi.waitFor(() => expect(send).toHaveBeenCalledWith("后台处理"));
+    if (uploadFailed) {
+      await vi.waitFor(() => expect(mocks.emitTo).toHaveBeenCalledWith("assistant", "assistant:reply", { id: "request", error: "附件处理失败" }));
+      expect(send).not.toHaveBeenCalled();
+      expect(mocks.show).not.toHaveBeenCalled();
+      return;
+    }
+    if (withFiles) {
+      await vi.waitFor(() => expect(chat.handleAssistantAttachments).toHaveBeenCalledWith(["D:/test.pdf"]));
+      await vi.waitFor(() => expect(mocks.setPending).toHaveBeenCalledWith(expect.objectContaining({ attachmentsReady: true })));
+      expect(send).not.toHaveBeenCalled();
+      expect(mocks.emitTo).not.toHaveBeenCalled();
+      mocks.pending = mocks.setPending.mock.calls.find(([value]) => value?.attachmentsReady)?.[0];
+      mocks.effects = [];
+      chat.chatInput = "音频识别文字";
+      useAssistantHandoff(chat, projects, model, openChat, notice);
+      mocks.effects[1]();
+    }
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith(withFiles ? "后台处理\n\n音频识别文字" : "后台处理"));
     expect(mocks.emitTo).toHaveBeenCalledWith("assistant", "assistant:reply", { id: "request" });
     expect(mocks.show).not.toHaveBeenCalled();
     expect(notice).not.toHaveBeenCalled();

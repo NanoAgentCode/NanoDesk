@@ -1,6 +1,6 @@
 import type { Conversation } from "../types";
 
-export interface AssistantRequest { id: string; text: string; conversationId: string | null }
+export interface AssistantRequest { id: string; text: string; conversationId: string | null; filePaths?: string[] }
 export interface AssistantReply { id: string; error?: string }
 export const ASSISTANT_REQUEST_EVENT = "assistant:request";
 export const ASSISTANT_REPLY_EVENT = "assistant:reply";

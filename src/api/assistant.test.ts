@@ -59,4 +59,11 @@ describe("assistant visibility and handoff", () => {
     await expect(submitAssistantRequest("hello", null)).rejects.toThrow("IPC failure");
     expect(mocks.stop).toHaveBeenCalledTimes(2);
   });
+  it("passes selected file paths to the main window for attachment processing", async () => {
+    let receive: (event: { payload: { id: string } }) => void;
+    mocks.listen.mockImplementation(async (_event, handler) => { receive = handler; return mocks.stop; });
+    mocks.emitTo.mockImplementationOnce(async (_target, _event, payload) => receive({ payload: { id: payload.id } }));
+    await submitAssistantRequest("分析文件", "project", ["D:/report.pdf", "D:/image.png"]);
+    expect(mocks.emitTo).toHaveBeenCalledWith("main", "assistant:request", expect.objectContaining({ filePaths: ["D:/report.pdf", "D:/image.png"] }));
+  });
 });

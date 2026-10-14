@@ -494,12 +494,13 @@ export function useChat({
   }
 
   // ── Unified attachment handlers ──
-  async function handleAttachmentSources(sources: AttachmentSource[]) {
+  async function handleAttachmentSources(sources: AttachmentSource[], strict = false) {
     if (!sources.length) return;
-    if (!chatVisible) { rag.setIsRagDragging(false); return; }
+    if (!chatVisible) { rag.setIsRagDragging(false); if (strict) throw new Error("请先切换到聊天页面。"); return; }
     if (busy || attachmentDecisionPending || attachmentBusyRef.current || speech.isBusy()) {
       rag.setIsRagDragging(false);
       setNotice("当前暂不能上传附件，请先完成正在进行的操作。");
+      if (strict) throw new Error("当前暂不能上传附件，请先完成正在进行的操作。");
       return;
     }
     attachmentBusyRef.current = true;
@@ -507,9 +508,11 @@ export function useChat({
     let scopeKey = attachmentScopeRef.current;
     let transitionScope: string | null = null;
     const active = () => {
-      if (attachmentLockedRef.current) return false;
+      if (attachmentLockedRef.current) { if (strict) throw new Error("附件处理已停止，请检查当前会话。"); return false; }
       if (attachmentScopeRef.current === scopeKey) { transitionScope = null; return true; }
-      return transitionScope !== null && attachmentScopeRef.current === transitionScope;
+      const matches = transitionScope !== null && attachmentScopeRef.current === transitionScope;
+      if (strict && !matches) throw new Error("会话已切换，附件处理已停止。");
+      return matches;
     };
     const groups = partitionAttachments(sources);
     const result = { image: 0, audio: 0, document: 0, errors: [] as string[], unsupported: groups.unsupported.map(attachmentName) };
@@ -531,6 +534,7 @@ export function useChat({
         result.errors.push(...audio.errors);
         if (audio.cancelled) {
           if (active()) setNotice("已取消本次附件中的语音识别。");
+          if (strict) throw new Error("已取消语音识别。");
           return;
         }
       }
@@ -572,8 +576,10 @@ export function useChat({
         }
       }
       if (active()) setNotice(formatAttachmentUploadResult(result));
+      if (strict && (result.errors.length || result.unsupported.length)) throw new Error(formatAttachmentUploadResult(result));
     } catch (error) {
       if (active()) setNotice(`附件处理失败：${String(error)}`);
+      if (strict) throw error;
     } finally {
       attachmentBusyRef.current = false;
       setUploadingAttachment(false);
@@ -693,6 +699,7 @@ export function useChat({
     loadMessages,
     handleSendMessage,
     handleAssistantMessage: (text: string) => handleSendMessage(text),
+    handleAssistantAttachments: (paths: string[]) => handleAttachmentSources(paths.map((path) => ({ kind: "path", path })), true),
     handleInterruptGeneration,
     handleRegenerateLastResponse,
     handleExecuteTool,

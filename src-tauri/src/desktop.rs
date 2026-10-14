@@ -21,7 +21,7 @@ pub(crate) async fn set_assistant_visible(app: AppHandle, visible: bool) -> Resu
     if !visible { return Ok(()); }
     let window = WebviewWindowBuilder::new(&app, "assistant", WebviewUrl::App("index.html?assistant".into()))
         .title("NanoDesk 桌面助手")
-        .inner_size(76.0, 76.0)
+        .inner_size(88.0, 88.0)
         .decorations(false).transparent(true).shadow(false)
         .always_on_top(true).skip_taskbar(true).resizable(false).visible(false)
         .build().map_err(|err| err.to_string())?;
@@ -29,8 +29,8 @@ pub(crate) async fn set_assistant_visible(app: AppHandle, visible: bool) -> Resu
         let scale = monitor.scale_factor();
         let area = monitor.work_area();
         window.set_position(LogicalPosition::new(
-            (area.position.x as f64 + area.size.width as f64) / scale - 96.0,
-            (area.position.y as f64 + area.size.height as f64) / scale - 96.0,
+            (area.position.x as f64 + area.size.width as f64) / scale - 108.0,
+            (area.position.y as f64 + area.size.height as f64) / scale - 108.0,
         )).map_err(|err| err.to_string())?;
     }
     window.show().map_err(|err| err.to_string())
@@ -39,9 +39,9 @@ pub(crate) async fn set_assistant_visible(app: AppHandle, visible: bool) -> Resu
 #[tauri::command]
 pub(crate) fn resize_assistant(app: AppHandle, presentation: String) -> Result<(), String> {
     let (mut width, mut height) = match presentation.as_str() {
-        "icon" => (76.0_f64, 76.0_f64),
-        "input" => (660.0, 158.0),
-        "picker" => (660.0, 410.0),
+        "icon" => (88.0_f64, 88.0_f64),
+        "input" => (532.0, 170.0),
+        "picker" => (532.0, 370.0),
         _ => return Err("unknown assistant presentation".into()),
     };
     let window = app.get_webview_window("assistant").ok_or("assistant window not found")?;
