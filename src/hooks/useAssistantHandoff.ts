@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { listConversations } from "../api/conversations";
-import { showAppWindow } from "../api/desktop";
 import { restoreAssistantVisibility } from "../api/assistant";
 import { ASSISTANT_REPLY_EVENT, ASSISTANT_REQUEST_EVENT, validateAssistantHandoff, type AssistantRequest } from "../lib/assistantMode";
 import type { UseChatReturn } from "./useChat";
@@ -49,7 +48,6 @@ export function useAssistantHandoff(chat: UseChatReturn, projects: UseProjectsRe
           }
           current.current.chat.setActiveConversationId(targetId);
           current.current.openChat();
-          await showAppWindow();
           setPending({ ...request, targetId });
         } catch (error) {
           processing.current = false;

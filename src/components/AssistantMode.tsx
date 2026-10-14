@@ -7,7 +7,7 @@ import { resizeAssistant, submitAssistantRequest } from "../api/assistant";
 import { filterAssistantConversations, getConversationMention, removeConversationMention } from "../lib/assistantMode";
 import type { Conversation } from "../types";
 import "./AssistantMode.css";
-import brandIcon from "../../src-tauri/icons/icon.svg";
+import brandIcon from "./assistant-icon.svg";
 import { registerAssistantContextMenu } from "../lib/assistantContextMenu";
 
 export default function AssistantMode() {
