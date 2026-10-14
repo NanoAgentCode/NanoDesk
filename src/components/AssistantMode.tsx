@@ -8,6 +8,7 @@ import { filterAssistantConversations, getConversationMention, removeConversatio
 import type { Conversation } from "../types";
 import "./AssistantMode.css";
 import brandIcon from "../../src-tauri/icons/icon.svg";
+import { registerAssistantContextMenu } from "../lib/assistantContextMenu";
 
 export default function AssistantMode() {
   const [expanded, setExpanded] = useState(false);
@@ -24,6 +25,8 @@ export default function AssistantMode() {
   const origin = useRef({ x: 0, y: 0 });
   const mention = getConversationMention(text, cursor);
   const suggestions = filterAssistantConversations(conversations, mention?.query || "");
+
+  useEffect(() => registerAssistantContextMenu(document, (err) => setError(String(err))), []);
 
   useEffect(() => {
     document.body.classList.add("assistant-surface");

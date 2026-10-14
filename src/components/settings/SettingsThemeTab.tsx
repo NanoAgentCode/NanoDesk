@@ -5,7 +5,7 @@ import TaskSettingsSection from "./TaskSettingsSection";
 import { themeLabels } from "../../lib/appHelpers";
 import type { ThemeMode } from "../../types";
 import { getAutostart, setAutostart } from "../../api";
-import { getStoredAssistantVisible, setAssistantVisible } from "../../api/assistant";
+import { getStoredAssistantVisible, setAssistantVisible, subscribeAssistantVisibility } from "../../api/assistant";
 import {
   getStoredCloseAction,
   getStoredCloseSkipPrompt,
@@ -29,6 +29,8 @@ export default function SettingsThemeTab({ themeMode, setThemeMode }: SettingsTh
   const [autostartLoaded, setAutostartLoaded] = useState(false);
   const [closeAction, setCloseAction] = useState<CloseAction>(() => getStoredCloseAction());
   const [closeSkipPrompt, setCloseSkipPrompt] = useState(() => getStoredCloseSkipPrompt());
+
+  useEffect(() => subscribeAssistantVisibility(setAssistantVisibleState), []);
 
   useEffect(() => {
     let active = true;

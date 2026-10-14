@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(), emitTo: vi.fn(), stop: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen, emitTo: mocks.emitTo }));
-import { getStoredAssistantVisible, setAssistantVisible, restoreAssistantVisibility, submitAssistantRequest } from "./assistant";
+import { getStoredAssistantVisible, setAssistantVisible, restoreAssistantVisibility, submitAssistantRequest, subscribeAssistantVisibility } from "./assistant";
 import { ASSISTANT_REPLY_EVENT } from "../lib/assistantMode";
 
 describe("assistant visibility and handoff", () => {
@@ -34,6 +34,21 @@ describe("assistant visibility and handoff", () => {
     expect(mocks.listen).toHaveBeenCalledWith(ASSISTANT_REPLY_EVENT, expect.any(Function));
     expect(mocks.emitTo).toHaveBeenCalledWith("main", "assistant:request", expect.objectContaining({ text: "hello", conversationId: "existing" }));
     expect(mocks.stop).toHaveBeenCalledOnce();
+  });
+  it("syncs a close in another window to the general settings switch", async () => {
+    const surface = new EventTarget();
+    vi.stubGlobal("window", surface);
+    const listener = vi.fn();
+    const dispose = subscribeAssistantVisibility(listener);
+    await setAssistantVisible(true);
+    await setAssistantVisible(false);
+    const changed = new Event("storage");
+    Object.defineProperty(changed, "key", { value: null });
+    surface.dispatchEvent(changed);
+    expect(listener).toHaveBeenCalledWith(false);
+    dispose();
+    surface.dispatchEvent(changed);
+    expect(listener).toHaveBeenCalledOnce();
   });
   it("reports rejection without discarding the message and cleans up IPC failures", async () => {
     let receive: (event: { payload: { id: string; error?: string } }) => void;
