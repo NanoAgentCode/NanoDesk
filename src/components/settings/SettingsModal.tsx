@@ -9,7 +9,6 @@ import type { UseModelReturn } from "../../hooks/useModel";
 import type { UseSkillsReturn } from "../../hooks/useSkills";
 import type { UseMcpReturn } from "../../hooks/useMcp";
 import type { UseEnvReturn } from "../../hooks/useEnv";
-import type { UseObservabilityReturn } from "../../hooks/useObservability";
 
 interface SettingsModalProps {
   plugins: AppPluginRegistry;
@@ -26,7 +25,6 @@ interface SettingsModalProps {
   skills: UseSkillsReturn;
   mcp: UseMcpReturn;
   env: UseEnvReturn;
-  obs: UseObservabilityReturn;
   archivedConversations: Conversation[];
   previewArchivedId: string;
   previewMessages: PersistedMessage[];
@@ -65,7 +63,6 @@ export default function SettingsModal({
   skills,
   mcp,
   env,
-  obs,
   archivedConversations,
   previewArchivedId,
   previewMessages,
@@ -86,7 +83,6 @@ export default function SettingsModal({
     skills,
     mcp,
     env,
-    obs,
     archivedConversations,
     previewArchivedId,
     previewMessages,

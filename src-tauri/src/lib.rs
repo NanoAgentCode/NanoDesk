@@ -275,8 +275,6 @@ pub fn run() {
             commands::project_tools::read_local_file,
             file_content::read_absolute_file,
             file_content::extract_uploaded_file,
-            commands::observability::list_observability_spans,
-            commands::observability::clear_observability_spans,
             commands::observability::get_usage_analysis,
             desktop::show_app_window,
             desktop::set_assistant_visible,

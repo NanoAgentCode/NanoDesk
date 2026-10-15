@@ -17,7 +17,7 @@ import { useMcp } from "./hooks/useMcp";
 import { useMemory } from "./hooks/useMemory";
 import { useModel } from "./hooks/useModel";
 import { useSkills } from "./hooks/useSkills";
-import { useObservability } from "./hooks/useObservability";
+import { useAgentRuntime } from "./hooks/useAgentRuntime";
 import { useProjects } from "./hooks/useProjects";
 import { useThemeMode } from "./hooks/useThemeMode";
 import { useAccessMode } from "./hooks/useAccessMode";
@@ -160,7 +160,7 @@ function App() {
     loadArchivedPreview
   } = chat;
 
-  const obs = useObservability(setNotice, activeConversationId, showModelConfig, activeSettingsTab);
+  const obs = useAgentRuntime(setNotice, activeConversationId);
   const workspace = useWorkspace(setNotice, memory);
   const [workspaceListRatio, setWorkspaceListRatio] = useState(38);
   const { themeMode, resolvedTheme, setThemeMode } = useThemeMode();
@@ -451,7 +451,6 @@ function App() {
           skills={skills}
           mcp={mcp}
           env={env}
-          obs={obs}
           archivedConversations={archivedConversations}
           previewArchivedId={previewArchivedId}
           previewMessages={previewMessages}

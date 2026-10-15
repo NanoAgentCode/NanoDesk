@@ -1,6 +1,6 @@
 # NanoDesk
 
-NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、React 和 TypeScript 构建。它把持久化对话、项目文件、轻量 RAG、长期记忆、Skills、MCP 工具、OCR 图片附件、Ops SSH 工作台和运行时观测集中在一个桌面客户端里，业务数据默认保存在本机 SQLite。
+NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、React 和 TypeScript 构建。它把持久化对话、项目文件、轻量 RAG、长期记忆、Skills、MCP 工具、OCR 图片附件、Ops SSH 工作台和 Agent Runtime 记录集中在一个桌面客户端里，业务数据默认保存在本机 SQLite。
 
 ## 核心能力
 
@@ -27,7 +27,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - MCP 管理：支持 stdio、SSE、streamable HTTP；启用的服务器会在桌面端启动时恢复连接，连接成功后把工具注入模型上下文。
 - Skills 管理：同步 Anthropic Skills、维护本地 Skills 目录，并在系统提示中注入启用技能。
 - Ops 工作台：管理 SSH 服务器、测试连接、上传文件、打开交互式 SSH 终端。
-- 独立诊断链路：LLM、MCP、Ops、部分工具和数据库操作写入 `nanodesk-observability.sqlite3`；系统操作日志按天写入 `logs/` 并保留 7 天。
+- 后台用量采集：LLM、MCP、Ops、部分工具和数据库操作写入 `nanodesk-observability.sqlite3`，供用量分析使用；系统设置不再提供链路追踪页面及查询、清空接口。系统操作日志按天写入 `logs/` 并保留 7 天。
 - 用量分析：系统设置展示会话数、消息数、按会话当前模型归属统计的助手回答次数、基于已保存消息内容估算的 Prompt/Completion/总 Token 与最近 30 天内有数据日期的趋势；平均与 P95 延迟取观测库最近最多 1000 条有耗时的 span，包含各操作类别及失败调用。暂不包含缓存命中率、费用与成本核算、统一 API 请求量/成功率面板。
 - 深色、浅色、跟随系统主题，以及可配置的关闭行为、系统托盘和 Windows 开机自启动。
 - 窗口快捷键：NanoDesk 获得焦点时，按 `Esc` 先关闭打开的二级页面或弹窗；回到主界面后再次按 `Esc` 最小化到任务栏。
@@ -167,7 +167,7 @@ src/components/app/            受控项目、重命名与关闭弹窗
 src/components/automation/     受控自动任务编辑表单
 src/hooks/useAccessMode.ts     三种应用模式状态与本地持久化
 src/lib/backgroundAgent.ts     后台任务 IPC 类型与会话展示投影
-src/components/                聊天区、侧栏、设置页、观测面板、Ops 工作台等 UI
+src/components/                聊天区、侧栏、设置页、Agent Runtime 面板、Ops 工作台等 UI
 src/lib/                       系统提示、上下文预算与摘要编排、工具解析、格式化和安全封装
 src-tauri/src/lib.rs           Tauri command 注册、应用状态和启动流程
 src-tauri/src/app_state.rs     共享应用状态与流式取消注册表

@@ -1,4 +1,4 @@
-import type { AgentEventLogEntry, AgentRun, AgentRunTimeline, AgentStep, ObservabilitySpan } from "../types";
+import type { AgentEventLogEntry, AgentRun, AgentRunTimeline, AgentStep } from "../types";
 
 export type AgentTimelineEvent = {
   id: string;
@@ -136,15 +136,4 @@ export function formatDuration(durationMs: number) {
     return `${(durationMs / 1000).toFixed(durationMs >= 10000 ? 0 : 1)} s`;
   }
   return `${durationMs} ms`;
-}
-
-export function buildObservabilitySpanDetail(span: ObservabilitySpan) {
-  return [
-    span.input_summary ? `输入：${span.input_summary}` : "",
-    span.output_summary ? `输出：${span.output_summary}` : "",
-    span.error ? `错误：${span.error}` : "",
-    span.metadata_json ? `元数据：${span.metadata_json}` : ""
-  ]
-    .filter(Boolean)
-    .join("\n");
 }

@@ -150,3 +150,5 @@
 .agent-runtime-panel .trace-detail-section-body pre {
   line-height: 1.35 !important;
 }
+
+.agent-runtime-status-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--accent-emerald); flex-shrink: 0; }

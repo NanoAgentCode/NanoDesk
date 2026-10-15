@@ -549,24 +549,6 @@ export interface ChatImageAttachmentPreview {
   data_url: string;
 }
 
-export interface ObservabilitySpan {
-  id: string;
-  trace_id: string;
-  parent_span_id?: string | null;
-  operation: string;
-  category: string;
-  entity_type?: string | null;
-  entity_id?: string | null;
-  status: string;
-  started_at: string;
-  ended_at?: string | null;
-  duration_ms?: number | null;
-  input_summary?: string | null;
-  output_summary?: string | null;
-  error?: string | null;
-  metadata_json?: string | null;
-}
-
 export interface AgentRun {
   id: string;
   conversation_id: string;

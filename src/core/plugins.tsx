@@ -5,7 +5,6 @@ import type { UseEnvReturn } from "../hooks/useEnv";
 import type { UseMcpReturn } from "../hooks/useMcp";
 import type { UseMemoryReturn } from "../hooks/useMemory";
 import type { UseModelReturn } from "../hooks/useModel";
-import type { UseObservabilityReturn } from "../hooks/useObservability";
 import type { UseSkillsReturn } from "../hooks/useSkills";
 import type { UseWorkspaceReturn } from "../hooks/useWorkspace";
 
@@ -38,7 +37,6 @@ export interface SettingsPluginContext {
   skills: UseSkillsReturn;
   mcp: UseMcpReturn;
   env: UseEnvReturn;
-  obs: UseObservabilityReturn;
   archivedConversations: Conversation[];
   previewArchivedId: string;
   previewMessages: PersistedMessage[];

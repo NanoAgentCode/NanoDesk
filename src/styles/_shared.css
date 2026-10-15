@@ -1331,7 +1331,6 @@
 
 .skills-indicator-badge,
 .mcp-connection-badge,
-.trace-indicator-badge,
 .archive-indicator-badge {
   flex: 0 0 auto;
   font-size: var(--font-size-2xs);

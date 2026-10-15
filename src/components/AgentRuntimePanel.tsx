@@ -93,7 +93,7 @@ export default function AgentRuntimePanel({
             return (
               <div key={event.id} className={`agent-timeline-row ${event.status}`}>
                 <button className="timeline-row-toggle" onClick={() => onToggleRow(rowId)} type="button">
-                  <span className="observability-status-dot" />
+                  <span className="agent-runtime-status-dot" />
                   <span className="timeline-row-copy">
                     <strong>{event.title}</strong>
                     <small>{event.subtitle}</small>

@@ -67,10 +67,6 @@ pub trait ObservabilitySink: Send {
     fn list_spans(&mut self, _limit: i64) -> AppResult<Option<Vec<ObservabilitySpan>>> {
         Ok(None)
     }
-
-    fn clear(&mut self) -> AppResult<()> {
-        Ok(())
-    }
 }
 
 pub struct ObservabilityPipeline {
@@ -144,7 +140,7 @@ impl ObservabilityPipeline {
         }
     }
 
-    pub fn list_spans(&mut self, limit: Option<i64>) -> AppResult<Vec<ObservabilitySpan>> {
+    fn list_spans(&mut self, limit: Option<i64>) -> AppResult<Vec<ObservabilitySpan>> {
         let limit = limit.unwrap_or(200).clamp(1, 1000);
         for sink in &mut self.sinks {
             if let Some(spans) = sink.list_spans(limit)? {
@@ -152,13 +148,6 @@ impl ObservabilityPipeline {
             }
         }
         Ok(Vec::new())
-    }
-
-    pub fn clear(&mut self) -> AppResult<()> {
-        for sink in &mut self.sinks {
-            sink.clear()?;
-        }
-        Ok(())
     }
 
     pub fn add_latency_summary(&mut self, analysis: &mut UsageAnalysis) -> AppResult<()> {
@@ -320,9 +309,37 @@ impl ObservabilitySink for SqliteObservabilitySink {
             .map_err(AppError::from)?;
         Ok(Some(spans))
     }
+}
 
-    fn clear(&mut self) -> AppResult<()> {
-        self.conn.execute("DELETE FROM observability_spans", [])?;
-        Ok(())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn background_collection_still_provides_usage_latency() {
+        let mut sink = SqliteObservabilitySink::open(PathBuf::from(":memory:")).unwrap();
+        for (id, duration, status) in [("ok-call", 10, "ok"), ("failed-call", 30, "error")] {
+            let span = SpanContext {
+                id: id.into(), trace_id: id.into(), started_at: Utc::now(), started: Instant::now(),
+            };
+            sink.on_start(&span, &SpanStart {
+                trace_id: None, parent_span_id: None, operation: "chat".into(), category: "llm".into(),
+                entity_type: None, entity_id: None, input_summary: None, metadata: serde_json::json!({}),
+            }).unwrap();
+            sink.on_finish(&span, &SpanEnd {
+                status: status.into(), ended_at: Utc::now(), duration_ms: duration,
+                output_summary: None, error: None,
+            }).unwrap();
+        }
+        let mut pipeline = ObservabilityPipeline::new(vec![Box::new(sink)]);
+        let mut analysis = UsageAnalysis {
+            conversation_count: 0, message_count: 0, model_usage: vec![],
+            prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_trend: vec![],
+            latency_call_count: 0, average_latency_ms: 0.0, p95_latency_ms: 0,
+        };
+        pipeline.add_latency_summary(&mut analysis).unwrap();
+        assert_eq!(analysis.latency_call_count, 2);
+        assert_eq!(analysis.average_latency_ms, 20.0);
+        assert_eq!(analysis.p95_latency_ms, 30);
     }
 }

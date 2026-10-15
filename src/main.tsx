@@ -14,7 +14,6 @@ import "./components/ChatPane.css";
 import "./components/OpsPanel.css";
 import "./components/WorkspaceGrid.css";
 import "./components/AgentRuntimePanel.css";
-import "./components/ObservabilityPanel.css";
 import "./components/settings/SettingsUsageTab.css";
 import "./components/ObservabilityDetailPanel.css";
 import "./components/settings/SettingsModal.css";

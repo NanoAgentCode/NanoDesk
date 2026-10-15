@@ -1,4 +1,4 @@
-import { Activity, Archive, BarChart3, Bot, Brain, CalendarClock, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
+import { Archive, BarChart3, Bot, Brain, CalendarClock, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
 import { AppPluginRegistry, type FrontendPlugin } from "../core/plugins";
 import OpsPanel from "../components/OpsPanel";
 import AutomationPanel from "../components/AutomationPanel";
@@ -8,7 +8,6 @@ import SettingsProfileTab from "../components/settings/SettingsProfileTab";
 import SettingsArchiveTab from "../components/settings/SettingsArchiveTab";
 import SettingsModelTab from "../components/settings/SettingsModelTab";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab";
-import SettingsObservabilityTab from "../components/settings/SettingsObservabilityTab";
 import SettingsUsageTab from "../components/settings/SettingsUsageTab";
 import SettingsMcpTab from "../components/settings/SettingsMcpTab";
 import SettingsEnvironmentTab from "../components/settings/SettingsEnvironmentTab";
@@ -71,12 +70,6 @@ const coreUiPlugin: FrontendPlugin = {
           handleDeleteArchivedConversation={context.handleDeleteArchivedConversation}
         />
       )
-    },
-    {
-      id: "observability",
-      label: "链路追踪",
-      icon: Activity,
-      render: ({ obs }) => <SettingsObservabilityTab obs={obs} />
     }
   ]
 };

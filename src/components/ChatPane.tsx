@@ -40,7 +40,7 @@ import { formatWebSearchBadge, renderMessageContent } from "../lib/appHelpers";
 import { findPendingClarification, parseClarificationRequest, parseTaskPlan, parseToolCall, parseToolResult } from "../lib/messageHelpers";
 import type { ParsedToolCall } from "../lib/messageHelpers";
 import type { AgentAccessMode, AgentClarificationAnswer, AgentClarificationRequest, AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../types";
-import type { UseObservabilityReturn } from "../hooks/useObservability";
+import type { UseAgentRuntimeReturn } from "../hooks/useAgentRuntime";
 import type { UseModelReturn } from "../hooks/useModel";
 import { buildChatModelOptions } from "../lib/modelOptions";
 import { findPendingToolApproval, resolveChatDecisionState } from "../lib/chatDecisionState";
@@ -71,7 +71,7 @@ interface ChatPaneProps {
   attachmentProjectPath: string;
   project: ProjectEntry | null;
   projectFiles: ProjectFileEntry[];
-  obs: UseObservabilityReturn;
+  obs: UseAgentRuntimeReturn;
   model: UseModelReturn;
   accessMode: AgentAccessMode;
   onAccessModeChange: (mode: AgentAccessMode) => void;
@@ -204,7 +204,7 @@ export default function ChatPane({
   // AgentRuntime 打开时，点击面板和切换按钮之外的任意位置收起
   useEffect(() => {
     if (!obs.showChatRuntime) return;
-    void obs.refreshObservability();
+    void obs.refreshRuntime();
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (
@@ -348,7 +348,7 @@ export default function ChatPane({
           activeConversationTitle={activeConversation?.title}
           timelines={obs.agentRunTimelines}
           activeTimeline={obs.activeRunTimeline}
-          expandedRows={obs.expandedObservabilityRows}
+          expandedRows={obs.expandedRuntimeRows}
           onToggleRow={obs.toggleTimelineRow}
           busy={busy}
           onResumeRun={handleResumeAgentRun}
