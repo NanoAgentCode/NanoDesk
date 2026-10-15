@@ -22,7 +22,7 @@ import { useProjects } from "./hooks/useProjects";
 import { useThemeMode } from "./hooks/useThemeMode";
 import { useAccessMode } from "./hooks/useAccessMode";
 import { useWorkspace } from "./hooks/useWorkspace";
-import { useChat } from "./hooks/useChat";
+import { useChat, type UseChatReturn } from "./hooks/useChat";
 import Sidebar from "./components/Sidebar";
 import ChatPane from "./components/ChatPane";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
@@ -76,7 +76,7 @@ function App() {
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
 
-  const chatRef = useRef<any>(null);
+  const chatRef = useRef<UseChatReturn | null>(null);
 
   const env = useEnv(setNotice);
   const mcp = useMcp(setNotice);

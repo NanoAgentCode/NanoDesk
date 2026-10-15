@@ -1,3 +1,6 @@
+mod assistant_layout;
+use assistant_layout::{assistant_bounds, Bounds, ICON_SIZE};
+
 use crate::brand;
 use crate::logging;
 use tauri::menu::Menu;
@@ -21,7 +24,7 @@ pub(crate) async fn set_assistant_visible(app: AppHandle, visible: bool) -> Resu
     if !visible { return Ok(()); }
     let window = WebviewWindowBuilder::new(&app, "assistant", WebviewUrl::App("index.html?assistant".into()))
         .title("NanoDesk 桌面助手")
-        .inner_size(88.0, 88.0)
+        .inner_size(ICON_SIZE, ICON_SIZE)
         .decorations(false).transparent(true).shadow(false)
         .always_on_top(true).skip_taskbar(true).resizable(false).visible(false)
         .build().map_err(|err| err.to_string())?;
@@ -38,29 +41,18 @@ pub(crate) async fn set_assistant_visible(app: AppHandle, visible: bool) -> Resu
 
 #[tauri::command]
 pub(crate) fn resize_assistant(app: AppHandle, presentation: String) -> Result<(), String> {
-    let (mut width, mut height) = match presentation.as_str() {
-        "icon" => (88.0_f64, 88.0_f64),
-        "input" => (532.0, 170.0),
-        "picker" => (532.0, 370.0),
-        _ => return Err("unknown assistant presentation".into()),
-    };
     let window = app.get_webview_window("assistant").ok_or("assistant window not found")?;
     let scale = window.scale_factor().map_err(|err| err.to_string())?;
     let position = window.outer_position().map_err(|err| err.to_string())?;
     let size = window.outer_size().map_err(|err| err.to_string())?;
-    let mut x = (position.x as f64 + size.width as f64) / scale - width;
-    let mut y = (position.y as f64 + size.height as f64) / scale - height;
-    if let Some(monitor) = window.current_monitor().map_err(|err| err.to_string())? {
+    let work_area = window.current_monitor().map_err(|err| err.to_string())?.map(|monitor| {
         let area = monitor.work_area();
-        let left = area.position.x as f64 / scale;
-        let top = area.position.y as f64 / scale;
-        width = width.min(area.size.width as f64 / scale);
-        height = height.min(area.size.height as f64 / scale);
-        x = x.clamp(left, left + area.size.width as f64 / scale - width);
-        y = y.clamp(top, top + area.size.height as f64 / scale - height);
-    }
-    window.set_size(LogicalSize::new(width, height)).map_err(|err| err.to_string())?;
-    window.set_position(LogicalPosition::new(x, y)).map_err(|err| err.to_string())?;
+        Bounds::from_physical(area.position.x, area.position.y, area.size.width, area.size.height, scale)
+    });
+    let bounds = assistant_bounds(&presentation,
+        Bounds::from_physical(position.x, position.y, size.width, size.height, scale), work_area)?;
+    window.set_size(LogicalSize::new(bounds.width, bounds.height)).map_err(|err| err.to_string())?;
+    window.set_position(LogicalPosition::new(bounds.x, bounds.y)).map_err(|err| err.to_string())?;
     if presentation != "icon" { window.set_focus().map_err(|err| err.to_string())?; }
     Ok(())
 }

@@ -1,23 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, MessageCircle, Plus, X } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { classifyAttachment, attachmentName } from "../lib/attachmentUploads";
 import { listConversationProjectPaths, listConversations } from "../api/conversations";
-import { resizeAssistant, submitAssistantRequest } from "../api/assistant";
+import { submitAssistantRequest } from "../api/assistant";
 import { filterAssistantConversations, getConversationMention, removeConversationMention } from "../lib/assistantMode";
 import type { Conversation } from "../types";
 import "./AssistantMode.css";
-import brandIcon from "./assistant-icon.svg";
-import { registerAssistantContextMenu } from "../lib/assistantContextMenu";
-import { createAssistantBlurTimer } from "../lib/assistantFocus";
-import { ASSISTANT_TRANSITION_MS, createAssistantTransition, type AssistantPhase } from "../lib/assistantTransition";
 import { useBackgroundAgents } from "../hooks/chat/useBackgroundAgents";
 
+import AssistantSurface from "./AssistantSurface";
+import { useAssistantWindow } from "../hooks/useAssistantWindow";
+
 export default function AssistantMode() {
-  const [expanded, setExpanded] = useState(false);
-  const [phase, setPhase] = useState<AssistantPhase>("icon");
-  const transition = useRef<ReturnType<typeof createAssistantTransition> | null>(null);
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState<Conversation | null>(null);
@@ -29,55 +24,15 @@ export default function AssistantMode() {
   const [filePaths, setFilePaths] = useState<string[]>([]);
   const [choosingFiles, setChoosingFiles] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const dragged = useRef(false);
-  const origin = useRef({ x: 0, y: 0 });
   const mention = getConversationMention(text, cursor);
+  const { expanded, setExpanded, phase } = useAssistantWindow(choosingFiles, !!mention, setError);
   const suggestions = filterAssistantConversations(conversations, mention?.query || "");
   const background = useBackgroundAgents("", () => {});
   const running = busy || background.runningConversationIds.length > 0;
 
   useEffect(() => {
-    if (!expanded || choosingFiles) return;
-    let disposed = false;
-    let revision = 0;
-    const timer = createAssistantBlurTimer(() => setExpanded(false));
-    const nativeWindow = getCurrentWindow();
-    const subscription = nativeWindow.onFocusChanged(({ payload }) => {
-      if (disposed) return;
-      revision++; timer.setFocused(payload);
-    });
-    void subscription.then(async () => {
-      const initialRevision = revision;
-      const focused = await nativeWindow.isFocused();
-      if (!disposed && revision === initialRevision) timer.setFocused(focused);
-    }).catch((err) => { if (!disposed) setError(String(err)); });
-    return () => {
-      disposed = true; timer.dispose();
-      void subscription.then((stop) => stop()).catch(console.error);
-    };
-  }, [expanded, choosingFiles]);
-
-  useEffect(() => registerAssistantContextMenu(document, (err) => setError(String(err))), []);
-
-  useEffect(() => {
-    document.body.classList.add("assistant-surface");
-    document.getElementById("nano-startup")?.remove();
-    return () => document.body.classList.remove("assistant-surface");
-  }, []);
-  useEffect(() => {
-    const controller = createAssistantTransition(resizeAssistant, setPhase, (err, expanding) => {
-      setError(String(err));
-      setExpanded(!expanding);
-    });
-    transition.current = controller;
-    return () => { controller.dispose(); transition.current = null; };
-  }, []);
-  useEffect(() => {
-    transition.current?.update(expanded ? mention ? "picker" : "input" : "icon");
-  }, [expanded, !!mention]);
-  useEffect(() => {
-    if (phase === "opening") input.current?.focus();
-  }, [phase]);
+    if (expanded && (phase === "opening" || phase === "open")) input.current?.focus();
+  }, [expanded, phase]);
   useEffect(() => {
     if (!expanded) return;
     let active = true;
@@ -120,17 +75,9 @@ export default function AssistantMode() {
     } catch (err) { setError(String(err)); }
     finally { setChoosingFiles(false); }
   }
-  if (phase === "preparing") return null;
-  if (phase === "icon") return <button className={`assistant-orb${running ? " assistant-orb--running" : ""}`} type="button" aria-label="打开桌面助手" aria-busy={running} title={running ? "任务进行中；点击提问，拖动移动" : "点击提问，拖动移动"}
-    onPointerDown={(event) => { dragged.current = false; origin.current = { x: event.clientX, y: event.clientY }; }}
-    onPointerMove={(event) => {
-      if (event.buttons === 1 && !dragged.current && Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 5) {
-        dragged.current = true; void getCurrentWindow().startDragging().catch(() => { dragged.current = false; });
-      }
-    }}
-    onClick={() => { if (!dragged.current) setExpanded(true); }}><img src={brandIcon} alt="NanoDesk" /></button>;
-
-  return <main className={`assistant-panel assistant-panel--${phase}`} style={{ "--assistant-transition-duration": `${ASSISTANT_TRANSITION_MS}ms` } as React.CSSProperties} aria-hidden={!expanded} {...(!expanded ? { inert: "" } : {})}>
+  return <AssistantSurface phase={phase} expanded={expanded} running={running} onActivate={() => {
+    setExpanded((current) => !current);
+  }}>
     {mention && <section className="assistant-picker" aria-label="选择已有会话">
       <div className="assistant-picker-heading">继续已有会话 <span>↑ ↓ 选择 · Enter 确认</span></div>
       <div role="listbox" id="assistant-conversations">
@@ -160,5 +107,5 @@ export default function AssistantMode() {
     </div>
     {!!filePaths.length && <div className="assistant-files" aria-label="待上传文件">{filePaths.map((path) => <button type="button" key={path} title={path} disabled={busy} aria-label={`移除文件 ${attachmentName({ kind: "path", path })}`} onClick={() => setFilePaths((current) => current.filter((file) => file !== path))}><span>{attachmentName({ kind: "path", path })}</span><X size={12} /></button>)}</div>}
     {error && <p className="assistant-error" role="alert">{error}</p>}
-  </main>;
+  </AssistantSurface>;
 }

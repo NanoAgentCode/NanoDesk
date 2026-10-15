@@ -6,94 +6,25 @@ import {
   listAvailableModels,
   testLlmConnectivity,
   testEmbeddingConnectivity,
-  getAsrConfig,
-  saveAsrConfig,
   updateConversationModel
-  ,listModelSuppliers, saveModelSupplier, deleteModelSupplier
-} from "../api";
+} from "../api/models";
 import { confirmAction } from "../lib/dialogs";
-import type { AsrConfig, AvailableModelInfo, ModelConfig, ModelConfigDraft, ModelSupplier, ModelSupplierDraft, Conversation } from "../types";
-import { DEFAULT_MODEL_ROUTING_PROFILE, normalizeRoutingProfile } from "../lib/modelRouting";
+import type { AvailableModelInfo, ModelConfig, ModelConfigDraft, Conversation } from "../types";
 import { useModelRouting, type UseModelRoutingReturn } from "./useModelRouting";
-import { inferModelKind, isAsrModel, isChatModel, isEmbeddingModel } from "../lib/modelCapabilities";
+import { isChatModel } from "../lib/modelCapabilities";
 
-export const emptyModelDraft: ModelConfigDraft = {
-  name: "OpenAI",
-  provider: "openai-compatible",
-  base_url: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
-  api_key: "",
-  temperature: 0.4,
-  max_tokens: null,
-  context_window: 32_768,
-  top_p: null,
-  reasoning_effort: "",
-  model_kind: "chat",
-  ...DEFAULT_MODEL_ROUTING_PROFILE,
-  embedding_provider: "openai-compatible",
-  embedding_base_url: "https://api.openai.com/v1",
-  embedding_model: "text-embedding-3-small",
-  embedding_api_key: ""
-};
+import { emptyModelDraft, providerDefaults, normalizeModelDraft } from "../lib/modelDrafts";
 
-export const emptyEmbeddingDraft: ModelConfigDraft = {
-  id: "embedding-config",
-  name: "嵌入模型",
-  provider: "openai-compatible",
-  base_url: "https://api.openai.com/v1",
-  model: "text-embedding-3-small",
-  api_key: "",
-  temperature: 0.4,
-  max_tokens: null,
-  context_window: 32_768,
-  top_p: null,
-  reasoning_effort: "",
-  model_kind: "embedding",
-  ...DEFAULT_MODEL_ROUTING_PROFILE,
-  routing_enabled: false,
-  embedding_provider: "openai-compatible",
-  embedding_base_url: "https://api.openai.com/v1",
-  embedding_model: "text-embedding-3-small",
-  embedding_api_key: ""
-};
+import { useModelSuppliers } from "./useModelSuppliers";
+import { useAsrModel } from "./useAsrModel";
+import { useEmbeddingModel } from "./useEmbeddingModel";
 
-export const providerDefaults: Record<string, Pick<ModelConfigDraft, "base_url" | "model">> = {
-  "openai-compatible": {
-    base_url: "https://api.openai.com/v1",
-    model: "gpt-4o-mini"
-  },
-  anthropic: {
-    base_url: "https://api.anthropic.com",
-    model: "claude-3-5-sonnet-latest"
-  }
-};
+export { emptyModelDraft, emptyEmbeddingDraft, providerDefaults, normalizeModelDraft } from "../lib/modelDrafts";
 
-export function normalizeModelDraft(model: ModelConfig | ModelConfigDraft): ModelConfigDraft {
-  return {
-    ...model,
-    temperature: model.temperature ?? 0.4,
-    max_tokens: model.max_tokens ?? null,
-    context_window: model.context_window || 32_768,
-    top_p: model.top_p ?? null,
-    reasoning_effort: model.reasoning_effort || "",
-    model_kind: model.model_kind || (model.id === "embedding-config" ? "embedding" : "chat"),
-    ...normalizeRoutingProfile(model),
-    embedding_provider: model.embedding_provider || "openai-compatible",
-    embedding_base_url: model.embedding_base_url || "https://api.openai.com/v1",
-    embedding_model: model.embedding_model || "text-embedding-3-small",
-    embedding_api_key: model.embedding_api_key || ""
-  };
-}
-
-export interface UseModelReturn {
-  suppliers: ModelSupplier[];
-  supplierDraft: ModelSupplierDraft;
-  setSupplierDraft: React.Dispatch<React.SetStateAction<ModelSupplierDraft>>;
-  supplierModels: Record<string, AvailableModelInfo[]>;
-  saveSupplier: () => Promise<void>;
-  deleteSupplier: () => Promise<void>;
-  fetchSupplierModels: (supplierId: string) => Promise<AvailableModelInfo[]>;
-  ensureSupplierModel: (supplierId: string, modelInfo: AvailableModelInfo) => Promise<ModelConfig>;
+export interface UseModelReturn extends
+  ReturnType<typeof useModelSuppliers>,
+  ReturnType<typeof useAsrModel>,
+  ReturnType<typeof useEmbeddingModel> {
   models: ModelConfig[];
   setModels: React.Dispatch<React.SetStateAction<ModelConfig[]>>;
   modelDraft: ModelConfigDraft;
@@ -101,17 +32,10 @@ export interface UseModelReturn {
   activeModelId: string;
   setActiveModelId: React.Dispatch<React.SetStateAction<string>>;
   routing: UseModelRoutingReturn;
-  embeddingDraft: ModelConfigDraft;
-  asrConfig: AsrConfig | null;
-  asrLoaded: boolean;
-  handleSelectAsrModel: (modelId: string, supplierId: string) => Promise<void>;
-  handleSaveAsrLanguage: (language: string) => Promise<void>;
   llmTestStatus: { status: "idle" | "testing" | "success" | "error"; message?: string };
   setLlmTestStatus: React.Dispatch<React.SetStateAction<{ status: "idle" | "testing" | "success" | "error"; message?: string }>>;
   modelTestStatuses: Record<string, { status: "idle" | "testing" | "success" | "error"; message?: string }>;
   setModelTestStatuses: React.Dispatch<React.SetStateAction<Record<string, { status: "idle" | "testing" | "success" | "error"; message?: string }>>>;
-  embeddingTestStatus: { status: "idle" | "testing" | "success" | "error"; message?: string };
-  setEmbeddingTestStatus: React.Dispatch<React.SetStateAction<{ status: "idle" | "testing" | "success" | "error"; message?: string }>>;
   availableModels: AvailableModelInfo[];
   modelListStatus: { status: "idle" | "loading" | "success" | "error"; message?: string };
   refreshModels: (selectId?: string) => Promise<void>;
@@ -123,36 +47,23 @@ export interface UseModelReturn {
   handleProviderChange: (provider: string) => void;
   handleTestLlm: () => Promise<void>;
   handleFetchAvailableModels: () => Promise<void>;
-  handleTestEmbedding: () => Promise<void>;
-  handleSelectEmbeddingModel: (modelId: string) => Promise<void>;
   handleActiveModelChange: (modelId: string) => Promise<void>;
 }
 
 export function useModel(
   setNotice: (message: string) => void,
   activeConversationId: string | (() => string),
-  setConversations: React.Dispatch<React.SetStateAction<Conversation[]>> | ((updater: any) => void),
+  setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>,
   setProjectConversations?: React.Dispatch<React.SetStateAction<Record<string, Conversation[]>>>
 ): UseModelReturn {
   const [models, setModels] = useState<ModelConfig[]>([]);
-  const [suppliers, setSuppliers] = useState<ModelSupplier[]>([]);
-  const [supplierDraft, setSupplierDraft] = useState<ModelSupplierDraft>({ name: "OpenAI", provider: "openai-compatible", base_url: "https://api.openai.com/v1", api_key: "" });
-  const [supplierModels, setSupplierModels] = useState<Record<string, AvailableModelInfo[]>>({});
   const [modelDraft, setModelDraft] = useState<ModelConfigDraft>(emptyModelDraft);
   const [activeModelId, setActiveModelId] = useState("");
   const routing = useModelRouting(models, activeModelId);
-  const [embeddingDraft, setEmbeddingDraft] = useState<ModelConfigDraft>(emptyEmbeddingDraft);
-  const [asrConfig, setAsrConfig] = useState<AsrConfig | null>(null);
-  const [asrLoaded, setAsrLoaded] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    setAsrLoaded(false);
-    void getAsrConfig().then((config) => { if (active) setAsrConfig(config); })
-      .catch((error) => { if (active) { setAsrConfig(null); setNotice(`读取 ASR 配置失败：${String(error)}`); } })
-      .finally(() => { if (active) setAsrLoaded(true); });
-    return () => { active = false; };
-  }, [suppliers]);
+  const supplier = useModelSuppliers(models, setModels, refreshModels, setNotice);
+  const asr = useAsrModel(supplier.suppliers, setModels, setNotice);
+  const embedding = useEmbeddingModel(models, setModels, setNotice);
+  const { embeddingDraft } = embedding;
   const [availableModels, setAvailableModels] = useState<AvailableModelInfo[]>([]);
   const [modelListStatus, setModelListStatus] = useState<{
     status: "idle" | "loading" | "success" | "error";
@@ -232,81 +143,11 @@ export function useModel(
     setLlmTestStatus(modelTestStatuses[modelId] || { status: "idle" });
   }, [modelDraft.id, modelTestStatuses]);
 
-  const [embeddingTestStatus, setEmbeddingTestStatus] = useState<{
-    status: "idle" | "testing" | "success" | "error";
-    message?: string;
-  }>({ status: "idle" });
-
-  useEffect(() => {
-    setEmbeddingTestStatus({ status: "idle" });
-  }, [
-    embeddingDraft.embedding_provider,
-    embeddingDraft.embedding_base_url,
-    embeddingDraft.embedding_model,
-    embeddingDraft.embedding_api_key
-  ]);
-
-  useEffect(() => {
-    const existing = models.find((m) => m.id === "embedding-config");
-    if (existing) {
-      setEmbeddingDraft(normalizeModelDraft(existing));
-    } else {
-      setEmbeddingDraft(emptyEmbeddingDraft);
-    }
-  }, [models]);
-
   // Initial load
   useEffect(() => {
     void refreshModels();
-    void listModelSuppliers().then(setSuppliers).catch((error) => setNotice(`获取供应商失败: ${String(error)}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function saveSupplier() {
-    try {
-      const saved = await saveModelSupplier(supplierDraft);
-      setSuppliers(await listModelSuppliers());
-      setSupplierDraft(saved);
-      setNotice("供应商已保存");
-    } catch (error) { setNotice(`保存供应商失败: ${String(error)}`); }
-  }
-
-  async function deleteSupplier() {
-    if (!supplierDraft.id) return;
-    if (!(await confirmAction(`确定要删除供应商「${supplierDraft.name}」吗？`))) return;
-    try {
-      const deletedId = supplierDraft.id;
-      await deleteModelSupplier(deletedId);
-      setSuppliers(await listModelSuppliers());
-      setSupplierModels((current) => {
-        const next = { ...current };
-        delete next[deletedId];
-        return next;
-      });
-      await refreshModels();
-      setSupplierDraft({ name: "OpenAI", provider: "openai-compatible", base_url: "https://api.openai.com/v1", api_key: "" });
-      setNotice("供应商及关联模型配置已删除");
-    } catch (error) { setNotice(`删除供应商失败: ${String(error)}`); }
-  }
-
-  async function fetchSupplierModels(supplierId: string) {
-    const supplier = suppliers.find((item) => item.id === supplierId);
-    if (!supplier) return [];
-    const items = await listAvailableModels({ ...emptyModelDraft, name: supplier.name, provider: supplier.provider, base_url: supplier.base_url, api_key: supplier.api_key });
-    setSupplierModels((current) => ({ ...current, [supplierId]: items }));
-    return items;
-  }
-
-  async function ensureSupplierModel(supplierId: string, modelInfo: AvailableModelInfo) {
-    const supplier = suppliers.find((item) => item.id === supplierId);
-    if (!supplier) throw new Error("供应商不存在");
-    const existing = models.find((item) => item.provider === supplier.provider && item.base_url === supplier.base_url && item.api_key === supplier.api_key && item.model === modelInfo.id);
-    const kind = modelInfo.suggested_kind === "chat" ? inferModelKind(modelInfo.id) : modelInfo.suggested_kind;
-    if (existing && (kind !== "asr" || existing.model_kind === "asr")) return existing;
-    const saved = await saveModelConfig({ ...(existing ? normalizeModelDraft(existing) : emptyModelDraft), name: supplier.name, provider: supplier.provider, base_url: supplier.base_url, api_key: supplier.api_key, model: modelInfo.id, model_kind: kind, context_window: modelInfo.context_window ?? 32_768 });
-    setModels((current) => current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current]);
-    return saved;
-  }
 
   async function refreshModels(selectId?: string) {
     try {
@@ -479,25 +320,6 @@ export function useModel(
     }
   }
 
-  async function handleTestEmbedding() {
-    setEmbeddingTestStatus({ status: "testing" });
-    try {
-      const updatedDraft = {
-        ...embeddingDraft,
-        id: "embedding-config",
-        name: "嵌入模型",
-        provider: embeddingDraft.embedding_provider,
-        base_url: embeddingDraft.embedding_base_url,
-        model: embeddingDraft.embedding_model,
-        api_key: embeddingDraft.embedding_api_key,
-      };
-      await testEmbeddingConnectivity(updatedDraft);
-      setEmbeddingTestStatus({ status: "success" });
-    } catch (err: any) {
-      setEmbeddingTestStatus({ status: "error", message: String(err) });
-    }
-  }
-
   async function handleActiveModelChange(modelId: string) {
     setActiveModelId(modelId);
     const resolvedActiveId = typeof activeConversationId === "function" ? activeConversationId() : activeConversationId;
@@ -525,62 +347,10 @@ export function useModel(
     }
   }
 
-  async function handleSelectEmbeddingModel(modelId: string) {
-    const latestModels = models.some((item) => item.id === modelId) ? models : await listModelConfigs();
-    const selected = latestModels.find((item) => item.id === modelId && isEmbeddingModel(item));
-    if (!selected) {
-      setNotice("请选择支持嵌入用途的供应商模型");
-      return;
-    }
-    const updatedDraft: ModelConfigDraft = {
-      ...emptyEmbeddingDraft,
-      embedding_provider: selected.provider,
-      embedding_base_url: selected.base_url,
-      embedding_model: selected.model,
-      embedding_api_key: selected.api_key,
-      provider: selected.provider,
-      base_url: selected.base_url,
-      model: selected.model,
-      api_key: selected.api_key
-    };
-    try {
-      const saved = await saveModelConfig(updatedDraft);
-      const nextModels = await listModelConfigs();
-      setModels(nextModels);
-      setEmbeddingDraft(normalizeModelDraft(saved));
-      setNotice(`嵌入模型已切换为 ${selected.name} · ${selected.model}`);
-    } catch (error) {
-      setNotice(`切换嵌入模型失败: ${String(error)}`);
-    }
-  }
-
-  async function handleSelectAsrModel(modelId: string, supplierId: string) {
-    const latestModels = await listModelConfigs();
-    const selected = latestModels.find((item) => item.id === modelId && isAsrModel(item));
-    const supplier = selected && suppliers.find((item) => item.id === supplierId && item.provider === selected.provider && item.base_url === selected.base_url && item.api_key === selected.api_key);
-    if (!selected || !supplier || supplier.provider !== "openai-compatible") {
-      throw new Error("请选择兼容 OpenAI 的供应商语音识别模型");
-    }
-    const saved = await saveAsrConfig({
-      supplier_id: supplier.id,
-      base_url: "",
-      api_key: "",
-      model: selected.model,
-      language: asrConfig?.language || ""
-    });
-    setAsrConfig(saved);
-    setModels(latestModels);
-    setNotice(`语音识别模型已切换为 ${supplier.name} · ${selected.model}`);
-  }
-
-  async function handleSaveAsrLanguage(language: string) {
-    if (!asrConfig) throw new Error("请先选择语音识别模型");
-    const saved = await saveAsrConfig({ ...asrConfig, language });
-    setAsrConfig(saved);
-  }
-
   return {
-    suppliers, supplierDraft, setSupplierDraft, supplierModels, saveSupplier, deleteSupplier, fetchSupplierModels, ensureSupplierModel,
+    ...supplier,
+    ...asr,
+    ...embedding,
     models,
     setModels,
     modelDraft,
@@ -588,17 +358,10 @@ export function useModel(
     activeModelId,
     setActiveModelId,
     routing,
-    embeddingDraft,
-    asrConfig,
-    asrLoaded,
-    handleSelectAsrModel,
-    handleSaveAsrLanguage,
     llmTestStatus,
     setLlmTestStatus,
     modelTestStatuses,
     setModelTestStatuses,
-    embeddingTestStatus,
-    setEmbeddingTestStatus,
     availableModels,
     modelListStatus,
     refreshModels,
@@ -610,8 +373,6 @@ export function useModel(
     handleProviderChange,
     handleTestLlm,
     handleFetchAvailableModels,
-    handleTestEmbedding,
-    handleSelectEmbeddingModel,
     handleActiveModelChange
   };
 }

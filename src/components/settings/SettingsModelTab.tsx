@@ -1,6 +1,6 @@
 import { Edit3, Loader2, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { ActionIcon, PasswordInput, Select, TextInput, Tooltip, UnstyledButton } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UseModelReturn } from "../../hooks/useModel";
 import type { ModelSupplier, ModelSupplierDraft } from "../../types";
 import IconTooltipButton from "../IconTooltipButton";
@@ -17,7 +17,8 @@ export function shouldAutoSaveSupplierApiKey(draft: ModelSupplierDraft, supplier
 
 export default function SettingsModelTab({ model }: Props) {
   const editing = Boolean(model.supplierDraft.id);
-  const [loadingSupplierId, setLoadingSupplierId] = useState("");
+  const inFlight = useRef(new Set<string>());
+  const [loadingSuppliers, setLoadingSuppliers] = useState<Record<string, boolean>>({});
   const [supplierErrors, setSupplierErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -27,21 +28,24 @@ export default function SettingsModelTab({ model }: Props) {
   }, [model.supplierDraft.api_key, model.supplierDraft.id, model.suppliers]);
 
   async function refreshSupplierModels(supplierId: string) {
-    setLoadingSupplierId(supplierId);
+    if (inFlight.current.has(supplierId)) return;
+    inFlight.current.add(supplierId);
+    setLoadingSuppliers((current) => ({ ...current, [supplierId]: true }));
     setSupplierErrors((current) => ({ ...current, [supplierId]: "" }));
     try {
       await model.fetchSupplierModels(supplierId);
     } catch (error) {
       setSupplierErrors((current) => ({ ...current, [supplierId]: String(error) }));
     } finally {
-      setLoadingSupplierId("");
+      inFlight.current.delete(supplierId);
+      setLoadingSuppliers((current) => ({ ...current, [supplierId]: false }));
     }
   }
 
   function supplierModelsTooltip(supplierId: string) {
     const models = model.supplierModels[supplierId] || [];
     const error = supplierErrors[supplierId];
-    if (loadingSupplierId === supplierId) return "正在获取模型列表…";
+    if (loadingSuppliers[supplierId]) return "正在获取模型列表…";
     if (error) return <div><strong>获取失败</strong><div>{error}</div></div>;
     if (models.length === 0) return "点击获取模型列表";
     return <div><strong>共 {models.length} 个模型</strong><div className="supplier-model-tooltip-list">{models.map((item) => <div key={item.id}>{item.id}</div>)}</div></div>;
@@ -51,11 +55,11 @@ export default function SettingsModelTab({ model }: Props) {
     <p className="description description--tight">这里只维护供应商连接；模型在“模型路由”中从供应商实时获取并选择。</p>
     <div className="model-config-grid llm-config-grid"><aside className="model-config-list">
       {model.suppliers.map((s) => {
-        const loading = loadingSupplierId === s.id;
+        const loading = loadingSuppliers[s.id];
         return <div key={s.id} className={s.id === model.supplierDraft.id ? "supplier-config-row active" : "supplier-config-row"}>
           <UnstyledButton className="model-config-row" onClick={() => model.setSupplierDraft(s)}><span className="status-dot status-dot--idle" /><div className="model-config-row-info"><strong>{s.name}</strong><span>{s.provider}</span></div></UnstyledButton>
           <Tooltip label={supplierModelsTooltip(s.id)} multiline w={420} position="right">
-            <ActionIcon className="supplier-config-refresh" aria-label={`获取 ${s.name} 模型列表`} variant="subtle" disabled={loading} onClick={() => void refreshSupplierModels(s.id)}>
+            <ActionIcon className="supplier-config-refresh" aria-label={`获取 ${s.name} 模型列表`} variant="subtle" disabled={loading} aria-busy={!!loading} onClick={() => void refreshSupplierModels(s.id)}>
               {loading ? <Loader2 size={16} className="svg-spin" /> : <RefreshCw size={16} />}
             </ActionIcon>
           </Tooltip>
@@ -70,8 +74,8 @@ export default function SettingsModelTab({ model }: Props) {
     </div><div className="modal-actions icon-actions icon-actions-bar"><div className="status-spacer" />
       <Tooltip label={model.supplierDraft.id ? supplierModelsTooltip(model.supplierDraft.id) : "请先保存供应商"} multiline w={420} position="top">
         <span className="icon-tooltip-target">
-          <button type="button" className="icon-text-btn settings-icon-action" aria-label="获取当前供应商模型列表" disabled={!model.supplierDraft.id || loadingSupplierId === model.supplierDraft.id} onClick={() => model.supplierDraft.id && void refreshSupplierModels(model.supplierDraft.id)}>
-            {model.supplierDraft.id && loadingSupplierId === model.supplierDraft.id ? <Loader2 size={18} className="svg-spin" /> : <RefreshCw size={18} />}
+          <button type="button" className="icon-text-btn settings-icon-action" aria-label="获取当前供应商模型列表" disabled={!model.supplierDraft.id || loadingSuppliers[model.supplierDraft.id]} aria-busy={!!(model.supplierDraft.id && loadingSuppliers[model.supplierDraft.id])} onClick={() => model.supplierDraft.id && void refreshSupplierModels(model.supplierDraft.id)}>
+            {model.supplierDraft.id && loadingSuppliers[model.supplierDraft.id] ? <Loader2 size={18} className="svg-spin" /> : <RefreshCw size={18} />}
           </button>
         </span>
       </Tooltip>
