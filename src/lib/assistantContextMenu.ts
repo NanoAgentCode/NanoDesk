@@ -1,5 +1,6 @@
 import { Menu } from "@tauri-apps/api/menu";
 import { setAssistantVisible } from "../api/assistant";
+import { showAppWindow } from "../api/desktop";
 
 export function registerAssistantContextMenu(surface: EventTarget, onError: (error: unknown) => void) {
   let menu: Promise<Menu> | undefined;
@@ -7,6 +8,10 @@ export function registerAssistantContextMenu(surface: EventTarget, onError: (err
   function onContextMenu(event: Event) {
     event.preventDefault();
     menu ||= Menu.new({ items: [{
+      id: "assistant-show-main",
+      text: "显示主窗口",
+      action: () => { void showAppWindow().catch(onError); }
+    }, {
       id: "assistant-close",
       text: "关闭",
       action: () => { void setAssistantVisible(false).catch(onError); }

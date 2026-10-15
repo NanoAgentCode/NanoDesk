@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ create: vi.fn(), popup: vi.fn(), close: vi.fn(), setVisible: vi.fn() }));
+const mocks = vi.hoisted(() => ({ create: vi.fn(), popup: vi.fn(), close: vi.fn(), setVisible: vi.fn(), showMain: vi.fn() }));
 vi.mock("@tauri-apps/api/menu", () => ({ Menu: { new: mocks.create } }));
 vi.mock("../api/assistant", () => ({ setAssistantVisible: mocks.setVisible }));
+vi.mock("../api/desktop", () => ({ showAppWindow: mocks.showMain }));
 import { registerAssistantContextMenu } from "./assistantContextMenu";
 
 describe("assistant context menu", () => {
   beforeEach(() => vi.clearAllMocks());
-  it("suppresses the default menu, offers only close, and turns the assistant off", async () => {
+  it("suppresses the default menu, offers show main and close without hiding the assistant when showing main", async () => {
     mocks.create.mockResolvedValue({ popup: mocks.popup, close: mocks.close });
     mocks.setVisible.mockResolvedValue(undefined);
+    mocks.showMain.mockResolvedValue(undefined);
     const surface = new EventTarget();
     const onError = vi.fn();
     const dispose = registerAssistantContextMenu(surface, onError);
@@ -17,9 +19,11 @@ describe("assistant context menu", () => {
     expect(event.defaultPrevented).toBe(true);
     await vi.waitFor(() => expect(mocks.popup).toHaveBeenCalledOnce());
     const items = mocks.create.mock.calls[0][0].items;
-    expect(items).toHaveLength(1);
-    expect(items[0].text).toBe("关闭");
+    expect(items.map((item: { text: string }) => item.text)).toEqual(["显示主窗口", "关闭"]);
     items[0].action();
+    await vi.waitFor(() => expect(mocks.showMain).toHaveBeenCalledOnce());
+    expect(mocks.setVisible).not.toHaveBeenCalled();
+    items[1].action();
     await vi.waitFor(() => expect(mocks.setVisible).toHaveBeenCalledWith(false));
     dispose();
     await vi.waitFor(() => expect(mocks.close).toHaveBeenCalledOnce());
@@ -27,6 +31,20 @@ describe("assistant context menu", () => {
     surface.dispatchEvent(later);
     expect(later.defaultPrevented).toBe(false);
     expect(onError).not.toHaveBeenCalled();
+  });
+  it("reports a failure to show the main window", async () => {
+    mocks.create.mockResolvedValue({ popup: mocks.popup, close: mocks.close });
+    const error = new Error("show failed");
+    mocks.showMain.mockRejectedValueOnce(error);
+    const surface = new EventTarget();
+    const onError = vi.fn();
+    const dispose = registerAssistantContextMenu(surface, onError);
+    surface.dispatchEvent(new Event("contextmenu", { cancelable: true }));
+    await vi.waitFor(() => expect(mocks.popup).toHaveBeenCalledOnce());
+    mocks.create.mock.calls[0][0].items[0].action();
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(error));
+    expect(mocks.setVisible).not.toHaveBeenCalled();
+    dispose();
   });
   it("still suppresses the default menu if menu creation fails", async () => {
     mocks.create.mockRejectedValueOnce(new Error("menu failed"));
