@@ -272,7 +272,7 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-bottom-actions">
-        {pluginMainViews.map((view) => {
+        {pluginMainViews.filter((view) => view.id !== "ops").map((view) => {
           const Icon = view.icon;
           return (
             <UnstyledButton
