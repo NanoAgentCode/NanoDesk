@@ -48,6 +48,8 @@
 .ocr-fields { display: grid; gap: 10px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .ocr-field { display: grid; grid-template-columns: 160px minmax(0, 1fr); align-items: center; gap: 12px; }
 .ocr-field > input, .ocr-field > select { width: 100%; min-width: 0; margin: 0; }
+.ocr-provider-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.ocr-provider-control > select { width: 100%; min-width: 0; margin: 0; }
 .ocr-field > label { margin: 0; line-height: 1.4; }
 .ocr-local-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-height: 34px; }
 @media (max-width: 600px) {

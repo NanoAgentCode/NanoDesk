@@ -19,6 +19,7 @@ it.each(["local", "external", "mineru"] as const)("shows the fields for %s", pro
   expect(html).toContain("保存 OCR 配置");
   const header = html.match(/<header class="ocr-header">([\s\S]*?)<\/header>/)?.[1];
   expect(header).toBeDefined();
-  expect(header).toContain("保存 OCR 配置");
+  expect(header).not.toContain("保存 OCR 配置");
+  expect(html).toMatch(/class="ocr-provider-control">[\s\S]*?<select[^>]*id="ocr-provider"[\s\S]*?<\/select>[\s\S]*?aria-label="保存 OCR 配置"/);
   expect(html).toMatch(/<fieldset[^>]*class="ocr-fields"[^>]*>[\s\S]*?id="ocr-provider"/);
 });

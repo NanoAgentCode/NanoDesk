@@ -113,9 +113,6 @@ export default function SettingsEnvironmentTab({ env }: SettingsEnvironmentTabPr
         <header className="ocr-header">
           <strong>OCR</strong>
           <div className="env-status-actions">
-            <IconTooltipButton label={env.isSavingOcr ? "保存中" : "保存 OCR 配置"} tone="success" disabled={env.isLoadingOcr || env.isSavingOcr} onClick={env.handleSaveOcr}>
-              {env.isSavingOcr ? <Loader2 size={17} className="svg-spin" /> : <Save size={17} />}
-            </IconTooltipButton>
             {env.ocrConfig.provider === "local" && !env.envStatus.paddleocr && (
               <IconTooltipButton label={env.isInstallingEnv ? "安装中" : "安装 PaddleOCR"} onClick={env.handleInstallPaddleOcr} disabled={env.isInstallingEnv || env.isCheckingEnv || !env.envStatus.python}>
                 {env.isInstallingEnv ? <Loader2 size={17} className="svg-spin" /> : <Download size={17} />}
@@ -126,11 +123,16 @@ export default function SettingsEnvironmentTab({ env }: SettingsEnvironmentTabPr
         <fieldset className="ocr-fields" disabled={env.isLoadingOcr || env.isSavingOcr}>
           <div className="ocr-field">
             <label className="env-section-label" htmlFor="ocr-provider">识别方式</label>
-            <select id="ocr-provider" className="env-input-compact" disabled={env.isLoadingOcr || env.isSavingOcr} value={env.ocrConfig.provider} onChange={e => env.setOcrConfig({ ...env.ocrConfig, provider: e.target.value as typeof env.ocrConfig.provider })}>
-              <option value="local">本地 OCR（PaddleOCR）</option>
-              <option value="external">外部 OCR API（OpenAI 兼容）</option>
-              <option value="mineru">MinerU API（自建服务）</option>
-            </select>
+            <div className="ocr-provider-control">
+              <select id="ocr-provider" className="env-input-compact" disabled={env.isLoadingOcr || env.isSavingOcr} value={env.ocrConfig.provider} onChange={e => env.setOcrConfig({ ...env.ocrConfig, provider: e.target.value as typeof env.ocrConfig.provider })}>
+                <option value="local">本地 OCR（PaddleOCR）</option>
+                <option value="external">外部 OCR API（OpenAI 兼容）</option>
+                <option value="mineru">MinerU API（自建服务）</option>
+              </select>
+            <IconTooltipButton label={env.isSavingOcr ? "保存中" : "保存 OCR 配置"} tone="success" disabled={env.isLoadingOcr || env.isSavingOcr} onClick={env.handleSaveOcr}>
+              {env.isSavingOcr ? <Loader2 size={17} className="svg-spin" /> : <Save size={17} />}
+            </IconTooltipButton>
+            </div>
           </div>
           {env.ocrConfig.provider === "local" && <div className="ocr-field">
             <span className="env-section-label">本地环境</span>
