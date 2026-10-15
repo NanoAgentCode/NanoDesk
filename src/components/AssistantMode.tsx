@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, MessageCircle, Plus, X, ExternalLink } from "lucide-react";
+import { ArrowUp, MessageCircle, Plus, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { classifyAttachment, attachmentName } from "../lib/attachmentUploads";
 import { listConversationProjectPaths, listConversations } from "../api/conversations";
-import { showAppWindow } from "../api/desktop";
 import { resizeAssistant, submitAssistantRequest } from "../api/assistant";
 import { filterAssistantConversations, getConversationMention, removeConversationMention } from "../lib/assistantMode";
 import type { Conversation } from "../types";
@@ -142,10 +141,6 @@ export default function AssistantMode() {
         {!suggestions.length && <p>{loading ? "正在读取会话…" : "没有匹配的会话"}</p>}
       </div>
     </section>}
-    <div className="assistant-toolbar"><span data-tauri-drag-region>NanoDesk</span>
-      <button type="button" aria-label="打开主窗口" onClick={() => void showAppWindow().then(() => setExpanded(false)).catch((err) => setError(String(err)))}><ExternalLink size={14} /></button>
-      <button type="button" aria-label="收起助手" disabled={busy} onClick={() => setExpanded(false)}><X size={16} /></button>
-    </div>
     <div className="assistant-input-bar">
       <button className="assistant-new" type="button" aria-label="上传文件" title="添加附件（图片、音频、文档）" disabled={busy || choosingFiles} onClick={() => void chooseFiles()}><Plus size={24} /></button>
       {selected && <button className="assistant-target" type="button" title={`继续：${selected.title}；点击取消`} disabled={busy} onClick={() => setSelected(null)}><MessageCircle size={16} /><span>{selected.title}</span><X size={12} /></button>}
