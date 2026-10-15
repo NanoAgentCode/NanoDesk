@@ -63,7 +63,7 @@ export default function AgentRuntimePanel({
     >
       <div className="agent-runtime-titlebar">
         <div>
-          <h2>Agent Runtime</h2>
+          <h2>运行详情</h2>
           <p>{activeConversationTitle || "当前会话"}</p>
         </div>
         <span className="agent-runtime-title-meta">
@@ -131,7 +131,7 @@ export default function AgentRuntimePanel({
         </div>
       ) : activeTimeline ? null : (
         <div className="empty" style={{ padding: "20px" }}>
-          当前会话还没有 Agent Runtime 记录
+          当前会话暂无运行记录
         </div>
       )}
     </section>

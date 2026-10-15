@@ -314,13 +314,13 @@ export default function ChatPane({
               <Button size="compact-xs" variant="subtle" color="red" loading={interruptingGeneration}
                 onClick={() => void handleInterruptGeneration()}>停止任务</Button>
             )}
-            <Tooltip label="Agent Runtime 运行详情" openDelay={450}>
+            <Tooltip label="运行详情" openDelay={450}>
               <MantineActionIcon
                 ref={runtimeToggleBtnRef}
                 className={`chat-header-square ${obs.showChatRuntime ? "active" : ""}`}
                 variant={obs.showChatRuntime ? "light" : "subtle"}
                 color={obs.showChatRuntime ? "nanoBlue" : "gray"}
-                aria-label="Agent Runtime 运行详情"
+                aria-label="运行详情"
                 onClick={handleToggleRuntime}
               >
                 <Activity size={16} />
