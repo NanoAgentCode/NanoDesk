@@ -34,3 +34,19 @@ body.assistant-surface { min-width: 0; background: transparent; overflow: hidden
 .assistant-picker p { padding: 12px; font-size: 13px; color: #8191a8; }
 .assistant-error { margin: 5px 14px 0; padding: 4px 8px; border-radius: 8px; color: #a42b35; background: #fff2f2; font-size: 12px; }
 .assistant-panel button:focus-visible, .assistant-orb:focus-visible { outline: 2px solid #377ffa; outline-offset: 2px; }
+
+.assistant-panel--opening { transform: translateX(-20%) scale(.8); transform-origin: bottom right; animation: assistant-panel-expand var(--assistant-transition-duration) cubic-bezier(.2,.8,.2,1) both; }
+.assistant-panel--closing { transform: translateX(-20%) scale(.8); transform-origin: bottom right; pointer-events: none; animation: assistant-panel-collapse var(--assistant-transition-duration) cubic-bezier(.4,0,.8,.2) both; }
+@keyframes assistant-panel-expand {
+  from { opacity: 0; transform: translate(-20%, 12px) scale(.6); }
+  to { opacity: 1; transform: translate(-20%, 0) scale(.8); }
+}
+@keyframes assistant-panel-collapse {
+  from { opacity: 1; transform: translate(-20%, 0) scale(.8); }
+  to { opacity: 0; transform: translate(-20%, 12px) scale(.6); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assistant-panel--opening, .assistant-panel--closing { animation-name: assistant-panel-fade; }
+  @keyframes assistant-panel-fade { from { opacity: 0; } to { opacity: 1; } }
+  .assistant-panel--closing { animation-direction: reverse; }
+}

@@ -12,10 +12,13 @@ import "./AssistantMode.css";
 import brandIcon from "./assistant-icon.svg";
 import { registerAssistantContextMenu } from "../lib/assistantContextMenu";
 import { createAssistantBlurTimer } from "../lib/assistantFocus";
+import { ASSISTANT_TRANSITION_MS, createAssistantTransition, type AssistantPhase } from "../lib/assistantTransition";
 import { useBackgroundAgents } from "../hooks/chat/useBackgroundAgents";
 
 export default function AssistantMode() {
   const [expanded, setExpanded] = useState(false);
+  const [phase, setPhase] = useState<AssistantPhase>("icon");
+  const transition = useRef<ReturnType<typeof createAssistantTransition> | null>(null);
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState<Conversation | null>(null);
@@ -63,10 +66,19 @@ export default function AssistantMode() {
     return () => document.body.classList.remove("assistant-surface");
   }, []);
   useEffect(() => {
-    void resizeAssistant(expanded ? mention ? "picker" : "input" : "icon").then(() => {
-      if (expanded) input.current?.focus();
-    }).catch((err) => setError(String(err)));
+    const controller = createAssistantTransition(resizeAssistant, setPhase, (err, expanding) => {
+      setError(String(err));
+      setExpanded(!expanding);
+    });
+    transition.current = controller;
+    return () => { controller.dispose(); transition.current = null; };
+  }, []);
+  useEffect(() => {
+    transition.current?.update(expanded ? mention ? "picker" : "input" : "icon");
   }, [expanded, !!mention]);
+  useEffect(() => {
+    if (phase === "opening") input.current?.focus();
+  }, [phase]);
   useEffect(() => {
     if (!expanded) return;
     let active = true;
@@ -109,7 +121,8 @@ export default function AssistantMode() {
     } catch (err) { setError(String(err)); }
     finally { setChoosingFiles(false); }
   }
-  if (!expanded) return <button className={`assistant-orb${running ? " assistant-orb--running" : ""}`} type="button" aria-label="打开桌面助手" aria-busy={running} title={running ? "任务进行中；点击提问，拖动移动" : "点击提问，拖动移动"}
+  if (phase === "preparing") return null;
+  if (phase === "icon") return <button className={`assistant-orb${running ? " assistant-orb--running" : ""}`} type="button" aria-label="打开桌面助手" aria-busy={running} title={running ? "任务进行中；点击提问，拖动移动" : "点击提问，拖动移动"}
     onPointerDown={(event) => { dragged.current = false; origin.current = { x: event.clientX, y: event.clientY }; }}
     onPointerMove={(event) => {
       if (event.buttons === 1 && !dragged.current && Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 5) {
@@ -118,7 +131,7 @@ export default function AssistantMode() {
     }}
     onClick={() => { if (!dragged.current) setExpanded(true); }}><img src={brandIcon} alt="NanoDesk" /></button>;
 
-  return <main className="assistant-panel">
+  return <main className={`assistant-panel assistant-panel--${phase}`} style={{ "--assistant-transition-duration": `${ASSISTANT_TRANSITION_MS}ms` } as React.CSSProperties} aria-hidden={!expanded} {...(!expanded ? { inert: "" } : {})}>
     {mention && <section className="assistant-picker" aria-label="选择已有会话">
       <div className="assistant-picker-heading">继续已有会话 <span>↑ ↓ 选择 · Enter 确认</span></div>
       <div role="listbox" id="assistant-conversations">
