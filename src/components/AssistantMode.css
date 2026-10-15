@@ -4,19 +4,19 @@ body.assistant-surface { min-width: 0; background: transparent; overflow: hidden
 .assistant-orb img { width: 100%; height: 100%; display: block; pointer-events: none; }
 .assistant-orb--running img { animation: assistant-task-spin 3s linear infinite; }
 @keyframes assistant-task-spin { to { transform: rotate(360deg); } }
-.assistant-panel { position: absolute; bottom: 10px; left: 10px; width: calc((100vw - 20px) * 1.25); transform: scale(.8); transform-origin: bottom left; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
+.assistant-panel { position: absolute; bottom: 6px; left: 10px; width: calc((100vw - 20px) * 1.25); transform: scale(.8); transform-origin: bottom left; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
 .assistant-files { display: flex; gap: 6px; overflow-x: auto; padding: 6px 4px; }
 .assistant-files button { display: flex; align-items: center; gap: 5px; flex-shrink: 0; max-width: 200px; padding: 6px 10px; border-radius: 12px; background: #fff; color: #285ca8; font-size: 12px; }
 .assistant-files span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-toolbar { display: flex; align-items: center; gap: 4px; color: #365582; padding: 0 14px 6px; font-size: 12px; }
-.assistant-toolbar span { margin-right: auto; cursor: move; background: #fff; border-radius: 10px; padding: 3px 8px; }
+.assistant-toolbar { display: flex; align-items: center; gap: 4px; color: #365582; padding: 0 14px 3px; font-size: 12px; }
+.assistant-toolbar span { margin-right: auto; cursor: move; background: #fff; border-radius: 10px; padding: 2px 8px; }
 .assistant-toolbar button { display: grid; place-items: center; background: #fff; border-radius: 50%; width: 24px; height: 24px; color: #365582; }
-.assistant-input-bar { background: #fff; border-radius: 40px; padding: 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 16px #17376324; }
+.assistant-input-bar { background: #fff; border-radius: 40px; padding: 6px 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 16px #17376324; }
 .assistant-new, .assistant-send { flex-shrink: 0; border-radius: 50%; width: 46px; height: 46px; display: grid; place-items: center; }
 .assistant-new { background: #f3f4f5; color: #333; }
 .assistant-send { background: #377ffa; color: #fff; }
 .assistant-panel button:disabled { opacity: .45; cursor: default; }
-.assistant-input-bar input { width: 100%; min-width: 40px; flex: 1; background: transparent; border: none; outline: none; font-size: 16px; color: #285ca8; padding: 4px 0; }
+.assistant-input-bar input { width: 100%; min-width: 40px; flex: 1; background: transparent; border: none; outline: none; font-size: 16px; color: #285ca8; padding: 2px 0; }
 .assistant-input-bar input::placeholder { color: #8191a8; font-size: 14px; }
 .assistant-input-bar input:focus-visible { outline: none; }
 .assistant-input-bar:focus-within { box-shadow: 0 4px 16px #17376324, 0 0 0 1px #b7d1fb; }
