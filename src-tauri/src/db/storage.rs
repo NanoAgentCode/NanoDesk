@@ -2,63 +2,12 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 #[cfg(test)]
 use rusqlite::OptionalExtension;
 
 use super::Database;
 use crate::error::{AppError, AppResult};
-
-const CONFIG_TABLES: &[&str] = &[
-    "model_configs",
-    "model_suppliers",
-    "mcp_servers",
-    "ops_servers",
-];
-const CONVERSATION_TABLES: &[&str] = &[
-    // model_configs is an internal reference mirror for cross-database foreign keys.
-    "model_configs",
-    "conversations",
-    "messages",
-    "rag_files",
-    "rag_chunks",
-    "rag_embeddings",
-    "rag_chunks_fts",
-    "profile_state",
-    "profile_settings",
-    "profile_observations",
-    "profile_extraction_batches",
-    "profile_batch_observations",
-    "user_profile_facts",
-    "user_profile_fact_sources",
-    "profile_fact_tombstones",
-    "profile_batch_commits",
-    "profile_foreground_leases",
-    "profile_usage_attempts",
-];
-const KNOWLEDGE_TABLES: &[&str] = &[
-    "items",
-    "items_fts",
-    "memories",
-    "memories_fts",
-    "memory_embeddings",
-    "memory_entities",
-    "memory_entities_fts",
-    "memory_entity_links",
-    "memory_relations",
-];
-const PROJECT_INDEX_TABLES: &[&str] = &[
-    "code_index_runs",
-    "code_entities",
-    "code_relations",
-    "code_chunks",
-    "code_chunks_fts",
-    "code_embeddings",
-    "project_index_runs",
-    "project_index_chunks",
-    "project_index_chunks_fts",
-    "project_index_embeddings",
-];
 
 pub(super) struct DatabasePaths {
     pub(super) config: PathBuf,
@@ -98,54 +47,14 @@ impl DatabasePaths {
 
 impl Database {
     pub(super) fn initialize_split_storage(&self) -> AppResult<()> {
-        Self::prepare_database(&self.config_conn, CONFIG_TABLES)?;
-        Self::prepare_database(&self.conn, CONVERSATION_TABLES)?;
-        Self::prepare_database(&self.knowledge_conn, KNOWLEDGE_TABLES)?;
-        Self::prepare_database(&self.project_conn, PROJECT_INDEX_TABLES)?;
+        Self::init_config_schema(&self.config_conn)?;
+        Self::init_conversation_schema(&self.conn)?;
+        Self::init_knowledge_schema(&self.knowledge_conn)?;
+        Self::init_project_index_schema(&self.project_conn)?;
 
         self.sync_model_config_references()?;
         self.rebuild_missing_memory_graphs()
             .map_err(|error| AppError::Message(format!("memory graph rebuild failed: {error}")))?;
-        Ok(())
-    }
-
-    fn prepare_database(conn: &Connection, retained_tables: &[&str]) -> AppResult<()> {
-        Self::init_full_schema(conn)?;
-        Self::remove_unowned_tables(conn, retained_tables)?;
-        Ok(())
-    }
-
-    fn remove_unowned_tables(conn: &Connection, retained_tables: &[&str]) -> AppResult<()> {
-        let retained = retained_tables.iter().copied().collect::<HashSet<_>>();
-        let mut stmt = conn.prepare(
-            "SELECT name, type FROM pragma_table_list
-             WHERE schema = 'main' AND type IN ('table', 'virtual') AND name NOT LIKE 'sqlite_%'",
-        )?;
-        let entries = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        drop(stmt);
-
-        conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
-        for (name, _) in entries {
-            let is_memory_vector = retained.contains("memory_embeddings")
-                && name
-                    .strip_prefix("memory_vectors_")
-                    .and_then(|value| value.parse::<usize>().ok())
-                    .is_some();
-            if !retained.contains(name.as_str())
-                && !is_memory_vector
-                && name != "storage_migrations"
-            {
-                conn.execute_batch(&format!(
-                    "DROP TABLE IF EXISTS {};",
-                    quote_identifier(&name)
-                ))?;
-            }
-        }
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(())
     }
 
@@ -192,10 +101,6 @@ impl Database {
         }
         result
     }
-}
-
-fn quote_identifier(value: &str) -> String {
-    format!("\"{}\"", value.replace('"', "\"\""))
 }
 
 #[cfg(test)]
@@ -261,6 +166,36 @@ mod tests {
         let saved = db.save_model_config(draft).unwrap();
         assert_eq!(saved.model_kind, "asr");
         assert_eq!(db.get_model_config("asr-model").unwrap().model_kind, "asr");
+    }
+
+    #[test]
+    fn reopening_current_storage_does_not_rebuild_schema_or_invent_suppliers() {
+        let base_path = temp_database_path("reopen-current");
+        fs::create_dir_all(base_path.parent().unwrap()).unwrap();
+        let db = Database::open(base_path.clone()).unwrap();
+        db.save_model_config(model_draft("model-1", "Standalone")).unwrap();
+        let conversation = db.create_conversation(ConversationDraft {
+            title: Some("Keep history".into()),
+            model_config_id: Some("model-1".into()),
+            project_path: None,
+        }).unwrap();
+        db.append_message(MessageDraft {
+            conversation_id: conversation.id.clone(), role: "user".into(),
+            content: "preserved".into(), metadata: None,
+        }).unwrap();
+        let versions = |db: &Database| {
+            [&db.config_conn, &db.conn, &db.knowledge_conn, &db.project_conn]
+                .map(|conn| conn.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0)).unwrap())
+        };
+        let before = versions(&db);
+        drop(db);
+        let db = Database::open(base_path.clone()).unwrap();
+        assert_eq!(versions(&db), before, "opening current storage must not recreate tables");
+        assert!(db.list_model_suppliers().unwrap().is_empty());
+        assert_eq!(db.get_model_config("model-1").unwrap().name, "Standalone");
+        assert_eq!(db.list_messages(&conversation.id).unwrap()[0].content, "preserved");
+        drop(db);
+        fs::remove_dir_all(base_path.parent().unwrap()).unwrap();
     }
 
     #[test]

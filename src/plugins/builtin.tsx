@@ -1,18 +1,20 @@
+import { lazy } from "react";
 import { Archive, BarChart3, Bot, Brain, CalendarClock, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
 import { AppPluginRegistry, type FrontendPlugin } from "../core/plugins";
-import OpsPanel from "../components/OpsPanel";
-import AutomationPanel from "../components/AutomationPanel";
-import SettingsThemeTab from "../components/settings/SettingsThemeTab";
-import SettingsMemoryTab from "../components/settings/SettingsMemoryTab";
-import SettingsProfileTab from "../components/settings/SettingsProfileTab";
-import SettingsArchiveTab from "../components/settings/SettingsArchiveTab";
-import SettingsModelTab from "../components/settings/SettingsModelTab";
-import SettingsSkillsTab from "../components/settings/SettingsSkillsTab";
-import SettingsUsageTab from "../components/settings/SettingsUsageTab";
-import SettingsMcpTab from "../components/settings/SettingsMcpTab";
-import SettingsEnvironmentTab from "../components/settings/SettingsEnvironmentTab";
-import SettingsRoutingTab from "../components/settings/SettingsRoutingTab";
 import { APP_PLUGIN_NAMESPACE } from "../config/brand";
+
+const OpsPanel = lazy(() => import("../components/OpsPanel"));
+const AutomationPanel = lazy(() => import("../components/AutomationPanel"));
+const SettingsThemeTab = lazy(() => import("../components/settings/SettingsThemeTab"));
+const SettingsMemoryTab = lazy(() => import("../components/settings/SettingsMemoryTab"));
+const SettingsProfileTab = lazy(() => import("../components/settings/SettingsProfileTab"));
+const SettingsArchiveTab = lazy(() => import("../components/settings/SettingsArchiveTab"));
+const SettingsModelTab = lazy(() => import("../components/settings/SettingsModelTab"));
+const SettingsSkillsTab = lazy(() => import("../components/settings/SettingsSkillsTab"));
+const SettingsUsageTab = lazy(() => import("../components/settings/SettingsUsageTab"));
+const SettingsMcpTab = lazy(() => import("../components/settings/SettingsMcpTab"));
+const SettingsEnvironmentTab = lazy(() => import("../components/settings/SettingsEnvironmentTab"));
+const SettingsRoutingTab = lazy(() => import("../components/settings/SettingsRoutingTab"));
 
 const coreUiPlugin: FrontendPlugin = {
   manifest: {

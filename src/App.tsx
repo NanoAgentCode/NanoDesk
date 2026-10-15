@@ -3,7 +3,7 @@ import { useAssistantHandoff } from "./hooks/useAssistantHandoff";
 import ProjectDialogs from "./components/app/ProjectDialogs";
 import RenameConversationDialog from "./components/app/RenameConversationDialog";
 import CloseAppDialog from "./components/app/CloseAppDialog";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Alert, Badge, Button, Group, MantineProvider, Modal, Stack, Text, TextInput, ThemeIcon } from "@mantine/core";
 import { Archive, Cpu, Edit, FolderOpen, Trash2, Upload } from "lucide-react";
@@ -27,7 +27,6 @@ import Sidebar from "./components/Sidebar";
 import ChatPane from "./components/ChatPane";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import NotificationToast from "./components/NotificationToast";
-import SettingsModal from "./components/settings/SettingsModal";
 import { nanoTheme } from "./theme";
 import { appPlugins } from "./plugins/builtin";
 import { confirmAction } from "./lib/dialogs";
@@ -48,6 +47,8 @@ import { APP_STORAGE_PREFIX } from "./config/brand";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import WindowControls from "./components/WindowControls";
 import { registerWindowShortcuts } from "./lib/windowShortcuts";
+
+const SettingsModal = lazy(() => import("./components/settings/SettingsModal"));
 
 const SIDEBAR_COLLAPSED_KEY = `${APP_STORAGE_PREFIX}-sidebar-collapsed`;
 const SIDEBAR_WIDTH_KEY = `${APP_STORAGE_PREFIX}-sidebar-width`;
@@ -224,7 +225,6 @@ function App() {
   async function loadAll() {
     try {
       await chat.refreshConversations();
-      void memory.refreshMemories("");
     } catch (error) {
       setNotice(String(error));
     }
@@ -436,32 +436,34 @@ function App() {
         handleConfirmClosePrompt={handleConfirmClosePrompt} />
 
       {showModelConfig && (
-        <SettingsModal
-          plugins={appPlugins}
-          showModelConfig={showModelConfig}
-          setShowModelConfig={setShowModelConfig}
-          activeSettingsTab={activeSettingsTab}
-          setActiveSettingsTab={setActiveSettingsTab}
-          themeMode={themeMode}
-          setThemeMode={setThemeMode}
-          workspace={workspace}
-          memory={memory}
-          workspaceRef={workspaceRef}
-          model={model}
-          skills={skills}
-          mcp={mcp}
-          env={env}
-          archivedConversations={archivedConversations}
-          previewArchivedId={previewArchivedId}
-          previewMessages={previewMessages}
-          loadArchivedPreview={loadArchivedPreview}
-          handleRestoreConversation={handleRestoreConversation}
-          handleDeleteArchivedConversation={handleDeleteArchivedConversation}
-        />
+        <Suspense fallback={<Text role="status">正在加载设置…</Text>}>
+          <SettingsModal
+            plugins={appPlugins}
+            showModelConfig={showModelConfig}
+            setShowModelConfig={setShowModelConfig}
+            activeSettingsTab={activeSettingsTab}
+            setActiveSettingsTab={setActiveSettingsTab}
+            themeMode={themeMode}
+            setThemeMode={setThemeMode}
+            workspace={workspace}
+            memory={memory}
+            workspaceRef={workspaceRef}
+            model={model}
+            skills={skills}
+            mcp={mcp}
+            env={env}
+            archivedConversations={archivedConversations}
+            previewArchivedId={previewArchivedId}
+            previewMessages={previewMessages}
+            loadArchivedPreview={loadArchivedPreview}
+            handleRestoreConversation={handleRestoreConversation}
+            handleDeleteArchivedConversation={handleDeleteArchivedConversation}
+          />
+        </Suspense>
       )}
 
       {ActivePluginView ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<Text role="status">正在加载页面…</Text>}>
           <ActivePluginView setNotice={setNotice} />
         </Suspense>
       ) : (

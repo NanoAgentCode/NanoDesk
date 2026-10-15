@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { Settings } from "lucide-react";
 import { Group, Modal, NavLink, Text, ThemeIcon } from "@mantine/core";
 import { useViewportSize } from "@mantine/hooks";
@@ -131,7 +132,9 @@ export default function SettingsModal({
           </aside>
 
           <div className="settings-content">
-            {activeContribution?.render(context)}
+            <Suspense fallback={<Text c="dimmed" role="status">正在加载设置…</Text>}>
+              {activeContribution?.render(context)}
+            </Suspense>
           </div>
         </div>
     </Modal>

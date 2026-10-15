@@ -1,29 +1,12 @@
 use super::*;
 
 impl Database {
-    pub(super) fn init_full_schema(conn: &Connection) -> AppResult<()> {
+    pub(super) fn init_config_schema(conn: &Connection) -> AppResult<()> {
         conn.execute_batch(
             "
             PRAGMA foreign_keys = ON;
+
             PRAGMA journal_mode = WAL;
-
-            CREATE TABLE IF NOT EXISTS items (
-                id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,
-                title TEXT NOT NULL,
-                body TEXT NOT NULL,
-                status TEXT NOT NULL,
-                tags_json TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
-                id UNINDEXED,
-                title,
-                body,
-                tags
-            );
 
             CREATE TABLE IF NOT EXISTS model_configs (
                 id TEXT PRIMARY KEY,
@@ -62,12 +45,6 @@ impl Database {
                 updated_at TEXT NOT NULL
             );
 
-            INSERT INTO model_suppliers (id, name, provider, base_url, api_key, created_at, updated_at)
-            SELECT lower(hex(randomblob(16))), m.name, m.provider, m.base_url, m.api_key, m.created_at, m.updated_at
-            FROM model_configs m
-            WHERE m.id <> 'embedding-config'
-              AND NOT EXISTS (SELECT 1 FROM model_suppliers s WHERE s.provider=m.provider AND s.base_url=m.base_url AND s.api_key=m.api_key);
-
             CREATE TABLE IF NOT EXISTS mcp_servers (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -93,6 +70,44 @@ impl Database {
                 key_path TEXT NOT NULL DEFAULT '',
                 password TEXT NOT NULL DEFAULT '',
                 remote_dir TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            ",
+        )?;
+        Ok(())
+    }
+
+    pub(super) fn init_conversation_schema(conn: &Connection) -> AppResult<()> {
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON;
+
+            PRAGMA journal_mode = WAL;
+
+            CREATE TABLE IF NOT EXISTS model_configs (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                base_url TEXT NOT NULL,
+                model TEXT NOT NULL,
+                api_key TEXT NOT NULL,
+                temperature REAL NOT NULL DEFAULT 0.4,
+                max_tokens INTEGER,
+                context_window INTEGER NOT NULL DEFAULT 32768,
+                top_p REAL,
+                reasoning_effort TEXT NOT NULL DEFAULT '',
+                model_kind TEXT NOT NULL DEFAULT 'chat',
+                routing_group TEXT NOT NULL DEFAULT '默认组',
+                routing_enabled INTEGER NOT NULL DEFAULT 1,
+                routing_cost INTEGER NOT NULL DEFAULT 3,
+                routing_quality INTEGER NOT NULL DEFAULT 3,
+                routing_speed INTEGER NOT NULL DEFAULT 3,
+                routing_tasks_json TEXT NOT NULL DEFAULT '[]',
+                embedding_provider TEXT NOT NULL DEFAULT 'openai-compatible',
+                embedding_base_url TEXT NOT NULL DEFAULT '',
+                embedding_model TEXT NOT NULL DEFAULT '',
+                embedding_api_key TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -168,211 +183,14 @@ impl Database {
                 text
             );
 
-            CREATE TABLE IF NOT EXISTS code_index_runs (
-                id TEXT PRIMARY KEY,
-                project_path TEXT NOT NULL,
-                status TEXT NOT NULL,
-                file_count INTEGER NOT NULL,
-                entity_count INTEGER NOT NULL,
-                relation_count INTEGER NOT NULL,
-                chunk_count INTEGER NOT NULL,
-                error TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS code_entities (
-                id TEXT PRIMARY KEY,
-                project_path TEXT NOT NULL,
-                file_path TEXT NOT NULL,
-                name TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                language TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                signature TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS code_relations (
-                id TEXT PRIMARY KEY,
-                project_path TEXT NOT NULL,
-                source_entity_id TEXT,
-                source_name TEXT NOT NULL,
-                target_entity_id TEXT,
-                target_name TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                file_path TEXT NOT NULL,
-                line INTEGER NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS code_chunks (
-                id TEXT PRIMARY KEY,
-                project_path TEXT NOT NULL,
-                file_path TEXT NOT NULL,
-                language TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                text TEXT NOT NULL,
-                content_hash TEXT NOT NULL,
-                token_count INTEGER NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS code_chunks_fts USING fts5(
-                chunk_id UNINDEXED,
-                project_path UNINDEXED,
-                file_path,
-                language,
-                text
-            );
-
-            CREATE TABLE IF NOT EXISTS code_embeddings (
-                chunk_id TEXT PRIMARY KEY,
-                project_path TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                dim INTEGER NOT NULL,
-                model TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (chunk_id) REFERENCES code_chunks(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS project_index_runs (
-                id TEXT PRIMARY KEY,
-                project_path TEXT NOT NULL,
-                indexer TEXT NOT NULL,
-                status TEXT NOT NULL,
-                file_count INTEGER NOT NULL,
-                chunk_count INTEGER NOT NULL,
-                error TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS project_index_chunks (
-                id TEXT PRIMARY KEY,
-                project_path TEXT NOT NULL,
-                indexer TEXT NOT NULL,
-                file_path TEXT NOT NULL,
-                title TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                text TEXT NOT NULL,
-                content_hash TEXT NOT NULL,
-                token_count INTEGER NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS project_index_chunks_fts USING fts5(
-                chunk_id UNINDEXED,
-                project_path UNINDEXED,
-                indexer UNINDEXED,
-                file_path,
-                title,
-                text
-            );
-
-            CREATE TABLE IF NOT EXISTS project_index_embeddings (
-                chunk_id TEXT PRIMARY KEY,
-                project_path TEXT NOT NULL,
-                indexer TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                dim INTEGER NOT NULL,
-                model TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (chunk_id) REFERENCES project_index_chunks(id) ON DELETE CASCADE
-            );
-
             CREATE INDEX IF NOT EXISTS idx_rag_files_conversation
                 ON rag_files(conversation_id, created_at);
+
             CREATE INDEX IF NOT EXISTS idx_rag_chunks_conversation
                 ON rag_chunks(conversation_id, chunk_index);
+
             CREATE INDEX IF NOT EXISTS idx_rag_embeddings_conversation
                 ON rag_embeddings(conversation_id);
-
-            CREATE INDEX IF NOT EXISTS idx_code_index_runs_project
-                ON code_index_runs(project_path, updated_at);
-            CREATE INDEX IF NOT EXISTS idx_code_entities_project_name
-                ON code_entities(project_path, name);
-            CREATE INDEX IF NOT EXISTS idx_code_relations_project_source
-                ON code_relations(project_path, source_name);
-            CREATE INDEX IF NOT EXISTS idx_code_relations_project_target
-                ON code_relations(project_path, target_name);
-            CREATE INDEX IF NOT EXISTS idx_code_chunks_project_file
-                ON code_chunks(project_path, file_path, chunk_index);
-            CREATE INDEX IF NOT EXISTS idx_code_embeddings_project
-                ON code_embeddings(project_path);
-            CREATE INDEX IF NOT EXISTS idx_project_index_runs_project
-                ON project_index_runs(project_path, indexer, updated_at);
-            CREATE INDEX IF NOT EXISTS idx_project_index_chunks_project
-                ON project_index_chunks(project_path, indexer, file_path, chunk_index);
-            CREATE INDEX IF NOT EXISTS idx_project_index_embeddings_project
-                ON project_index_embeddings(project_path, indexer);
-
-            CREATE TABLE IF NOT EXISTS memories (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                tags_json TEXT NOT NULL,
-                enabled INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-                id UNINDEXED,
-                title,
-                content,
-                tags
-            );
-
-            CREATE TABLE IF NOT EXISTS memory_embeddings (
-                vector_rowid INTEGER PRIMARY KEY AUTOINCREMENT,
-                memory_id TEXT NOT NULL UNIQUE,
-                model TEXT NOT NULL,
-                dimensions INTEGER NOT NULL,
-                content_hash TEXT NOT NULL,
-                indexed_at TEXT NOT NULL,
-                FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS memory_entities (
-                id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,
-                name TEXT NOT NULL,
-                normalized_name TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                UNIQUE(kind, normalized_name)
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS memory_entities_fts USING fts5(
-                id UNINDEXED,
-                name
-            );
-
-            CREATE TABLE IF NOT EXISTS memory_entity_links (
-                memory_id TEXT NOT NULL,
-                entity_id TEXT NOT NULL,
-                weight REAL NOT NULL DEFAULT 1,
-                PRIMARY KEY (memory_id, entity_id),
-                FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE,
-                FOREIGN KEY (entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS memory_relations (
-                source_entity_id TEXT NOT NULL,
-                target_entity_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                weight REAL NOT NULL DEFAULT 1,
-                evidence_memory_id TEXT NOT NULL,
-                PRIMARY KEY (source_entity_id, target_entity_id, kind, evidence_memory_id),
-                FOREIGN KEY (source_entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE,
-                FOREIGN KEY (target_entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE,
-                FOREIGN KEY (evidence_memory_id) REFERENCES memories(id) ON DELETE CASCADE
-            );
 
             CREATE TABLE IF NOT EXISTS profile_state (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -511,20 +329,15 @@ impl Database {
                 FOREIGN KEY (batch_id) REFERENCES profile_extraction_batches(id) ON DELETE SET NULL
             );
 
-            CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model
-                ON memory_embeddings(model, dimensions);
-            CREATE INDEX IF NOT EXISTS idx_memory_entity_links_entity
-                ON memory_entity_links(entity_id, memory_id);
-            CREATE INDEX IF NOT EXISTS idx_memory_relations_source
-                ON memory_relations(source_entity_id, target_entity_id);
-            CREATE INDEX IF NOT EXISTS idx_memory_relations_target
-                ON memory_relations(target_entity_id, source_entity_id);
             CREATE INDEX IF NOT EXISTS idx_profile_observations_status_revision
                 ON profile_observations(status, profile_generation, observation_revision);
+
             CREATE INDEX IF NOT EXISTS idx_profile_batches_status_available
                 ON profile_extraction_batches(status, available_at);
+
             CREATE INDEX IF NOT EXISTS idx_profile_usage_started
                 ON profile_usage_attempts(started_at_utc);
+
             CREATE INDEX IF NOT EXISTS idx_profile_fact_dimension
                 ON user_profile_facts(dimension, updated_at);
             ",
@@ -542,178 +355,265 @@ impl Database {
              VALUES (1, 0, NULL, 3000, 1800, 86400, 8000, 2, 8, 30000, ?1)",
             params![now],
         )?;
-        Self::ensure_column(conn, "conversations", "project_path", "TEXT")?;
-        Self::ensure_column(
-            conn,
-            "conversations",
-            "archived",
-            "INTEGER NOT NULL DEFAULT 0",
-        )?;
-        Self::ensure_column(conn, "conversations", "archived_at", "TEXT")?;
-        Self::ensure_column(conn, "messages", "metadata_json", "TEXT")?;
-        Self::ensure_column(
-            conn,
-            "profile_state",
-            "skipped_observation_count",
-            "INTEGER NOT NULL DEFAULT 0",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "embedding_provider",
-            "TEXT NOT NULL DEFAULT 'openai-compatible'",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "embedding_base_url",
-            "TEXT NOT NULL DEFAULT ''",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "embedding_model",
-            "TEXT NOT NULL DEFAULT ''",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "embedding_api_key",
-            "TEXT NOT NULL DEFAULT ''",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "temperature",
-            "REAL NOT NULL DEFAULT 0.4",
-        )?;
-        Self::ensure_column(conn, "model_configs", "max_tokens", "INTEGER")?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "context_window",
-            "INTEGER NOT NULL DEFAULT 32768",
-        )?;
-        Self::ensure_column(conn, "model_configs", "top_p", "REAL")?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "reasoning_effort",
-            "TEXT NOT NULL DEFAULT ''",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "model_kind",
-            "TEXT NOT NULL DEFAULT 'chat'",
-        )?;
-        conn.execute(
-            "UPDATE model_configs SET model_kind = 'embedding' WHERE id = 'embedding-config'",
-            [],
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "routing_group",
-            "TEXT NOT NULL DEFAULT '默认组'",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "routing_enabled",
-            "INTEGER NOT NULL DEFAULT 1",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "routing_cost",
-            "INTEGER NOT NULL DEFAULT 3",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "routing_quality",
-            "INTEGER NOT NULL DEFAULT 3",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "routing_speed",
-            "INTEGER NOT NULL DEFAULT 3",
-        )?;
-        Self::ensure_column(
-            conn,
-            "model_configs",
-            "routing_tasks_json",
-            "TEXT NOT NULL DEFAULT '[]'",
-        )?;
-        Self::ensure_column(
-            conn,
-            "mcp_servers",
-            "transport",
-            "TEXT NOT NULL DEFAULT 'stdio'",
-        )?;
-        Self::ensure_column(
-            conn,
-            "mcp_servers",
-            "args_json",
-            "TEXT NOT NULL DEFAULT '[]'",
-        )?;
-        Self::ensure_column(
-            conn,
-            "mcp_servers",
-            "env_json",
-            "TEXT NOT NULL DEFAULT '{}'",
-        )?;
-        Self::ensure_column(conn, "mcp_servers", "url", "TEXT NOT NULL DEFAULT ''")?;
-        Self::ensure_column(
-            conn,
-            "mcp_servers",
-            "headers_json",
-            "TEXT NOT NULL DEFAULT '{}'",
-        )?;
-        Self::ensure_column(
-            conn,
-            "mcp_servers",
-            "working_dir",
-            "TEXT NOT NULL DEFAULT ''",
-        )?;
-        Self::ensure_column(conn, "mcp_servers", "enabled", "INTEGER NOT NULL DEFAULT 1")?;
-        Self::ensure_column(
-            conn,
-            "ops_servers",
-            "auth_method",
-            "TEXT NOT NULL DEFAULT 'key'",
-        )?;
-        Self::ensure_column(conn, "ops_servers", "key_path", "TEXT NOT NULL DEFAULT ''")?;
-        Self::ensure_column(conn, "ops_servers", "password", "TEXT NOT NULL DEFAULT ''")?;
-        Self::ensure_column(
-            conn,
-            "ops_servers",
-            "remote_dir",
-            "TEXT NOT NULL DEFAULT ''",
+        Ok(())
+    }
+
+    pub(super) fn init_knowledge_schema(conn: &Connection) -> AppResult<()> {
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON;
+
+            PRAGMA journal_mode = WAL;
+
+            CREATE TABLE IF NOT EXISTS items (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                status TEXT NOT NULL,
+                tags_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
+                id UNINDEXED,
+                title,
+                body,
+                tags
+            );
+
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tags_json TEXT NOT NULL,
+                enabled INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+                id UNINDEXED,
+                title,
+                content,
+                tags
+            );
+
+            CREATE TABLE IF NOT EXISTS memory_embeddings (
+                vector_rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+                memory_id TEXT NOT NULL UNIQUE,
+                model TEXT NOT NULL,
+                dimensions INTEGER NOT NULL,
+                content_hash TEXT NOT NULL,
+                indexed_at TEXT NOT NULL,
+                FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS memory_entities (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                normalized_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(kind, normalized_name)
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS memory_entities_fts USING fts5(
+                id UNINDEXED,
+                name
+            );
+
+            CREATE TABLE IF NOT EXISTS memory_entity_links (
+                memory_id TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                weight REAL NOT NULL DEFAULT 1,
+                PRIMARY KEY (memory_id, entity_id),
+                FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE,
+                FOREIGN KEY (entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS memory_relations (
+                source_entity_id TEXT NOT NULL,
+                target_entity_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                weight REAL NOT NULL DEFAULT 1,
+                evidence_memory_id TEXT NOT NULL,
+                PRIMARY KEY (source_entity_id, target_entity_id, kind, evidence_memory_id),
+                FOREIGN KEY (source_entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE,
+                FOREIGN KEY (target_entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE,
+                FOREIGN KEY (evidence_memory_id) REFERENCES memories(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model
+                ON memory_embeddings(model, dimensions);
+
+            CREATE INDEX IF NOT EXISTS idx_memory_entity_links_entity
+                ON memory_entity_links(entity_id, memory_id);
+
+            CREATE INDEX IF NOT EXISTS idx_memory_relations_source
+                ON memory_relations(source_entity_id, target_entity_id);
+
+            CREATE INDEX IF NOT EXISTS idx_memory_relations_target
+                ON memory_relations(target_entity_id, source_entity_id);
+            ",
         )?;
         Ok(())
     }
 
-    pub(super) fn ensure_column(
-        conn: &Connection,
-        table: &str,
-        column: &str,
-        definition: &str,
-    ) -> AppResult<()> {
-        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-        let columns = stmt
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<Result<Vec<_>, _>>()?;
+    pub(super) fn init_project_index_schema(conn: &Connection) -> AppResult<()> {
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON;
 
-        if !columns.iter().any(|name| name == column) {
-            conn.execute(
-                &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
-                [],
-            )?;
-        }
+            PRAGMA journal_mode = WAL;
 
+            CREATE TABLE IF NOT EXISTS code_index_runs (
+                id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                status TEXT NOT NULL,
+                file_count INTEGER NOT NULL,
+                entity_count INTEGER NOT NULL,
+                relation_count INTEGER NOT NULL,
+                chunk_count INTEGER NOT NULL,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS code_entities (
+                id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                language TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL,
+                signature TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS code_relations (
+                id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                source_entity_id TEXT,
+                source_name TEXT NOT NULL,
+                target_entity_id TEXT,
+                target_name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                line INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS code_chunks (
+                id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                language TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                token_count INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS code_chunks_fts USING fts5(
+                chunk_id UNINDEXED,
+                project_path UNINDEXED,
+                file_path,
+                language,
+                text
+            );
+
+            CREATE TABLE IF NOT EXISTS code_embeddings (
+                chunk_id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                dim INTEGER NOT NULL,
+                model TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (chunk_id) REFERENCES code_chunks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS project_index_runs (
+                id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                indexer TEXT NOT NULL,
+                status TEXT NOT NULL,
+                file_count INTEGER NOT NULL,
+                chunk_count INTEGER NOT NULL,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS project_index_chunks (
+                id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                indexer TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                title TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                token_count INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS project_index_chunks_fts USING fts5(
+                chunk_id UNINDEXED,
+                project_path UNINDEXED,
+                indexer UNINDEXED,
+                file_path,
+                title,
+                text
+            );
+
+            CREATE TABLE IF NOT EXISTS project_index_embeddings (
+                chunk_id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                indexer TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                dim INTEGER NOT NULL,
+                model TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (chunk_id) REFERENCES project_index_chunks(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_code_index_runs_project
+                ON code_index_runs(project_path, updated_at);
+
+            CREATE INDEX IF NOT EXISTS idx_code_entities_project_name
+                ON code_entities(project_path, name);
+
+            CREATE INDEX IF NOT EXISTS idx_code_relations_project_source
+                ON code_relations(project_path, source_name);
+
+            CREATE INDEX IF NOT EXISTS idx_code_relations_project_target
+                ON code_relations(project_path, target_name);
+
+            CREATE INDEX IF NOT EXISTS idx_code_chunks_project_file
+                ON code_chunks(project_path, file_path, chunk_index);
+
+            CREATE INDEX IF NOT EXISTS idx_code_embeddings_project
+                ON code_embeddings(project_path);
+
+            CREATE INDEX IF NOT EXISTS idx_project_index_runs_project
+                ON project_index_runs(project_path, indexer, updated_at);
+
+            CREATE INDEX IF NOT EXISTS idx_project_index_chunks_project
+                ON project_index_chunks(project_path, indexer, file_path, chunk_index);
+
+            CREATE INDEX IF NOT EXISTS idx_project_index_embeddings_project
+                ON project_index_embeddings(project_path, indexer);
+            ",
+        )?;
         Ok(())
     }
 }

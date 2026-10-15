@@ -750,9 +750,9 @@ mod tests {
     }
 
     #[test]
-    fn existing_model_configs_receive_generation_parameter_defaults() {
+    fn current_model_schema_provides_generation_parameter_defaults() {
         let path = std::env::temp_dir().join(format!(
-            "nanodesk-model-config-migration-{}.sqlite3",
+            "nanodesk-model-config-defaults-{}.sqlite3",
             uuid::Uuid::new_v4()
         ));
         let split_paths = storage::DatabasePaths::from_base_path(&path)
@@ -760,22 +760,9 @@ mod tests {
         {
             let conn = Connection::open(&split_paths.config)
                 .expect("existing config database should open");
+            Database::init_config_schema(&conn).expect("current config schema should initialize");
             conn.execute_batch(
                 "
-                CREATE TABLE model_configs (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    provider TEXT NOT NULL,
-                    base_url TEXT NOT NULL,
-                    model TEXT NOT NULL,
-                    api_key TEXT NOT NULL,
-                    embedding_provider TEXT NOT NULL DEFAULT 'openai-compatible',
-                    embedding_base_url TEXT NOT NULL DEFAULT '',
-                    embedding_model TEXT NOT NULL DEFAULT '',
-                    embedding_api_key TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
                 INSERT INTO model_configs
                     (id, name, provider, base_url, model, api_key, created_at, updated_at)
                 VALUES
@@ -786,12 +773,13 @@ mod tests {
                 VALUES
                     ('embedding-config', 'Embedding', 'openai-compatible', 'http://localhost:11434/v1',
                      'bge-m3', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                UPDATE model_configs SET model_kind = 'embedding' WHERE id = 'embedding-config';
                 ",
             )
-            .expect("existing schema should be created");
+            .expect("current models should be inserted");
         }
 
-        let db = Database::open(path.clone()).expect("database migration should succeed");
+        let db = Database::open(path.clone()).expect("current database should reopen");
         let loaded = db
             .get_model_config("existing")
             .expect("existing model should remain readable");
