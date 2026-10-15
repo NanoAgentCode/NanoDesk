@@ -24,7 +24,7 @@ export default function AutomationPanel({ setNotice }: { setNotice: (message: st
         <div>
           <CalendarClock size={25} />
           <div>
-            <h2>定时与事件任务</h2>
+            <h2>定时任务</h2>
             <p>让资料处理与日常工作按计划发生</p>
           </div>
         </div>

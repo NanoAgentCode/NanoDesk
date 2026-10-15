@@ -17,4 +17,8 @@ it.each(["local", "external", "mineru"] as const)("shows the fields for %s", pro
   expect(html.includes('id="ocr-key"')).toBe(provider !== "local");
   expect(html.includes('id="ocr-model"')).toBe(provider === "external");
   expect(html).toContain("保存 OCR 配置");
+  const header = html.match(/<header class="ocr-header">([\s\S]*?)<\/header>/)?.[1];
+  expect(header).toBeDefined();
+  expect(header).toContain("保存 OCR 配置");
+  expect(html).toMatch(/<fieldset[^>]*class="ocr-fields"[^>]*>[\s\S]*?id="ocr-provider"/);
 });

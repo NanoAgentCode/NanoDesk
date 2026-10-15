@@ -159,7 +159,7 @@ const opsPlugin: FrontendPlugin = {
 export const appPlugins = new AppPluginRegistry([
   {
     manifest: { id: `${APP_PLUGIN_NAMESPACE}.automation`, name: "Automation", version: "0.1.0", capabilities: ["main-view"] },
-    mainViews: [{ id: "automation", label: "定时与事件任务", icon: CalendarClock, component: AutomationPanel }]
+    mainViews: [{ id: "automation", label: "定时任务", icon: CalendarClock, component: AutomationPanel }]
   },
   coreUiPlugin,
   skillsPlugin,

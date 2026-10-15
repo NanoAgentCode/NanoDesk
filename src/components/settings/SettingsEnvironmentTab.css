@@ -43,4 +43,13 @@
 .env-tab-content { display: flex; flex-direction: column; gap: 16px; }
 .env-field-no-margin { margin: 0; }
 
-.ocr-status-left { flex-wrap: wrap; gap: 12px; }
+.ocr-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ocr-header > strong { color: var(--text-primary); font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); }
+.ocr-fields { display: grid; gap: 10px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.ocr-field { display: grid; grid-template-columns: 160px minmax(0, 1fr); align-items: center; gap: 12px; }
+.ocr-field > input, .ocr-field > select { width: 100%; min-width: 0; margin: 0; }
+.ocr-field > label { margin: 0; line-height: 1.4; }
+.ocr-local-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-height: 34px; }
+@media (max-width: 600px) {
+  .ocr-field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}

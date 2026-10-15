@@ -109,61 +109,58 @@ export default function SettingsEnvironmentTab({ env }: SettingsEnvironmentTabPr
           </IconTooltipButton>
         </div>
       </div>
-      <div className="env-status-banner">
-        <div className="env-status-main">
-          <div className="env-status-left ocr-status-left">
-            <strong>OCR</strong>
-            <div className="skills-param-field env-field-no-margin">
-              <label className="env-section-label" htmlFor="ocr-provider">识别方式</label>
-              <select id="ocr-provider" className="env-input-compact" disabled={env.isLoadingOcr || env.isSavingOcr} value={env.ocrConfig.provider} onChange={e => env.setOcrConfig({ ...env.ocrConfig, provider: e.target.value as typeof env.ocrConfig.provider })}>
-                <option value="local">本地 OCR（PaddleOCR）</option>
-                <option value="external">外部 OCR API（OpenAI 兼容）</option>
-                <option value="mineru">MinerU API（自建服务）</option>
-              </select>
-            </div>
-            {env.ocrConfig.provider === "local" && <div className="env-status-items">
-              <div className="env-status-item-compact">
-                <span>PaddleOCR（本地依赖）</span>
-                <span className={env.envStatus.paddleocr ? "env-status-ok" : "env-status-missing"}>{env.envStatus.paddleocr ? "✓ 已就绪" : "✗ 未检测到"}</span>
-              </div>
-              <div className="env-status-item-compact">
-                <span>模型</span>
-                <span className="env-status-ok">PP-OCRv6 small</span>
-              </div>
-            </div>}
-          </div>
-          {env.ocrConfig.provider === "local" && !env.envStatus.paddleocr && (
-            <div className="env-status-actions">
+      <div className="env-status-banner ocr-settings">
+        <header className="ocr-header">
+          <strong>OCR</strong>
+          <div className="env-status-actions">
+            <IconTooltipButton label={env.isSavingOcr ? "保存中" : "保存 OCR 配置"} tone="success" disabled={env.isLoadingOcr || env.isSavingOcr} onClick={env.handleSaveOcr}>
+              {env.isSavingOcr ? <Loader2 size={17} className="svg-spin" /> : <Save size={17} />}
+            </IconTooltipButton>
+            {env.ocrConfig.provider === "local" && !env.envStatus.paddleocr && (
               <IconTooltipButton label={env.isInstallingEnv ? "安装中" : "安装 PaddleOCR"} onClick={env.handleInstallPaddleOcr} disabled={env.isInstallingEnv || env.isCheckingEnv || !env.envStatus.python}>
                 {env.isInstallingEnv ? <Loader2 size={17} className="svg-spin" /> : <Download size={17} />}
               </IconTooltipButton>
+            )}
+          </div>
+        </header>
+        <fieldset className="ocr-fields" disabled={env.isLoadingOcr || env.isSavingOcr}>
+          <div className="ocr-field">
+            <label className="env-section-label" htmlFor="ocr-provider">识别方式</label>
+            <select id="ocr-provider" className="env-input-compact" disabled={env.isLoadingOcr || env.isSavingOcr} value={env.ocrConfig.provider} onChange={e => env.setOcrConfig({ ...env.ocrConfig, provider: e.target.value as typeof env.ocrConfig.provider })}>
+              <option value="local">本地 OCR（PaddleOCR）</option>
+              <option value="external">外部 OCR API（OpenAI 兼容）</option>
+              <option value="mineru">MinerU API（自建服务）</option>
+            </select>
+          </div>
+          {env.ocrConfig.provider === "local" && <div className="ocr-field">
+            <span className="env-section-label">本地环境</span>
+            <div className="ocr-local-status">
+              <span>PaddleOCR</span>
+              <span className={env.envStatus.paddleocr ? "env-status-ok" : "env-status-missing"}>{env.envStatus.paddleocr ? "✓ 已就绪" : "✗ 未检测到"}</span>
+              <span>模型</span>
+              <span className="env-status-ok">PP-OCRv6 small</span>
             </div>
-          )}
-        </div>
+          </div>}
+          {env.ocrConfig.provider !== "local" && <>
+            <div className="ocr-field">
+              <label className="env-section-label" htmlFor="ocr-url">完整 API 地址</label>
+              <input id="ocr-url" className="env-input-compact" value={env.ocrConfig.provider === "external" ? env.ocrConfig.external_url : env.ocrConfig.mineru_url} placeholder={env.ocrConfig.provider === "external" ? "https://example.com/v1/chat/completions" : "http://127.0.0.1:8000/file_parse"} onChange={e => env.setOcrConfig({ ...env.ocrConfig, [env.ocrConfig.provider === "external" ? "external_url" : "mineru_url"]: e.target.value })} />
+            </div>
+            <div className="ocr-field">
+              <label className="env-section-label" htmlFor="ocr-key">API Key（服务无需鉴权时可留空）</label>
+              <input id="ocr-key" type="password" autoComplete="off" className="env-input-compact" value={env.ocrConfig.provider === "external" ? env.ocrConfig.external_key : env.ocrConfig.mineru_key} onChange={e => env.setOcrConfig({ ...env.ocrConfig, [env.ocrConfig.provider === "external" ? "external_key" : "mineru_key"]: e.target.value })} />
+            </div>
+            {env.ocrConfig.provider === "external" && <div className="ocr-field">
+              <label className="env-section-label" htmlFor="ocr-model">支持图片输入的模型名称</label>
+              <input id="ocr-model" className="env-input-compact" value={env.ocrConfig.model} onChange={e => env.setOcrConfig({ ...env.ocrConfig, model: e.target.value })} />
+            </div>}
+          </>}
+        </fieldset>
         {env.isInstallingEnv && env.envInstallProgress.includes("PaddleOCR") && (
           <div className="env-install-progress">
             <span className="spinner">⏳</span> {env.envInstallProgress}
           </div>
         )}
-        {env.ocrConfig.provider !== "local" && (
-          <fieldset disabled={env.isLoadingOcr || env.isSavingOcr} style={{ border: 0, padding: 0, margin: 0 }}>
-            <div className="skills-param-field">
-              <label className="env-section-label" htmlFor="ocr-url">完整 API 地址</label>
-              <input id="ocr-url" className="env-input-compact" value={env.ocrConfig.provider === "external" ? env.ocrConfig.external_url : env.ocrConfig.mineru_url} placeholder={env.ocrConfig.provider === "external" ? "https://example.com/v1/chat/completions" : "http://127.0.0.1:8000/file_parse"} onChange={e => env.setOcrConfig({ ...env.ocrConfig, [env.ocrConfig.provider === "external" ? "external_url" : "mineru_url"]: e.target.value })} />
-            </div>
-            <div className="skills-param-field">
-              <label className="env-section-label" htmlFor="ocr-key">API Key（服务无需鉴权时可留空）</label>
-              <input id="ocr-key" type="password" autoComplete="off" className="env-input-compact" value={env.ocrConfig.provider === "external" ? env.ocrConfig.external_key : env.ocrConfig.mineru_key} onChange={e => env.setOcrConfig({ ...env.ocrConfig, [env.ocrConfig.provider === "external" ? "external_key" : "mineru_key"]: e.target.value })} />
-            </div>
-            {env.ocrConfig.provider === "external" && <div className="skills-param-field">
-              <label className="env-section-label" htmlFor="ocr-model">支持图片输入的模型名称</label>
-              <input id="ocr-model" className="env-input-compact" value={env.ocrConfig.model} onChange={e => env.setOcrConfig({ ...env.ocrConfig, model: e.target.value })} />
-            </div>}
-          </fieldset>
-        )}
-        <IconTooltipButton label={env.isSavingOcr ? "保存中" : "保存 OCR 配置"} tone="success" disabled={env.isLoadingOcr || env.isSavingOcr} onClick={env.handleSaveOcr}>
-          {env.isSavingOcr ? <Loader2 size={17} className="svg-spin" /> : <Save size={17} />}
-        </IconTooltipButton>
         <p className="env-note">{env.ocrConfig.provider === "local" ? "调用本机 PaddleOCR，使用 PP-OCRv6 small；自动检查 PATH、Python Scripts 目录和 NANODESK_PADDLEOCR_BIN。" : env.ocrConfig.provider === "external" ? "使用 OpenAI 兼容的 Chat Completions 视觉接口提取文字；图片会发送到所填服务。" : "连接自建 MinerU：支持 /file_parse 和 /v1/file_parse，使用 Bearer 鉴权；图片会发送到所填服务。"} 切换后请保存生效。</p>
       </div>
     </div>
