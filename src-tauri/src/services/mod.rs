@@ -4,3 +4,5 @@ pub(crate) mod environment;
 pub(crate) mod execution;
 pub(crate) mod observation;
 pub(crate) mod ocr;
+
+pub(crate) mod remote_ocr;

@@ -119,6 +119,7 @@ pub fn run() {
             let plugins = plugins::built_in_registry().map_err(|err| err.to_string())?;
 
             app.manage(AppState {
+                settings_path: data_dir.join("settings.json"),
                 db: Mutex::new(db),
                 observability: Mutex::new(observability),
                 runtime: Mutex::new(runtime),
@@ -228,6 +229,8 @@ pub fn run() {
             commands::skills::sync_anthropic_skills,
             commands::skills::sync_github_skills,
             commands::skills::list_local_skills,
+            settings::get_ocr_config,
+            settings::save_ocr_config,
             settings::get_tavily_api_key,
             settings::save_tavily_api_key,
             settings::get_asr_config,

@@ -5,6 +5,7 @@ import {
   getTavilyApiKey,
   saveTavilyApiKey
 } from "../api";
+import { defaultOcrConfig, getOcrConfig, saveOcrConfig, type OcrConfig } from "../api/ocr";
 import { APP_NAME, APP_STORAGE_PREFIX } from "../config/brand";
 
 const NODE_PATH_KEY = `${APP_STORAGE_PREFIX}-node-path`;
@@ -12,6 +13,11 @@ const PYTHON_PATH_KEY = `${APP_STORAGE_PREFIX}-python-path`;
 const ENV_CHECKED_KEY = `${APP_STORAGE_PREFIX}-env-checked`;
 
 export interface UseEnvReturn {
+  ocrConfig: OcrConfig;
+  setOcrConfig: (config: OcrConfig) => void;
+  isSavingOcr: boolean;
+  isLoadingOcr: boolean;
+  handleSaveOcr: () => Promise<void>;
   nodePath: string;
   setNodePath: (value: string) => void;
   pythonPath: string;
@@ -38,6 +44,9 @@ export interface UseEnvReturn {
 }
 
 export function useEnv(setNotice: (message: string) => void): UseEnvReturn {
+  const [ocrConfig, setOcrConfig] = useState<OcrConfig>(defaultOcrConfig);
+  const [isSavingOcr, setIsSavingOcr] = useState(false);
+  const [isLoadingOcr, setIsLoadingOcr] = useState(true);
   const [nodePath, setNodePath] = useState(
     () => localStorage.getItem(NODE_PATH_KEY) || ""
   );
@@ -59,6 +68,7 @@ export function useEnv(setNotice: (message: string) => void): UseEnvReturn {
   const [envInstallProgress, setEnvInstallProgress] = useState("");
 
   useEffect(() => {
+    getOcrConfig().then(setOcrConfig).catch(error => setNotice(`读取 OCR 配置失败：${String(error)}`)).finally(() => setIsLoadingOcr(false));
     getTavilyApiKey()
       .then((apiKey) => setTavilyApiKey(apiKey))
       .catch((error) => console.error("Failed to load Tavily API key:", error));
@@ -86,6 +96,16 @@ export function useEnv(setNotice: (message: string) => void): UseEnvReturn {
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleSaveOcr() {
+    setIsSavingOcr(true);
+    try {
+      await saveOcrConfig(ocrConfig);
+      setNotice("OCR 配置已保存。");
+    } catch (error) {
+      setNotice(`保存 OCR 配置失败：${String(error)}`);
+    } finally { setIsSavingOcr(false); }
+  }
 
   function dismissEnvPrompt() {
     localStorage.setItem(ENV_CHECKED_KEY, "true");
@@ -245,6 +265,7 @@ export function useEnv(setNotice: (message: string) => void): UseEnvReturn {
   }
 
   return {
+    ocrConfig, setOcrConfig, isSavingOcr, isLoadingOcr, handleSaveOcr,
     nodePath,
     setNodePath,
     pythonPath,

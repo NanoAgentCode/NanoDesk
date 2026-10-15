@@ -9,6 +9,7 @@ use tokio::sync::watch;
 use tokio::sync::Mutex;
 
 pub(crate) struct AppState {
+    pub(crate) settings_path: std::path::PathBuf,
     pub(crate) db: Mutex<Database>,
     pub(crate) observability: Mutex<ObservabilityPipeline>,
     pub(crate) runtime: Mutex<RuntimeStore>,

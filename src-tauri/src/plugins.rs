@@ -143,7 +143,7 @@ fn tool_parameters_json(name: &str) -> Value {
                 "output_format": {
                     "type": "string",
                     "enum": ["text", "raw"],
-                    "description": "Return compact recognized text or raw PaddleOCR output. Defaults to text."
+                    "description": "Return compact recognized text or raw OCR service output. Defaults to text."
                 }
             }
         }),

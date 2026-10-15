@@ -148,7 +148,7 @@ export function buildSystemMessage(
   <command>具体的终端命令行，例如 PowerShell: Get-ChildItem 或 cmd: dir /b</command>
 </tool_call>
 
-4. 图片 OCR（对应 PaddleOCR PP-OCRv6 Small，仅处理当前项目内图片路径）：
+4. 图片 OCR（使用设置中选择的 OCR 服务，仅处理当前项目内图片路径）：
 <tool_call name="ocr_image">
   <path>项目内图片相对路径，如 screenshots/page.png</path>
   <output_format>text</output_format>

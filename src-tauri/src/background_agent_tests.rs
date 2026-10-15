@@ -149,6 +149,7 @@ impl Fixture {
         let automation =
             crate::automation::AutomationStore::open(&root.join("automation.sqlite3")).unwrap();
         let state = Arc::new(AppState {
+            settings_path: std::path::PathBuf::new(),
             db: tokio::sync::Mutex::new(db),
             runtime: tokio::sync::Mutex::new(runtime),
             automation: tokio::sync::Mutex::new(automation),

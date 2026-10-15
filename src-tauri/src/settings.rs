@@ -3,12 +3,14 @@ use tauri::{AppHandle, Manager, State};
 use crate::asr::AsrConfig;
 use crate::error::{AppError, AppResult};
 use crate::AppState;
+use crate::services::remote_ocr::OcrConfig;
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 struct AppSettings {
     tavily_api_key: String,
     asr: Option<AsrConfig>,
+    ocr: OcrConfig,
 }
 
 #[tauri::command]
@@ -94,6 +96,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ocr_roundtrip_preserves_existing_settings_and_legacy_defaults() {
+        let mut settings: AppSettings = serde_json::from_str(r#"{"tavily_api_key":"key","asr":{"model":"speech"}}"#).unwrap();
+        assert_eq!(settings.ocr.provider, crate::services::remote_ocr::OcrProvider::Local);
+        settings.ocr.provider = crate::services::remote_ocr::OcrProvider::Mineru;
+        settings.ocr.mineru_url = "http://localhost:8000/file_parse".into();
+        let path = std::env::temp_dir().join(format!("ocr-settings-{}.json", uuid::Uuid::new_v4()));
+        std::fs::write(&path, serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(load_ocr_config_path(&path).unwrap().mineru_url, settings.ocr.mineru_url);
+        let loaded: AppSettings = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(loaded.tavily_api_key, "key");
+        assert_eq!(loaded.asr.unwrap().model, "speech");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn legacy_settings_load_without_asr_and_preserve_tavily_on_roundtrip() {
         let mut settings: AppSettings =
             serde_json::from_str(r#"{"tavily_api_key":"existing-key"}"#).unwrap();
@@ -110,4 +127,25 @@ mod tests {
         assert_eq!(reloaded.tavily_api_key, "existing-key");
         assert_eq!(reloaded.asr.unwrap().model, "Qwen/Qwen3-ASR-1.7B");
     }
+}
+
+#[tauri::command]
+pub(crate) async fn get_ocr_config(app: AppHandle) -> AppResult<OcrConfig> {
+    Ok(load_app_settings(&app)?.ocr)
+}
+
+#[tauri::command]
+pub(crate) async fn save_ocr_config(app: AppHandle, config: OcrConfig) -> AppResult<OcrConfig> {
+    config.validate()?;
+    let mut settings = load_app_settings(&app)?;
+    settings.ocr = config.clone();
+    save_app_settings(&app, &settings)?;
+    Ok(config)
+}
+
+pub(crate) fn load_ocr_config_path(path: &std::path::Path) -> AppResult<OcrConfig> {
+    if !path.exists() { return Ok(OcrConfig::default()); }
+    let content = std::fs::read_to_string(path)?;
+    if content.trim().is_empty() { return Ok(OcrConfig::default()); }
+    Ok(serde_json::from_str::<AppSettings>(&content)?.ocr)
 }

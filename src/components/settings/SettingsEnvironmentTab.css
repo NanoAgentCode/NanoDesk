@@ -42,3 +42,5 @@
 .env-section-label { font-size: var(--font-size-sm); color: var(--text-secondary); }
 .env-tab-content { display: flex; flex-direction: column; gap: 16px; }
 .env-field-no-margin { margin: 0; }
+
+.ocr-status-left { flex-wrap: wrap; gap: 12px; }

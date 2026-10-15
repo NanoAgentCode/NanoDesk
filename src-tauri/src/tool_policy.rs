@@ -92,7 +92,7 @@ pub fn built_in_tool_policies() -> Vec<ToolPolicyDescriptor> {
         },
         ToolPolicyDescriptor {
             name: "ocr_image",
-            description: "Extract text from a project image with local PaddleOCR PP-OCRv6 small.",
+            description: "Extract text from a project image using the configured OCR service.",
             risk: "medium",
             requires_approval: true,
         },

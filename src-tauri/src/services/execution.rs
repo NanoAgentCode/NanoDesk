@@ -6,7 +6,7 @@ use crate::mcp::McpToolCallRequest;
 use crate::project_files::{project_root, resolve_project_relative_path};
 use crate::runtime::AgentToolCall;
 use crate::services::observation::{finish_observation, start_observation, ObservationStart};
-use crate::services::ocr::run_paddle_ocr;
+use crate::services::remote_ocr::run_ocr;
 use crate::{shell, tool_policy, AppState};
 
 pub(crate) async fn execute_registered_tool(
@@ -71,9 +71,10 @@ pub(crate) async fn execute_registered_tool(
                 .map(|value| value.trim())
                 .filter(|value| !value.is_empty())
                 .unwrap_or("text");
-            let output = run_paddle_ocr(project_path, relative_path, output_format)?;
+            let config = crate::settings::load_ocr_config_path(&state.settings_path)?;
+            let output = run_ocr(config, project_path, relative_path, output_format).await?;
             Ok(format!(
-                "OCR 识别完成（PP-OCRv6 small），图片：{relative_path}\n\n```text\n{output}\n```"
+                "OCR 识别完成，图片：{relative_path}\n\n```text\n{output}\n```"
             ))
         }
         tool_policy::AuthorizedTool::Mcp(scope) => {
