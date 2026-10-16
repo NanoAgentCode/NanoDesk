@@ -88,6 +88,7 @@ export interface UseChatReturn {
   handleRegenerateLastResponse: (messageId: string) => Promise<void>;
   handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  handleSkipTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRetryTool: (messageId: string) => Promise<void>;
   handleResumeAgentRun: (runId: string) => Promise<void>;
   handleClarificationAnswer: (

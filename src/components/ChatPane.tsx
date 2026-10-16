@@ -81,6 +81,7 @@ interface ChatPaneProps {
   handleCloseConversation: () => void;
   handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  handleSkipTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   handleRetryTool: (messageId: string) => Promise<void>;
   handleResumeAgentRun: (runId: string) => Promise<void>;
   handleClarificationAnswer: (messageId: string, request: AgentClarificationRequest, answers: AgentClarificationAnswer[]) => Promise<void>;
@@ -177,6 +178,7 @@ export default function ChatPane({
   handleCloseConversation,
   handleExecuteTool,
   handleRejectTool,
+  handleSkipTool,
   handleRetryTool,
   handleResumeAgentRun,
   handleClarificationAnswer,
@@ -247,6 +249,7 @@ export default function ChatPane({
 
     if (!resultMessage) return "pending_approval";
     if (resultMessage.content.includes("用户拒绝")) return "rejected";
+    if (resultMessage.content.includes("用户跳过")) return "user_skipped";
     if (resultMessage.content.includes("执行失败")) return "failed";
     return "completed";
   }
@@ -266,6 +269,9 @@ export default function ChatPane({
     }
     if (status === "rejected") {
       return <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>已拒绝</span>;
+    }
+    if (status === "user_skipped") {
+      return <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>已跳过</span>;
     }
     if (status === "skipped") {
       return <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>已跳过失败步骤</span>;
@@ -506,6 +512,7 @@ export default function ChatPane({
         disabled={busy}
         onRunTool={handleExecuteTool}
         onRejectTool={handleRejectTool}
+        onSkipTool={handleSkipTool}
         onSubmitClarification={handleClarificationAnswer}
       />
 

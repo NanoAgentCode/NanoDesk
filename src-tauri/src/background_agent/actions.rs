@@ -30,7 +30,7 @@ pub(super) async fn apply_decision(
                     "[规划审核] 用户已批准当前规划。现在开始执行，按步骤更新进度。规划阶段输出的工具调用没有执行，不得视作成功；需要操作时重新输出工具调用。".into()))?;
             }
         }
-        "approve" | "reject" | "retry" => {
+        "approve" | "reject" | "retry" | "skip" => {
             let id = decision.tool_call_id.as_deref().ok_or("缺少工具调用 ID")?;
             let tool = runtime.get_tool_call(id)?;
             if tool.run_id != run.id {
@@ -40,6 +40,8 @@ pub(super) async fn apply_decision(
                 runtime.approve_tool_call(id)?;
             } else if decision.action == "reject" {
                 runtime.reject_tool_call(id, Some("user_rejected".into()))?;
+            } else if decision.action == "skip" {
+                runtime.update_tool_call(id, "skipped", Some("user_skipped".into()), None)?;
             } else {
                 runtime.retry_tool_call(id)?;
             }
@@ -51,10 +53,10 @@ pub(super) async fn apply_decision(
                     "approval"
                 }
                 .into(),
-                status: if decision.action == "reject" {
-                    "rejected"
-                } else {
-                    "approved"
+                status: match decision.action.as_str() {
+                    "reject" => "rejected",
+                    "skip" => "skipped",
+                    _ => "approved",
                 }
                 .into(),
                 input_summary: Some(tool.name),

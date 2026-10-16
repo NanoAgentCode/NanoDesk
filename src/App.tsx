@@ -149,6 +149,7 @@ function App() {
     handleRegenerateLastResponse,
     handleExecuteTool,
     handleRejectTool,
+    handleSkipTool,
     handleRetryTool,
     handleResumeAgentRun,
     handleClarificationAnswer,
@@ -505,6 +506,7 @@ function App() {
           handleCloseConversation={handleCloseConversation}
           handleExecuteTool={handleExecuteTool}
           handleRejectTool={handleRejectTool}
+          handleSkipTool={handleSkipTool}
           handleRetryTool={handleRetryTool}
           handleResumeAgentRun={handleResumeAgentRun}
           handleClarificationAnswer={handleClarificationAnswer}

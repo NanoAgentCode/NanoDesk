@@ -111,7 +111,7 @@ where
                 .find(|tool| {
                     matches!(
                         tool.status.as_str(),
-                        "pending_approval" | "approved" | "rejected"
+                        "pending_approval" | "approved" | "rejected" | "skipped"
                     )
                 })
                 .ok_or("任务等待工具但没有可执行的工具记录")?;
@@ -146,9 +146,16 @@ where
                 continue;
             }
             let tool_started = Instant::now();
-            if tool.status != "rejected" { budget.steps += 1; state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?; }
+            if matches!(tool.status.as_str(), "rejected" | "skipped") {
+                // 未执行的工具有确定结果，不计步数。
+            } else {
+                budget.steps += 1;
+                state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;
+            }
             let result = if tool.status == "rejected" {
                 Ok("用户拒绝了执行该工具请求。".into())
+            } else if tool.status == "skipped" {
+                Ok("用户跳过了此工具执行，请继续执行后续步骤；不要假定该操作已生效。".into())
             } else {
                 snapshot.status = "running".into();
                 snapshot.executing_tool_message_id = Some(tool.message_id.clone());

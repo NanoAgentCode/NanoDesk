@@ -424,7 +424,7 @@ export function useChat({
     }
   }
 
-  async function toolDecision(messageId: string, action: "approve" | "reject" | "retry") {
+  async function toolDecision(messageId: string, action: "approve" | "reject" | "skip" | "retry") {
     const tool = messageToolCalls[messageId];
     if (!tool) {
       setNotice("找不到工具执行记录，请重新打开此会话。");
@@ -441,6 +441,9 @@ export function useChat({
   }
   async function handleRejectTool(messageId: string, _toolCall: ParsedToolCall) {
     await toolDecision(messageId, "reject");
+  }
+  async function handleSkipTool(messageId: string, _toolCall: ParsedToolCall) {
+    await toolDecision(messageId, "skip");
   }
   async function handleRetryTool(messageId: string) {
     await toolDecision(messageId, "retry");
@@ -704,6 +707,7 @@ export function useChat({
     handleRegenerateLastResponse,
     handleExecuteTool,
     handleRejectTool,
+    handleSkipTool,
     handleRetryTool,
     handleResumeAgentRun,
     handleClarificationAnswer,

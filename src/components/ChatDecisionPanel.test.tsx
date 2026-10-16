@@ -39,6 +39,7 @@ describe("ChatDecisionPanel", () => {
           disabled={false}
           onRunTool={noop}
           onRejectTool={noop}
+          onSkipTool={noop}
           onSubmitClarification={noop}
         />
       </MantineProvider>
@@ -78,6 +79,7 @@ describe("ChatDecisionPanel", () => {
           disabled={false}
           onRunTool={noop}
           onRejectTool={noop}
+          onSkipTool={noop}
           onSubmitClarification={noop}
         />
       </MantineProvider>
@@ -85,6 +87,8 @@ describe("ChatDecisionPanel", () => {
 
     expect(markup).toContain("是否允许运行工具？");
     expect(markup).toContain("read_file");
-    expect(markup).toContain("运行工具");
+    expect(markup).toContain("执行");
+    expect(markup).toContain("拒绝");
+    expect(markup).toContain("跳过");
   });
 });

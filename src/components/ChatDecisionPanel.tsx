@@ -23,6 +23,7 @@ interface ChatDecisionPanelProps {
   disabled: boolean;
   onRunTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   onRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  onSkipTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
   onSubmitClarification: (
     messageId: string,
     request: AgentClarificationRequest,
@@ -48,6 +49,7 @@ export default function ChatDecisionPanel({
   disabled,
   onRunTool,
   onRejectTool,
+  onSkipTool,
   onSubmitClarification
 }: ChatDecisionPanelProps) {
   const [questionIndex, setQuestionIndex] = useState(0);
@@ -105,11 +107,19 @@ export default function ChatDecisionPanel({
           ))}
         </div>
         <footer>
+          <Button
+            variant="default"
+            leftSection={<SkipForward size={15} />}
+            disabled={disabled}
+            onClick={() => void onSkipTool(tool.messageId, tool.toolCall)}
+          >
+            跳过
+          </Button>
           <Button variant="default" disabled={disabled} onClick={() => void onRejectTool(tool.messageId, tool.toolCall)}>
             拒绝
           </Button>
           <Button disabled={disabled} onClick={() => void onRunTool(tool.messageId, tool.toolCall)}>
-            运行工具
+            执行
           </Button>
         </footer>
       </section>

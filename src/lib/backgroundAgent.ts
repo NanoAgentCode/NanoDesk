@@ -22,7 +22,7 @@ export interface BackgroundAgentSnapshot {
 }
 export interface BackgroundAgentDecision {
   run_id: string;
-  action: "approve" | "reject" | "retry" | "resume" | "clarify" | "approve_plan" | "reject_plan";
+  action: "approve" | "reject" | "skip" | "retry" | "resume" | "clarify" | "approve_plan" | "reject_plan";
   tool_call_id?: string;
   message_id?: string;
   answer?: string;
