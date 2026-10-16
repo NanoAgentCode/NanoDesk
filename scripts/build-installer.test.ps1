@@ -34,5 +34,8 @@ try {
 } finally {
   $env:VCVARS64 = $PreviousVcVars
   Remove-Item Function:\cmd.exe -ErrorAction SilentlyContinue
+  if ($global:InstallerTestRoot -and (Test-Path -LiteralPath $global:InstallerTestRoot)) {
+    Remove-Item -LiteralPath $global:InstallerTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
   Remove-Variable InstallerTestRoot -Scope Global -ErrorAction SilentlyContinue
 }
