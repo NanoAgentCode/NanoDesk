@@ -21,6 +21,17 @@ function global:cmd.exe {
     return
   }
   if ($command -like '*npm.cmd run tauri build*') {
+    if ($command -notmatch '--config "([^"]+)"') {
+      throw "Bundle must provide a beforeBuildCommand override"
+    }
+    $override = Get-Content -LiteralPath $Matches[1] -Raw | ConvertFrom-Json
+    if ($override.build.beforeBuildCommand -cne "") {
+      throw "Bundle must disable the duplicate frontend build"
+    }
+    Import-Module (Join-Path $global:InstallerTestRoot "scripts\build\common.psm1") -DisableNameChecking
+    if (-not (Test-FrontendUpToDate -Root $global:InstallerTestRoot).Fresh) {
+      throw "Bundle must only embed a current frontend"
+    }
     # Verify beforeBuildCommand was overridden away: the bundle stage must not
     # reach the frontend build command itself (separate branch above).
     $version = (Get-Content -LiteralPath "src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json).version
@@ -56,6 +67,9 @@ function Get-FrontendRecords {
 
 $PreviousVcVars = $env:VCVARS64
 try {
+  # Regression: hashing must work even when Get-FileHash cannot be resolved
+  # in a PowerShell host after the MSVC environment has been loaded.
+  function global:Get-FileHash { throw "Get-FileHash is unavailable in this test host" }
   $env:VCVARS64 = Join-Path $global:InstallerTestRoot "vcvars64.bat"
   Set-Content -LiteralPath $env:VCVARS64 -Value "@echo off"
 
@@ -111,7 +125,14 @@ try {
     throw "dry-run must not execute the frontend build"
   }
   Write-Host "PASS: dry-run prints the stage plan with skip reasons and performs no build."
+
+  # Standalone bundle must refresh stale frontend rather than embed old dist.
+  & (Join-Path $global:InstallerTestRoot "scripts\build\build-bundle.ps1") | Out-Null
+  $records = @(Get-FrontendRecords)
+  if ($records[-1].skipped) { throw "Standalone bundle must refresh stale frontend" }
+  Write-Host "PASS: standalone bundle refreshes stale frontend before packaging."
 } finally {
+  Remove-Item Function:\Get-FileHash -ErrorAction SilentlyContinue
   $env:VCVARS64 = $PreviousVcVars
   Remove-Item Function:\cmd.exe -ErrorAction SilentlyContinue
   if ($global:InstallerTestRoot -and (Test-Path -LiteralPath $global:InstallerTestRoot)) {

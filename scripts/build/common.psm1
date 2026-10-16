@@ -217,7 +217,17 @@ function Get-FrontendFingerprint {
     foreach ($file in $files) {
       if ($file.Name -like "*.test.*") { continue }
       $rel = $file.FullName.Substring($Root.Length).TrimStart('\').Replace('\', '/').ToLowerInvariant()
-      $entries.Add("$rel|$((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())")
+      # Use .NET directly so hashing does not depend on host module discovery
+      # after importing the MSVC environment (PowerShell 5.1/7 interoperability).
+      $fileSha = [System.Security.Cryptography.SHA256]::Create()
+      $stream = [System.IO.File]::OpenRead($file.FullName)
+      try {
+        $fileHash = ([BitConverter]::ToString($fileSha.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+        $entries.Add("$rel|$fileHash")
+      } finally {
+        $stream.Dispose()
+        $fileSha.Dispose()
+      }
     }
   }
   $joined = ($entries | Sort-Object) -join "`n"

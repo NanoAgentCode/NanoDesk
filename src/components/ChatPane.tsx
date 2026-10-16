@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActionIcon as MantineActionIcon,
   Button,
@@ -11,6 +11,7 @@ import {
 import {
   Activity,
   ArrowRight,
+  ArrowDown,
   BookOpen,
   Bug,
   CheckCircle2,
@@ -44,6 +45,7 @@ import type { UseModelReturn } from "../hooks/useModel";
 import { buildChatModelOptions } from "../lib/modelOptions";
 import { findPendingToolApproval, resolveChatDecisionState } from "../lib/chatDecisionState";
 import { getRoutingModeLabel } from "../lib/modelRouting";
+import { attachChatScroll } from "../lib/chatScroll";
 
 interface ChatPaneProps {
   activeConversationId: string;
@@ -191,6 +193,16 @@ export default function ChatPane({
   handleDeleteRagFile,
   onOpenModelSettings
 }: ChatPaneProps) {
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
+  const chatContentRef = useRef<HTMLDivElement | null>(null);
+  const chatScrollRef = useRef<ReturnType<typeof attachChatScroll> | null>(null);
+  const [followingLatest, setFollowingLatest] = useState(true);
+  useLayoutEffect(() => {
+    if (!chatLogRef.current || !chatContentRef.current) return;
+    const scroll = attachChatScroll(chatLogRef.current, chatContentRef.current, setFollowingLatest);
+    chatScrollRef.current = scroll;
+    return () => { scroll.dispose(); chatScrollRef.current = null; };
+  }, [activeConversationId]);
   const runtimePanelRef = useRef<HTMLElement | null>(null);
   const runtimeToggleBtnRef = useRef<HTMLButtonElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -360,7 +372,9 @@ export default function ChatPane({
         />
       )}
 
-      <div className="chat-log">
+      <div className="chat-log-region">
+      <div className="chat-log" ref={chatLogRef} tabIndex={0} aria-label="对话消息">
+        <div className="chat-log-content" ref={chatContentRef}>
         {messages.filter((message) => !message.metadata?.context_summary).map((message) => {
           const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
           const clarification = message.role === "assistant" ? parseClarificationRequest(message.content) : null;
@@ -504,6 +518,14 @@ export default function ChatPane({
             </div>
           </section>
         )}
+        </div>
+      </div>
+
+      {!followingLatest && (
+        <button type="button" className="chat-jump-to-latest" onClick={() => chatScrollRef.current?.jumpToLatest()}>
+          <ArrowDown size={15} aria-hidden="true" />回到最新消息
+        </button>
+      )}
       </div>
 
       <ChatDecisionPanel

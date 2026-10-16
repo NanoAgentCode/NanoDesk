@@ -11,7 +11,8 @@ param(
 $ErrorActionPreference = "Stop"
 Import-Module (Join-Path $PSScriptRoot "common.psm1") -DisableNameChecking
 if (-not $ProjectRoot) { $ProjectRoot = Get-ProjectRoot }
-if (-not $RunId) { Set-BuildRunId -RunId ([guid]::NewGuid().ToString("N")) } else { Set-BuildRunId -RunId $RunId }
+if (-not $RunId) { $RunId = [guid]::NewGuid().ToString("N") }
+Set-BuildRunId -RunId $RunId
 $Brand = Get-BrandConfig -Root $ProjectRoot
 
 if (-not $SkipEnv -and -not $DryRun) {
@@ -24,6 +25,11 @@ if (-not $SkipEnv -and -not $DryRun) {
 if ($DryRun) {
   Write-Host "==> [dry-run] bundle  将执行 tauri build --bundles nsis（beforeBuildCommand 经 --config 覆盖置空）"
   return
+}
+
+# Standalone bundle calls must refresh dist before embedding it.
+if (-not $SkipEnv) {
+  & (Join-Path $PSScriptRoot "build-frontend.ps1") -ProjectRoot $ProjectRoot -EntryPoint $EntryPoint -RunId $RunId -SkipEnv
 }
 
 # Keep the version used when starting this build; source files may change while it runs.

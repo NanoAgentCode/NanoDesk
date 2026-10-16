@@ -5,6 +5,10 @@ use serde::Serialize;
 use crate::error::{AppError, AppResult};
 use crate::project_files::{normalize_relative_path, project_root, resolve_project_relative_path};
 
+mod search_scope;
+
+pub(crate) const CODE_SEARCH_INSTRUCTION: &str = "代码定位优先使用当前问题的代码索引检索结果，先按命中路径和行号读取文件。索引不足或过期时，可在明确的项目子目录内搜索（例如 rg -n pattern src/components，或 Get-ChildItem -Path src/components -Recurse -Filter *.tsx）；不要从项目根目录递归扫描。没有索引时提示使用左侧项目名称旁的数据库图标建立项目索引，但仍可读取已知文件或执行限定目录的搜索。工具被拒绝后应缩小范围，不要原样重复失败命令。";
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolPolicyDescriptor {
     pub name: &'static str,
@@ -203,7 +207,7 @@ fn evaluate_command_tool(
         ));
     }
     let command = required_policy_arg(args, "command")?;
-    let command_policy = evaluate_command(command)?;
+    let command_policy = evaluate_command(command, &context.project_path)?;
     let mut normalized_args = args.clone();
     normalized_args.insert("command".to_string(), command.trim().to_string());
     Ok(decision(
@@ -308,7 +312,7 @@ struct CommandPolicy {
     reason: &'static str,
 }
 
-fn evaluate_command(command: &str) -> AppResult<CommandPolicy> {
+fn evaluate_command(command: &str, project_path: &str) -> AppResult<CommandPolicy> {
     let normalized = command
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -320,9 +324,9 @@ fn evaluate_command(command: &str) -> AppResult<CommandPolicy> {
             "工具策略拒绝执行高破坏性命令，请改用更小范围的操作".to_string(),
         ));
     }
-    if is_broad_recursive_code_scan(&normalized, &tokens) {
+    if search_scope::is_broad_search(command, project_path) {
         return Err(AppError::Message(
-            "工具策略拒绝执行大范围递归代码扫描。请先使用项目区的代码索引按钮建立索引，再直接提问代码实体、调用或实现位置。".to_string(),
+            format!("工具策略拒绝未限定范围的递归搜索。请优先使用代码索引结果；结果不足时指定项目内的具体子目录或文件，不能使用项目根目录、父目录或范围不明的路径。{CODE_SEARCH_INSTRUCTION}"),
         ));
     }
     if is_write_like_command(&tokens) {
@@ -344,34 +348,6 @@ fn tokenize_command(command: &str) -> Vec<String> {
         .filter(|token| !token.is_empty())
         .map(ToString::to_string)
         .collect()
-}
-
-fn is_broad_recursive_code_scan(normalized: &str, tokens: &[String]) -> bool {
-    let recursive = tokens
-        .iter()
-        .any(|token| matches!(token.as_str(), "-recurse" | "/s" | "-r" | "--recursive"));
-    if !recursive {
-        return false;
-    }
-
-    let scans_files = tokens.iter().any(|token| {
-        matches!(
-            token.as_str(),
-            "get-childitem" | "gci" | "dir" | "ls" | "rg" | "grep" | "findstr" | "where"
-        )
-    });
-    let scans_code = normalized.contains("*.ts")
-        || normalized.contains("*.tsx")
-        || normalized.contains("*.js")
-        || normalized.contains("*.jsx")
-        || normalized.contains("*.rs")
-        || normalized.contains("*.java")
-        || normalized.contains("entity")
-        || normalized.contains("model")
-        || normalized.contains("controller")
-        || normalized.contains("service");
-
-    scans_files && scans_code
 }
 
 fn is_destructive_command(normalized: &str, tokens: &[String]) -> bool {
@@ -558,6 +534,21 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn command_policy_allows_scoped_search_and_guides_broad_search_to_index() {
+        let root = test_project();
+        fs::create_dir_all(root.join("src/components")).unwrap();
+        let ctx = context(&root, true);
+        let allowed = evaluate_tool_call("execute_command", &args(&[("command", "Get-ChildItem src/components -Recurse -Filter *.tsx")]), &ctx)
+            .expect("a scoped code search must be allowed");
+        assert_eq!(allowed.risk, "medium");
+        let error = evaluate_tool_call("execute_command", &args(&[("command", "rg -n service .")]), &ctx)
+            .unwrap_err().to_string();
+        assert!(error.contains("代码索引"));
+        assert!(error.contains("具体子目录"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

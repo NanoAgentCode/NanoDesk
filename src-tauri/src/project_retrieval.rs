@@ -33,11 +33,9 @@ pub(crate) fn search_project_context(
             project_index_matches: Vec::new(),
         });
     }
-    let code_matches = if is_likely_code_question(query) {
-        db.search_code_index(project_path, query, query_embedding, CODE_INDEX_LIMIT)?
-    } else {
-        Vec::new()
-    };
+    // Query the existing index before any shell search, including bare symbol
+    // names and filenames that do not contain a code-question keyword.
+    let code_matches = db.search_code_index(project_path, query, query_embedding, CODE_INDEX_LIMIT)?;
     let project_index_matches = db.search_project_index(
         project_path,
         Some(DOCUMENT_INDEXER),
@@ -51,54 +49,12 @@ pub(crate) fn search_project_context(
     })
 }
 
-fn is_likely_code_question(query: &str) -> bool {
-    let normalized = query.to_lowercase();
-    [
-        "代码",
-        "函数",
-        "组件",
-        "接口",
-        "调用",
-        "实现",
-        "报错",
-        "文件",
-        "模块",
-        "重构",
-        "类",
-        "类型",
-        "方法",
-        "tsx",
-        "ts",
-        "rust",
-        "tauri",
-        "api",
-        "hook",
-        "component",
-        "function",
-        "class",
-        "type",
-        "interface",
-        "error",
-        "trace",
-        "call",
-    ]
-    .iter()
-    .any(|term| normalized.contains(term))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models::{CodeChunk, ProjectIndexChunk};
     use chrono::Utc;
     use std::path::PathBuf;
-
-    #[test]
-    fn detects_code_questions_consistently() {
-        assert!(is_likely_code_question("这个函数在哪里实现？"));
-        assert!(is_likely_code_question("trace the API call"));
-        assert!(!is_likely_code_question("帮我总结产品说明"));
-    }
 
     #[test]
     fn shared_search_combines_vector_code_and_document_results() {
@@ -196,5 +152,9 @@ mod tests {
             "docs/semantic.md"
         );
         assert_eq!(result.code_matches[0].kind, "semantic_chunk");
+        // A bare identifier used to skip code retrieval entirely.
+        let result = search_project_context(&db, project_path, "greet_user", Some(&[1.0, 0.0]))
+            .expect("bare identifiers should query the code index");
+        assert_eq!(result.code_matches[0].file_path, "src/semantic.rs");
     }
 }

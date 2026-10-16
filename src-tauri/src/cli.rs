@@ -722,6 +722,7 @@ async fn build_system_message(
         if !code_context.is_empty() {
             sections.push(format!("当前问题的代码索引结果：\n{code_context}"));
         }
+        sections.push(crate::tool_policy::CODE_SEARCH_INSTRUCTION.to_string());
         if !document_context.is_empty() {
             sections.push(format!("当前问题的文档索引结果：\n{document_context}"));
         }

@@ -62,6 +62,8 @@ pub(super) async fn prepare_model_context(
         }
     };
     let mut system = request.system_message.clone();
+    system.content.push_str("\n\n");
+    system.content.push_str(crate::tool_policy::CODE_SEARCH_INSTRUCTION);
     if let Some(message) = history.iter().rev().find(|message| message.role == "assistant") {
         if message.metadata.as_ref().and_then(|metadata| metadata.generation_status.as_deref()) == Some("interrupted") {
             system.content.insert_str(0, "上一条助手消息因输出截断、超时或停止而中断，不代表任务已完成。结合历史中已保留的内容，从中断位置继续完成当前任务，避免重述已输出的正文或重复已完成的操作；若用户提出了新要求，以新要求为准。若上一条包含未闭合的工具调用，该调用尚未执行：请重新输出该工具调用的完整结构，不能只输出剩余标签。\n\n");

@@ -180,6 +180,44 @@
   padding: 8px 10px 4px;
 }
 .chat-log { padding: 12px 2px 4px; }
+.chat-log {
+  overflow-anchor: none;
+  overscroll-behavior-y: contain;
+  scroll-behavior: auto;
+  scrollbar-gutter: stable;
+}
+.chat-log-region {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.chat-log-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 0 0 auto;
+  min-height: 100%;
+}
+.chat-log-content > * { flex-shrink: 0; }
+.chat-jump-to-latest {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: var(--chat-pane-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+}
 .chat-welcome {
   position: relative;
   width: min(860px, 100%);
