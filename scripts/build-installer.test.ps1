@@ -20,12 +20,6 @@ function global:cmd.exe {
     $global:LASTEXITCODE = 0
     return
   }
-  if ($command -like '*tauri build*--no-bundle*') {
-    New-Item -ItemType Directory -Force "src-tauri\target\release" | Out-Null
-    Set-Content -LiteralPath "src-tauri\target\release\nano-desk.exe" -Value "test exe"
-    $global:LASTEXITCODE = 0
-    return
-  }
   if ($command -like '*npm.cmd run tauri build*') {
     # Verify beforeBuildCommand was overridden away: the bundle stage must not
     # reach the frontend build command itself (separate branch above).

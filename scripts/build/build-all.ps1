@@ -1,9 +1,9 @@
 ﻿#Requires -Version 5.1
-# 组合入口：阶段 1 前端 -> 阶段 2 应用 -> 阶段 3 打包。
-# -Fast          按需增量：前端指纹未变化时跳过阶段 1；阶段 2 始终执行
-#                （cargo 增量缓存，源码未变时为秒级 no-op），避免打包陈旧二进制。
+# 组合入口：阶段 1 前端（指纹跳过）-> 阶段 2+3 tauri build --bundles nsis
+# （编译与打包一次完成，形状恒定，稳态零重编译）。
 # -ForceFrontend 强制重建前端。
 # -DryRun        只输出阶段计划与跳过原因，不执行任何构建。
+# package:win 与 package:fast 行为一致（均增量）；-Fast 仅影响计时记录的入口标签。
 param(
   [switch]$Fast,
   [switch]$ForceFrontend,
@@ -27,18 +27,15 @@ Write-Host ("==> Entry: {0}  Run: {1}" -f $EntryPoint, $RunId)
 if ($DryRun) {
   Write-Host "==> [dry-run] 阶段计划"
   $fresh = Test-FrontendUpToDate -Root $Root
-  $frontendSkip = $Fast -and $fresh.Fresh
-  $frontendAction = if (-not $Fast) {
-    "将执行 npm.cmd run build（package:win 全量模式）"
-  } elseif ($frontendSkip) {
+  $frontendSkip = -not $ForceFrontend -and $fresh.Fresh
+  $frontendAction = if ($frontendSkip) {
     "跳过：$($fresh.Reason)"
   } else {
     "将执行 npm.cmd run build（$($fresh.Reason)）"
   }
   Write-Host ("==> [dry-run] env      始终执行：注入 MSVC 环境、校验 workspace 标记")
   Write-Host ("==> [dry-run] frontend {0}" -f $frontendAction)
-  Write-Host "==> [dry-run] app      将执行 cargo build --release --features tauri/custom-protocol（增量）"
-  Write-Host "==> [dry-run] bundle   将执行 tauri build --bundles nsis（beforeBuildCommand 经 --config 覆盖置空）"
+  Write-Host "==> [dry-run] bundle   将执行 tauri build --bundles nsis（编译+打包一次完成；beforeBuildCommand 经 --config 覆盖置空）"
   return
 }
 
@@ -48,10 +45,12 @@ Initialize-WorkspaceMarker -Root $Root
 Initialize-MSVCEnvironment -Root $Root
 Complete-Stage -Timer $envTimer -EntryPoint $EntryPoint | Out-Null
 
-# 阶段 1/2/3：环境已注入，各阶段脚本在同进程内执行以共享计时记录。
-# package:win 为全量基线：前端始终重建；package:fast 才按指纹跳过。
-& (Join-Path $PSScriptRoot "build-frontend.ps1") -ProjectRoot $Root -EntryPoint $EntryPoint -RunId $RunId -SkipEnv -Force:(-not $Fast -or $ForceFrontend)
-& (Join-Path $PSScriptRoot "build-app.ps1") -ProjectRoot $Root -EntryPoint $EntryPoint -RunId $RunId -SkipEnv
+# 阶段 1：前端。所有入口都按指纹跳过；需要强制全量重建前端时传 -ForceFrontend。
+& (Join-Path $PSScriptRoot "build-frontend.ps1") -ProjectRoot $Root -EntryPoint $EntryPoint -RunId $RunId -SkipEnv -Force:$ForceFrontend
+
+# 阶段 2+3 合并为一次 tauri build --bundles nsis：编译与打包同形调用。
+# 不要在组合流程中插入 --no-bundle 的 app 阶段——它会改变 TAURI_CONFIG，
+# 导致下一次构建重链接 nano-desk（实测 ~86s）。package:app 仍可单独使用。
 & (Join-Path $PSScriptRoot "build-bundle.ps1") -ProjectRoot $Root -EntryPoint $EntryPoint -RunId $RunId -SkipEnv
 
 Write-BuildSummary
