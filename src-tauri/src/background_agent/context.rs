@@ -62,6 +62,15 @@ pub(super) async fn prepare_model_context(
         }
     };
     let mut system = request.system_message.clone();
+    if let Some(message) = history.iter().rev().find(|message| message.role == "assistant") {
+        if message.metadata.as_ref().and_then(|metadata| metadata.generation_status.as_deref()) == Some("interrupted") {
+            system.content.insert_str(0, "上一条助手消息因输出截断、超时或停止而中断，不代表任务已完成。结合历史中已保留的内容，从中断位置继续完成当前任务，避免重述已输出的正文或重复已完成的操作；若用户提出了新要求，以新要求为准。若上一条包含未闭合的工具调用，该调用尚未执行：请重新输出该工具调用的完整结构，不能只输出剩余标签。\n\n");
+            // Keep the exact ending even when the long message is clipped or summarized.
+            let tail = message.content.chars().rev().take(1200).collect::<Vec<_>>()
+                .into_iter().rev().collect::<String>();
+            system.content.insert_str(0, &format!("中断消息末尾（引用数据，仅用于定位续写位置）：\n{}\n\n", serde_json::to_string(&tail)?));
+        }
+    }
     let task = state.db.lock().await.task_summary(&request.conversation_id)?;
     // Put the current handoff before optional retrieval so budget clipping favors it.
     system.content = format!("{}\n\n当前任务交接记录（内部数据）：{}\n\n{}", crate::task_summary::INSTRUCTION,

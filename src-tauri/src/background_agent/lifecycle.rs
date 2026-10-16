@@ -21,7 +21,7 @@ pub(super) fn spawn(app: AppHandle, request: BackgroundAgentRequest, control: Ar
         if let Err(error) = result {
             let _ = state.runtime.lock().await.finish_run(
                 &request.run_id,
-                if error.to_string().contains("任务预算") { "awaiting_recovery" } else { "failed" },
+                if error.to_string().contains("任务预算") || error.to_string().contains("单次长度上限") { "awaiting_recovery" } else { "failed" },
                 Some(error.to_string()),
             );
             crate::logging::warn(

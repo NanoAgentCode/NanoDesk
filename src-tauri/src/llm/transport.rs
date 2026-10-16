@@ -79,6 +79,19 @@ where
         return Ok(());
     }
 
+    // Deliver the final delta before reporting truncation: callers persist the
+    // accumulated output on error and must never execute an incomplete tool call.
+    let truncated = serde_json::from_str::<serde_json::Value>(data)
+        .ok()
+        .is_some_and(|value| match provider {
+            StreamProvider::OpenAi => value["choices"].as_array().is_some_and(|choices| {
+                choices
+                    .iter()
+                    .any(|choice| choice["finish_reason"] == "length")
+            }),
+            StreamProvider::Anthropic => value["delta"]["stop_reason"] == "max_tokens",
+        });
+
     let delta = match provider {
         StreamProvider::OpenAi => parse_openai_delta(data),
         StreamProvider::Anthropic => parse_anthropic_delta(data),
@@ -99,6 +112,11 @@ where
         emit(event)?;
     }
 
+    if truncated {
+        let message = "模型输出达到单次长度上限，已保留已生成内容；继续任务将从中断处续写。";
+        emit_stream_error(emit, request_id, message);
+        return Err(AppError::Message(message.into()));
+    }
     Ok(())
 }
 
@@ -159,4 +177,48 @@ where
         request_id: request_id.to_string(),
         message: message.to_string(),
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn length_limit_preserves_final_delta_and_reports_error() {
+        let mut events = Vec::new();
+        let result = process_sse_line(
+            &mut |event| {
+                events.push(event);
+                Ok(())
+            },
+            "test",
+            r#"data: {"choices":[{"delta":{"content":"末尾"},"finish_reason":"length"}]}"#,
+            StreamProvider::OpenAi,
+        );
+        assert!(result.is_err());
+        assert!(matches!(&events[0], ChatStreamEvent::Delta { content, .. } if content == "末尾"));
+        assert!(matches!(&events[1], ChatStreamEvent::Error { .. }));
+    }
+
+    #[test]
+    fn anthropic_max_tokens_is_not_success() {
+        assert!(process_sse_line(
+            &mut |_| Ok(()),
+            "test",
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}"#,
+            StreamProvider::Anthropic
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn normal_stop_is_success() {
+        assert!(process_sse_line(
+            &mut |_| Ok(()),
+            "test",
+            r#"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            StreamProvider::OpenAi
+        )
+        .is_ok());
+    }
 }
