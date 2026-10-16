@@ -27,6 +27,9 @@ pub async fn run_project_command(
 
     c.current_dir(root);
     c.kill_on_drop(true);
+    // Python CLIs write to pipes here, which otherwise use the Windows locale.
+    c.env("PYTHONIOENCODING", "utf-8");
+    c.env("PYTHONUTF8", "1");
     if let Some(api_key) = tavily_api_key {
         c.env("TAVILY_API_KEY", api_key);
     }
@@ -67,16 +70,17 @@ impl WindowsCommandShell {
         }
     }
 
-    fn args(self, command: &str) -> Vec<&str> {
+    fn args(self, command: &str) -> Vec<String> {
         match self {
             Self::PowerShell => vec![
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                command,
-            ],
-            Self::Cmd => vec!["/D", "/S", "/C", command],
+            ].into_iter().map(String::from).chain(std::iter::once(format!(
+                "[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new($false); {command}"
+            ))).collect(),
+            Self::Cmd => vec!["/D", "/S", "/C", command].into_iter().map(String::from).collect(),
         }
     }
 }
@@ -288,4 +292,36 @@ fn ensure_tavily_cli_if_needed(command: &str) -> AppResult<()> {
         ));
     }
     Ok(())
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn powershell_preserves_unicode_and_configures_python() {
+        let output = run_project_command(
+            Path::new("."),
+            "Write-Output '中文 — 🧪'; Write-Output $env:PYTHONIOENCODING; Write-Output $env:PYTHONUTF8",
+            None,
+        ).await.unwrap();
+        assert_eq!(
+            output.lines().collect::<Vec<_>>(),
+            vec!["中文 — 🧪", "utf-8", "1"]
+        );
+    }
+
+    #[tokio::test]
+    async fn shell_failure_still_reports_stderr() {
+        let error = run_project_command(
+            Path::new("."),
+            "[Console]::Error.WriteLine('错误 🧪'); exit 7",
+            None,
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("Some(7)"), "{error}");
+        assert!(error.contains("错误 🧪"), "{error}");
+    }
 }
