@@ -366,13 +366,43 @@ async fn truncated_tool_is_assembled_before_execution_without_user_continue() {
 
 #[tokio::test]
 async fn truncated_reasoning_only_reports_actionable_error_and_saves_reasoning() {
-    let server = MockModel::start(vec![(vec!["REASONING:still thinking".into(), "FINISH_LENGTH".into()], 0)]);
+    let empty = (vec!["REASONING:still thinking".into(), "FINISH_LENGTH".into()], 0);
+    let server = MockModel::start(vec![empty.clone(), empty.clone(), empty]);
     let fixture = Fixture::new(&server.url, "full");
     let error = fixture.start().await.unwrap().unwrap_err();
     assert!(error.to_string().contains("未产生可续写的正文"));
     let messages = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
-    assert_eq!(messages.last().unwrap().metadata.as_ref().unwrap().assistant_reasoning.as_deref(), Some("still thinking"));
-    assert_eq!(server.worker.join().unwrap().len(), 1);
+    assert_eq!(messages.last().unwrap().metadata.as_ref().unwrap().assistant_reasoning.as_deref(), Some("still thinkingstill thinkingstill thinking"));
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests[1]["max_tokens"].as_u64().unwrap(),
+        requests[0]["max_tokens"].as_u64().unwrap() * 2
+    );
+    assert_eq!(requests[1]["reasoning_effort"], "low");
+    assert_eq!(requests[2]["reasoning_effort"], "low");
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn empty_reasoning_truncation_recovers_with_larger_output_and_lower_effort() {
+    let server = MockModel::start(vec![
+        (vec!["REASONING:deep thought".into(), "FINISH_LENGTH".into()], 0),
+        (vec!["REASONING:deeper thought".into(), "FINISH_LENGTH".into()], 0),
+        (vec!["Recovered answer".into()], 0),
+    ]);
+    let fixture = Fixture::new(&server.url, "full");
+    fixture.start().await.unwrap().unwrap();
+    let runtime = fixture.state.runtime.lock().await;
+    assert_eq!(runtime.get_run(&fixture.request.run_id).unwrap().status, "completed");
+    drop(runtime);
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests[1]["max_tokens"].as_u64().unwrap(),
+        requests[0]["max_tokens"].as_u64().unwrap() * 2
+    );
+    assert_eq!(requests[1]["reasoning_effort"], "low");
     fixture.cleanup();
 }
 
