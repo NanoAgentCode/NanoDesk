@@ -1,6 +1,15 @@
 use super::protocol::{AnthropicStreamChunk, OpenAiStreamChunk, ParsedStreamDelta, StreamProvider};
 use crate::error::{AppError, AppResult};
 use crate::models::ChatStreamEvent;
+use std::{future::Future, time::Duration};
+
+const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+
+async fn wait_for_stream<T>(future: impl Future<Output = T>) -> AppResult<T> {
+    tokio::time::timeout(STREAM_IDLE_TIMEOUT, future)
+        .await
+        .map_err(|_| AppError::from("模型连接超过 120 秒没有返回数据，请重试或检查模型服务。"))
+}
 
 pub(super) async fn stream_sse_response<F>(
     request_id: String,
@@ -11,7 +20,10 @@ pub(super) async fn stream_sse_response<F>(
 where
     F: FnMut(ChatStreamEvent) -> AppResult<()>,
 {
-    let response = match builder.send().await {
+    let response = match wait_for_stream(builder.send())
+        .await
+        .and_then(|result| result.map_err(AppError::from))
+    {
         Ok(response) => response,
         Err(err) => {
             emit_stream_error(&mut emit, &request_id, &err.to_string());
@@ -21,7 +33,7 @@ where
     let status = response.status();
 
     if !status.is_success() {
-        let text = response.text().await.unwrap_or_default();
+        let text = wait_for_stream(response.text()).await?.unwrap_or_default();
         emit_stream_error(
             &mut emit,
             &request_id,
@@ -36,7 +48,15 @@ where
     let mut stream = response.bytes_stream();
 
     use futures_util::StreamExt;
-    while let Some(chunk) = stream.next().await {
+    loop {
+        let chunk = match wait_for_stream(stream.next()).await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(error) => {
+                emit_stream_error(&mut emit, &request_id, &error.to_string());
+                return Err(error);
+            }
+        };
         let chunk = match chunk {
             Ok(chunk) => chunk,
             Err(err) => {
@@ -49,7 +69,10 @@ where
         while let Some(line_end) = buffer.find('\n') {
             let line = buffer[..line_end].trim().to_string();
             buffer = buffer[line_end + 1..].to_string();
-            process_sse_line(&mut emit, &request_id, &line, provider)?;
+            if process_sse_line(&mut emit, &request_id, &line, provider)? {
+                emit(ChatStreamEvent::Done { request_id })?;
+                return Ok(());
+            }
         }
     }
 
@@ -66,17 +89,25 @@ pub(super) fn process_sse_line<F>(
     request_id: &str,
     line: &str,
     provider: StreamProvider,
-) -> AppResult<()>
+) -> AppResult<bool>
 where
     F: FnMut(ChatStreamEvent) -> AppResult<()>,
 {
     if line.is_empty() || line.starts_with(':') || !line.starts_with("data:") {
-        return Ok(());
+        return Ok(false);
     }
 
     let data = line.trim_start_matches("data:").trim();
     if data == "[DONE]" {
-        return Ok(());
+        return Ok(true);
+    }
+
+    if matches!(provider, StreamProvider::Anthropic)
+        && serde_json::from_str::<serde_json::Value>(data)
+            .ok()
+            .is_some_and(|value| value["type"] == "message_stop")
+    {
+        return Ok(true);
     }
 
     // Deliver the final delta before reporting truncation: callers persist the
@@ -117,7 +148,7 @@ where
         emit_stream_error(emit, request_id, message);
         return Err(AppError::OutputTruncated);
     }
-    Ok(())
+    Ok(false)
 }
 
 pub(super) fn parse_openai_delta(data: &str) -> Option<ParsedStreamDelta> {
@@ -182,6 +213,85 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn terminal_events_finish_without_waiting_for_connection_close() {
+        use std::io::{Read, Write};
+        for (provider, terminal) in [
+            (StreamProvider::OpenAi, "data: [DONE]\n\n"),
+            (
+                StreamProvider::Anthropic,
+                "data: {\"type\":\"message_stop\"}\n\n",
+            ),
+        ] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let (release, wait) = std::sync::mpsc::channel::<()>();
+            let worker = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut byte = [0];
+                let mut headers = Vec::new();
+                while !headers.ends_with(b"\r\n\r\n") {
+                    socket.read_exact(&mut byte).unwrap();
+                    headers.push(byte[0]);
+                }
+                write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\n{terminal}").unwrap();
+                socket.flush().unwrap();
+                let _ = wait.recv_timeout(Duration::from_secs(5));
+            });
+            let mut events = Vec::new();
+            let result = tokio::time::timeout(
+                Duration::from_secs(2),
+                stream_sse_response(
+                    "test".into(),
+                    reqwest::Client::builder()
+                        .no_proxy()
+                        .build()
+                        .unwrap()
+                        .get(format!("http://{address}")),
+                    provider,
+                    |event| {
+                        events.push(event);
+                        Ok(())
+                    },
+                ),
+            )
+            .await;
+            let _ = release.send(());
+            worker.join().unwrap();
+            result
+                .expect("terminal event must finish while socket is open")
+                .unwrap();
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(event, ChatStreamEvent::Done { .. }))
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn stop_reason_keeps_reading_until_terminal_event() {
+        assert!(!process_sse_line(
+            &mut |_| Ok(()),
+            "test",
+            r#"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            StreamProvider::OpenAi,
+        )
+        .unwrap());
+        assert!(!process_sse_line(
+            &mut |_| Ok(()),
+            "test",
+            ": heartbeat",
+            StreamProvider::OpenAi
+        )
+        .unwrap());
+    }
 
     #[test]
     fn length_limit_preserves_final_delta_and_reports_error() {
