@@ -22,13 +22,17 @@ function global:cmd.exe {
   $global:LASTEXITCODE = 0
 }
 
+$PreviousVcVars = $env:VCVARS64
 try {
+  $env:VCVARS64 = Join-Path $global:InstallerTestRoot "vcvars64.bat"
+  Set-Content -LiteralPath $env:VCVARS64 -Value "@echo off"
   & (Join-Path $global:InstallerTestRoot "scripts\build-installer.ps1")
   if (-not (Test-Path -LiteralPath (Join-Path $global:InstallerTestRoot "src-tauri\target\release\bundle\nsis\NanoDesk_0.2.1_x64-setup.exe"))) {
     throw "Regression fixture did not create the original-version installer"
   }
   Write-Host "PASS: artifact verification uses the build-start version even when the configuration changes during the build."
 } finally {
+  $env:VCVARS64 = $PreviousVcVars
   Remove-Item Function:\cmd.exe -ErrorAction SilentlyContinue
   Remove-Variable InstallerTestRoot -Scope Global -ErrorAction SilentlyContinue
 }

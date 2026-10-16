@@ -20,6 +20,24 @@ with sync_playwright() as p:
     page.wait_for_load_state("networkidle")
     panel = page.get_by_role("complementary", name="任务摘要")
     expect(panel.get_by_text("还没有明确的任务")).to_be_visible()
+    separator = panel.get_by_role("separator", name="调整任务摘要宽度")
+    before = panel.bounding_box()["width"]
+    handle = separator.bounding_box()
+    page.mouse.move(handle["x"] + handle["width"] / 2, handle["y"] + 100)
+    page.mouse.down()
+    page.mouse.move(handle["x"] - 120, handle["y"] + 100, steps=10)
+    page.mouse.up()
+    expanded_width = panel.bounding_box()["width"]
+    assert expanded_width > before + 100
+    page.reload(); page.wait_for_load_state("networkidle")
+    assert abs(panel.bounding_box()["width"] - expanded_width) < 2
+    separator.focus()
+    separator.press("ArrowRight")
+    assert panel.bounding_box()["width"] < expanded_width
+    separator.press("End")
+    assert page.locator("main").bounding_box()["width"] >= 360
+    separator.dblclick()
+    assert abs(panel.bounding_box()["width"] - before) < 2
     page.evaluate("window.taskItems.a = ['设计任务摘要与上下文压缩', '只设计，暂不实施', '每个聊天保留一条主任务']")
     page.get_by_role("button", name="完成一轮").click()
     expect(panel.get_by_role("listitem")).to_have_count(3)
@@ -35,6 +53,7 @@ with sync_playwright() as p:
     page.reload(); page.wait_for_load_state("networkidle")
     expect(panel.get_by_role("button", name="展开任务摘要").first).to_be_visible()
     page.get_by_role("button", name="展开任务摘要").first.click()
+    assert abs(panel.bounding_box()["width"] - before) < 2
     page.evaluate("window.delayA = true")
     page.get_by_role("button", name="完成一轮").click()
     page.wait_for_function("!!window.resolveA")
@@ -51,6 +70,12 @@ with sync_playwright() as p:
     page.set_viewport_size({"width": 960, "height": 800})
     page.get_by_role("button", name="收起任务摘要").click()
     expect(panel.get_by_role("button", name="展开任务摘要").first).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # The desktop shell has a 960px minimum; isolate the panel's overlay layout below it.
+    page.add_style_tag(content="body { min-width: 0; }")
+    page.set_viewport_size({"width": 640, "height": 800})
+    page.get_by_role("button", name="展开任务摘要").first.click()
+    assert panel.bounding_box()["width"] <= page.locator(".chat-workspace").bounding_box()["width"] * 0.85 + 1
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     browser.close()
     print("Task summary UI: empty state, items, three columns, collapse persistence, conversation isolation, stale response, retry and narrow layout passed.")

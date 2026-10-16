@@ -2,10 +2,25 @@ $ErrorActionPreference = "Stop"
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Brand = Get-Content -LiteralPath (Join-Path $Root "brand.config.json") -Raw | ConvertFrom-Json
-$VcVars = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+$VcVars = $env:VCVARS64
+if (-not $VcVars) {
+  $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+  if (Test-Path -LiteralPath $vswhere) {
+    $vsInstall = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if ($vsInstall) {
+      $VcVars = Join-Path ($vsInstall | Select-Object -First 1) "VC\Auxiliary\Build\vcvars64.bat"
+    }
+  }
+  if (-not $VcVars) {
+    foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+      $candidate = Join-Path $base "Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+      if (Test-Path -LiteralPath $candidate) { $VcVars = $candidate; break }
+    }
+  }
+}
 
-if (-not (Test-Path -LiteralPath $VcVars)) {
-  throw "Visual Studio Build Tools was not found: $VcVars"
+if (-not $VcVars -or -not (Test-Path -LiteralPath $VcVars)) {
+  throw "MSVC x64 build tools were not found. Install Visual Studio Build Tools with 'Desktop development with C++' (MSVC x64/x86 and Windows SDK), then retry. For a custom installation, set VCVARS64 to the full path of vcvars64.bat. Download: https://aka.ms/vs/17/release/vs_BuildTools.exe"
 }
 
 Push-Location $Root
@@ -56,7 +71,8 @@ try {
 
   $msvcInclude = Join-Path $Root ".build\msvc-include-shims"
   $excptHeader = Join-Path $msvcInclude "excpt.h"
-  $damagedExcptHeader = Get-ChildItem -LiteralPath "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC" -Recurse -Filter "excpt.*" -ErrorAction SilentlyContinue |
+  $MsvcTools = [System.IO.Path]::GetFullPath((Join-Path (Split-Path $VcVars -Parent) "..\..\Tools\MSVC"))
+  $damagedExcptHeader = Get-ChildItem -LiteralPath $MsvcTools -Recurse -Filter "excpt.*" -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -ne "excpt.h" -and (Get-Content -LiteralPath $_.FullName -TotalCount 1 -ErrorAction SilentlyContinue) -contains "//" } |
     Select-Object -First 1
   if ($damagedExcptHeader -and -not (Test-Path -LiteralPath (Join-Path $damagedExcptHeader.DirectoryName "excpt.h"))) {
