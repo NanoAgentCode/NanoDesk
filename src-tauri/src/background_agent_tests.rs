@@ -100,6 +100,58 @@ struct Fixture {
     state: Arc<AppState>,
     request: BackgroundAgentRequest,
 }
+
+#[tokio::test]
+async fn heartbeat_does_not_block_queued_context_or_tool_work() {
+    let fixture = Fixture::new("http://127.0.0.1:1/v1", "auto");
+    let state = &fixture.state;
+    state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, None, None).unwrap();
+    {
+        let held = state.db.lock().await;
+        let waiting = state.db.lock();
+        tokio::pin!(waiting);
+        assert!(futures_util::poll!(&mut waiting).is_pending());
+        drop(held);
+        // The context future has the first place in the fair mutex queue.
+        // Heartbeat must return so that select can poll that future again.
+        executor::checkpoint_progress(state, &fixture.request.run_id, 100, Some("test-lease")).unwrap();
+        let acquired = tokio::time::timeout(Duration::from_secs(1), &mut waiting).await.unwrap();
+        drop(acquired);
+    }
+    {
+        let held = state.runtime.lock().await;
+        let waiting = state.runtime.lock();
+        tokio::pin!(waiting);
+        assert!(futures_util::poll!(&mut waiting).is_pending());
+        drop(held);
+        executor::checkpoint_progress(state, &fixture.request.run_id, 200, Some("test-lease")).unwrap();
+        let acquired = tokio::time::timeout(Duration::from_secs(1), &mut waiting).await.unwrap();
+        drop(acquired);
+    }
+    // Skipped checkpoints are retried once the locks are free.
+    executor::checkpoint_progress(state, &fixture.request.run_id, 300, Some("test-lease")).unwrap();
+    assert_eq!(state.runtime.lock().await.task_budget(&fixture.request.run_id).unwrap().unwrap().elapsed_ms, 300);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn awaiting_heartbeat_lock_reproduces_select_stall() {
+    let lock = tokio::sync::Mutex::new(());
+    let held = lock.lock().await;
+    let work = lock.lock();
+    tokio::pin!(work);
+    assert!(futures_util::poll!(&mut work).is_pending());
+    drop(held);
+    let old_heartbeat = async {
+        tokio::select! {
+            biased;
+            _ = std::future::ready(()) => { let _guard = lock.lock().await; }
+            _ = &mut work => {}
+        }
+    };
+    assert!(tokio::time::timeout(Duration::from_millis(30), old_heartbeat).await.is_err());
+    assert!(tokio::time::timeout(Duration::from_secs(1), &mut work).await.is_ok());
+}
 impl Fixture {
     fn new(url: &str, mode: &str) -> Self {
         let root = std::env::temp_dir().join(format!("background-agent-test-{}", Uuid::new_v4()));

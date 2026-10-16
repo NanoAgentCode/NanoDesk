@@ -16,6 +16,25 @@ use std::sync::{atomic::Ordering, Arc};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+// A select branch must not queue behind the future that select stopped polling.
+// Skip busy locks; the next heartbeat retries and phase completion persists time.
+pub(super) fn checkpoint_progress(
+    state: &AppState,
+    run_id: &str,
+    elapsed_ms: u64,
+    lease: Option<&str>,
+) -> AppResult<()> {
+    if let Ok(runtime) = state.runtime.try_lock() {
+        runtime.checkpoint_task_time(run_id, elapsed_ms)?;
+    }
+    if let Some(lease) = lease {
+        if let Ok(db) = state.db.try_lock() {
+            db.start_profile_foreground_lease(lease, 30)?;
+        }
+    }
+    Ok(())
+}
+
 pub(super) async fn drive<F>(
     state: &AppState,
     request: BackgroundAgentRequest,
@@ -150,7 +169,7 @@ where
                 let mut checkpoint = tokio::time::interval(Duration::from_secs(1));
                 loop { tokio::select! {
                     result = &mut tool_future => break result.map(|execution| execution.result_text),
-                    _ = checkpoint.tick() => state.runtime.lock().await.checkpoint_task_time(&request.run_id, budget.elapsed_ms + tool_started.elapsed().as_millis() as u64)?,
+                    _ = checkpoint.tick() => checkpoint_progress(state, &request.run_id, budget.elapsed_ms + tool_started.elapsed().as_millis() as u64, None)?,
                 }}
             };
             budget.elapsed_ms += tool_started.elapsed().as_millis() as u64;
@@ -238,6 +257,8 @@ where
         snapshot.stream_message = None;
         snapshot.reasoning.clear();
         emit(snapshot.clone());
+        crate::logging::debug("background-agent", "preparing model context",
+            serde_json::json!({"run_id":request.run_id}));
         let lease = format!("background-{}", request.run_id);
         state
             .db
@@ -256,7 +277,7 @@ where
             loop {
                 tokio::select! {
                     result=&mut context_future=>break Some(result),
-                    _=heartbeat.tick()=>{ state.runtime.lock().await.checkpoint_task_time(&request.run_id, context_base_ms + context_started.elapsed().as_millis() as u64)?; if let Err(error)=state.db.lock().await.start_profile_foreground_lease(&lease,30){break Some(Err(error));} },
+                    _=heartbeat.tick()=>if let Err(error)=checkpoint_progress(state, &request.run_id, context_base_ms + context_started.elapsed().as_millis() as u64, Some(&lease)){break Some(Err(error));},
                     _=&mut context_timeout=>break Some(Err(AppError::from(if remaining <= 300.0 { "任务预算已达到时间上限，请调整预算后继续。" } else { "后台上下文准备超过 300 秒" }))),
                     _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst) { break None; }
                 }
@@ -267,6 +288,8 @@ where
             .lock()
             .await
             .finish_profile_foreground_lease(&lease)?;
+        crate::logging::debug("background-agent", "model context preparation finished",
+            serde_json::json!({"run_id":request.run_id,"elapsed_ms":context_started.elapsed().as_millis()}));
         budget.elapsed_ms += context_started.elapsed().as_millis() as u64;
         if prepared.as_ref().and_then(|r| r.as_ref().err()).is_some_and(|e| e.to_string().contains("任务预算已达到时间")) { budget.elapsed_ms = budget.elapsed_ms.max(budget.limits.max_seconds * 1000); }
         state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;
@@ -347,7 +370,7 @@ where
             loop {
                 tokio::select! {
                     result=&mut future=>break result,
-                    _=heartbeat.tick()=>{ state.runtime.lock().await.checkpoint_task_time(&request.run_id, stream_base_ms + stream_started.elapsed().as_millis() as u64)?; if let Err(error)=state.db.lock().await.start_profile_foreground_lease(&lease,30){break Err(error);} },
+                    _=heartbeat.tick()=>if let Err(error)=checkpoint_progress(state, &request.run_id, stream_base_ms + stream_started.elapsed().as_millis() as u64, Some(&lease)){break Err(error);},
                     _=&mut timeout=>break Err(AppError::from("任务预算已达到时间上限，请调整预算后继续。")),
                     _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst){break Ok(());}
                 }

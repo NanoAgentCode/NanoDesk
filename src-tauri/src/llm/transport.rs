@@ -228,7 +228,19 @@ mod tests {
             let address = listener.local_addr().unwrap();
             let (release, wait) = std::sync::mpsc::channel::<()>();
             let worker = std::thread::spawn(move || {
-                let (mut socket, _) = listener.accept().unwrap();
+                listener.set_nonblocking(true).unwrap();
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                let mut socket = loop {
+                    match listener.accept() {
+                        Ok((socket, _)) => break socket,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+                            && std::time::Instant::now() < deadline => {
+                                std::thread::sleep(Duration::from_millis(5));
+                            }
+                        Err(error) => panic!("mock stream did not connect: {error}"),
+                    }
+                };
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();
