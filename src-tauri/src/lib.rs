@@ -8,6 +8,7 @@ mod cli;
 mod code_index;
 mod context;
 mod context_budget;
+mod task_summary;
 mod conversation_service;
 mod core;
 mod db;
@@ -191,6 +192,7 @@ pub fn run() {
             commands::conversations::rename_conversation,
             commands::conversations::update_conversation_model,
             commands::conversations::list_messages,
+            commands::conversations::get_task_summary_items,
             commands::conversations::append_message,
             commands::conversations::delete_messages,
             rag::list_rag_files,

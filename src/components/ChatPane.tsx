@@ -356,7 +356,7 @@ export default function ChatPane({
       )}
 
       <div className="chat-log">
-        {messages.map((message) => {
+        {messages.filter((message) => !message.metadata?.context_summary).map((message) => {
           const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
           const taskPlan = message.role === "assistant" ? parseTaskPlan(message.content) : null;
           const clarification = message.role === "assistant" ? parseClarificationRequest(message.content) : null;

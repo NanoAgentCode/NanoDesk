@@ -320,7 +320,7 @@ where
                         _ => (),
                     }
                     if let Some(message) = snapshot.stream_message.as_mut() {
-                        message.content = content.clone();
+                        message.content = crate::task_summary::visible_content(&content);
                     }
                     snapshot.reasoning = reasoning.clone();
                     emit(snapshot.clone());
@@ -357,6 +357,8 @@ where
             .await
             .finish_profile_foreground_lease(&lease)?;
         let stopped = control.stopped.load(Ordering::SeqCst);
+        let task_summary = if stream_result.is_ok() && !stopped { crate::task_summary::parse(&content) } else { None };
+        content = crate::task_summary::visible_content(&content);
         if content.trim().is_empty() && !stopped {
             stream_result?;
             return Err("模型返回了空结果。".into());
@@ -382,7 +384,7 @@ where
                     metadata: Some(metadata),
                 };
                 if stream_result.is_ok() && !stopped {
-                    db.append_background_response(draft, request.replace_message_id.as_deref())?
+                    db.append_response_with_task_summary(draft, request.replace_message_id.as_deref(), task_summary.as_ref())?
                 } else {
                     db.append_message(draft)?
                 }

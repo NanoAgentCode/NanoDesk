@@ -137,6 +137,11 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_messages_conversation_created
                 ON messages(conversation_id, created_at);
 
+            CREATE TABLE IF NOT EXISTS task_summaries (
+                message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+                payload TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS rag_files (
                 id TEXT PRIMARY KEY,
                 conversation_id TEXT NOT NULL,

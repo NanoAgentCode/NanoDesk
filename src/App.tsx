@@ -25,6 +25,7 @@ import { useWorkspace } from "./hooks/useWorkspace";
 import { useChat, type UseChatReturn } from "./hooks/useChat";
 import Sidebar from "./components/Sidebar";
 import ChatPane from "./components/ChatPane";
+import TaskSummaryPanel from "./components/TaskSummaryPanel";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import NotificationToast from "./components/NotificationToast";
 import { nanoTheme } from "./theme";
@@ -467,6 +468,7 @@ function App() {
           <ActivePluginView setNotice={setNotice} />
         </Suspense>
       ) : (
+        <div className="chat-workspace">
         <ChatPane
           activeConversationId={activeConversationId}
           activeConversation={activeConversation}
@@ -518,6 +520,8 @@ function App() {
             model.handleOpenModelConfig(setShowModelConfig);
           }}
         />
+        <TaskSummaryPanel conversationId={activeConversationId} revision={messages[messages.length - 1]?.id || ""} busy={busy} />
+        </div>
       )}
 
       {env.showEnvPrompt && (

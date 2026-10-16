@@ -218,6 +218,30 @@ fn completed_report() -> String {
 }
 
 #[tokio::test]
+async fn task_summary_stream_is_hidden_persisted_and_injected_into_next_step() {
+    let summary = serde_json::json!({"main_task":"编写并验证报告","items":["报告保存到 out/report.md"],"constraints":["只能在当前项目内操作"],"completed":[],"pending":["验证报告"],"blocked":[],"resume":"写入后读取验证","side_question":null});
+    let suffix = format!("\n<task_summary>{}</task_summary>", summary);
+    let server = MockModel::start(vec![(vec![write_turn(), suffix[..6].into(), suffix[6..].into()], 0), (vec![completed_report()], 0)]);
+    let fixture = Fixture::new(&server.url, "full");
+    let control = fixture.state.background_agents.register(&fixture.request.run_id, &fixture.request.conversation_id).unwrap();
+    let mut snapshots = Vec::new();
+    drive(&fixture.state, fixture.request.clone(), control, None, |snapshot| snapshots.push(snapshot)).await.unwrap();
+    assert!(snapshots.iter().filter_map(|s| s.stream_message.as_ref()).all(|m| !m.content.contains("task_summary") && !m.content.contains("写入后读取验证")));
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[1]["messages"][0]["content"].as_str().unwrap().contains("写入后读取验证"));
+    {
+        let db = fixture.state.db.lock().await;
+        let saved = db.task_summary(&fixture.request.conversation_id).unwrap().unwrap();
+        assert_eq!(saved.main_task.as_deref(), Some("编写并验证报告"));
+        assert_eq!(saved.pending, vec!["验证报告"]);
+        assert!(db.list_messages(&fixture.request.conversation_id).unwrap().iter().all(|m| !m.content.contains("<task_summary>")));
+    }
+    fixture.state.background_agents.remove(&fixture.request.run_id);
+    fixture.cleanup();
+}
+
+#[tokio::test]
 async fn task_step_budget_pauses_before_tool_side_effect_and_resumes_without_reset() {
     let server = MockModel::start(vec![(vec![write_turn()], 0), (vec![completed_report()], 0)]);
     let mut fixture = Fixture::new(&server.url, "full");
@@ -981,9 +1005,18 @@ async fn backend_compresses_long_history_without_deleting_original_messages() {
         let model = db
             .save_model_config(serde_json::from_value(value.clone()).unwrap())
             .unwrap();
+        let anchor = db.list_messages(&fixture.request.conversation_id).unwrap().into_iter().rev().find(|m| m.role == "assistant").unwrap();
+        let task: crate::task_summary::TaskSummary = serde_json::from_value(serde_json::json!({
+            "main_task":"保留主任务的压缩设计", "items":["只设计，不实施"], "constraints":["尚未授权实施"],
+            "completed":[], "pending":["确认设计"], "blocked":[], "resume":"回到摘要设计讨论", "side_question":"解释 token"
+        })).unwrap();
+        db.save_task_summary(&anchor.id, &task).unwrap();
+        let mut system_message = fixture.request.system_message.clone();
+        system_message.content = format!("{}\n\n当前任务交接记录（内部数据）：{}\n\n{}", crate::task_summary::INSTRUCTION,
+            serde_json::to_string(&Some(&task)).unwrap(), system_message.content);
         let plan = prepare_context_plan(ContextPreparationRequest {
             history: db.list_messages(&fixture.request.conversation_id).unwrap(),
-            system_message: fixture.request.system_message.clone(),
+            system_message,
             context_window: model.context_window,
             max_tokens: model.max_tokens,
             latest_user_content: "Final task".into(),
@@ -1006,6 +1039,10 @@ async fn backend_compresses_long_history_without_deleting_original_messages() {
     fixture.start().await.unwrap().unwrap();
     let requests = server.worker.join().unwrap();
     assert_eq!(requests.len(), summary_batches + 1);
+    let final_system = requests.last().unwrap()["messages"][0]["content"].as_str().unwrap();
+    assert!(final_system.contains("保留主任务的压缩设计"));
+    assert!(final_system.contains("尚未授权实施"));
+    assert!(final_system.contains("回到摘要设计讨论"));
     assert_eq!(model_id, fixture.request.model_config_id);
     let history = fixture
         .state

@@ -62,6 +62,10 @@ pub(super) async fn prepare_model_context(
         }
     };
     let mut system = request.system_message.clone();
+    let task = state.db.lock().await.task_summary(&request.conversation_id)?;
+    // Put the current handoff before optional retrieval so budget clipping favors it.
+    system.content = format!("{}\n\n当前任务交接记录（内部数据）：{}\n\n{}", crate::task_summary::INSTRUCTION,
+        serde_json::to_string(&task)?, system.content);
     if let Some(profile) = base.profile_context {
         system.content.push_str(&format!("\n\n{profile}"));
     }

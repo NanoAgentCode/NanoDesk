@@ -85,7 +85,7 @@ export default function SettingsArchiveTab({
               </div>
               <div className="archive-preview-messages-container">
                 <div className="chat-log">
-                  {previewMessages.map((message) => {
+                  {previewMessages.filter((message) => !message.metadata?.context_summary).map((message) => {
                     const webSearchMeta = message.metadata?.web_search;
                     return (
                       <div
