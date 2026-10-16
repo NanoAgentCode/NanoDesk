@@ -11,6 +11,10 @@
     "test": "npm run brand:check && vitest run",
     "install:nano": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-cli.ps1",
     "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
+    "package:fast": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-all.ps1 -Fast",
+    "package:frontend": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-frontend.ps1",
+    "package:app": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-app.ps1",
+    "package:bundle": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-bundle.ps1",
     "preview": "vite preview",
     "tauri": "tauri"
   },
