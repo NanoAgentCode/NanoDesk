@@ -54,9 +54,9 @@ with sync_playwright() as p:
     assert boxes[0]["x"] + boxes[0]["width"] <= boxes[1]["x"] + 1
     assert boxes[1]["x"] + boxes[1]["width"] <= boxes[2]["x"] + 1
     expect(panel.get_by_text('等待用户审核，尚未执行', exact=False)).to_be_visible()
-    panel.get_by_role('button', name='批准规划并执行').click()
+    panel.get_by_role('button', name='批准', exact=True).click()
     page.wait_for_function("window.decisions.length === 1")
-    expect(panel.get_by_role('button', name='批准规划并执行')).to_have_count(0)
+    expect(panel.get_by_role('button', name='批准', exact=True)).to_have_count(0)
     page.evaluate("const r=window.taskItems.a[0]; const p=JSON.parse(r.plan_json); p.steps[0].status='completed'; p.steps[1].status='in_progress'; r.plan_json=JSON.stringify(p)")
     expect(panel.get_by_text('已完成 1/2', exact=False)).to_be_visible()
     expect(panel.get_by_text('进行中', exact=True)).to_be_visible()

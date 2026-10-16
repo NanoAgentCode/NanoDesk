@@ -154,8 +154,8 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
                 {step.detail && <p>{step.detail}</p>}
               </li>)}</ol>
               {isLatest && task.status === "awaiting_plan" && <div className="task-plan-actions">
-                <button type="button" disabled={acting} onClick={() => void decide(task, "approve_plan")}>批准规划并执行</button>
-                <button type="button" disabled={acting} onClick={() => void decide(task, "reject_plan")}>拒绝执行</button>
+                <button type="button" disabled={acting} onClick={() => void decide(task, "approve_plan")}>批准</button>
+                <button type="button" disabled={acting} onClick={() => void decide(task, "reject_plan")}>拒绝</button>
                 <p className="task-summary-hint">需要调整时先拒绝，再在对话中说明修改要求。</p>
               </div>}
               {task.error && <p role="alert">{task.error}</p>}
