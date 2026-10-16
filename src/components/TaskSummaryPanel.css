@@ -15,6 +15,18 @@
 .task-summary-rail { writing-mode: vertical-rl; align-self: center; margin-top: 12px; letter-spacing: 3px; font-size: 12px; padding: 10px 6px; }
 .task-summary-content { padding: 22px 20px; overflow-y: auto; min-height: 0; }
 .task-summary-content[hidden] { display: none; }
+.task-plan-goal { font-size: 14px; line-height: 1.7; margin: 0 0 12px; overflow-wrap: anywhere; }
+.task-summary-content progress { width: 100%; height: 7px; accent-color: var(--accent-color, #3b82f6); margin: 0 0 20px; }
+.task-plan-steps { padding-left: 20px; margin: 0; }
+.task-plan-steps strong { display: block; font-weight: 500; }
+.task-plan-steps p { margin: 4px 0 0; color: var(--text-secondary); }
+.task-plan-status { color: var(--text-secondary); font-size: 11px; }
+.task-plan-steps [data-status="in_progress"] .task-plan-status { color: var(--accent-color, #3b82f6); }
+.task-plan-steps [data-status="completed"] .task-plan-status { color: #22a06b; }
+.task-plan-steps [data-status="blocked"] .task-plan-status { color: #d97706; }
+.task-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.task-plan-actions button { border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; color: var(--text-primary); background: var(--chat-pane-bg); cursor: pointer; }
+.task-plan-actions button:disabled { opacity: .5; cursor: wait; }
 .task-summary-content ul { padding-left: 17px; margin: 0; }
 .task-summary-content li { padding-left: 4px; margin-bottom: 18px; line-height: 1.8; font-size: 13px; overflow-wrap: anywhere; }
 .task-summary-content li::marker { color: var(--text-secondary); }

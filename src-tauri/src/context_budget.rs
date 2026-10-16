@@ -4,7 +4,6 @@ use crate::models::{
 };
 
 const DEFAULT_CONTEXT_WINDOW: u32 = 32_768;
-const MIN_OUTPUT_RESERVE: u32 = 1_024;
 const MAX_OUTPUT_RESERVE: u32 = 8_192;
 const MIN_RECENT_MESSAGES: usize = 6;
 pub(crate) const SUMMARY_OUTPUT_TOKENS: u32 = 1_200;
@@ -137,7 +136,7 @@ fn resolve_token_budget(
     configured_context_window: u32,
     max_tokens: Option<u32>,
     system_content: &str,
-    latest_user_content: &str,
+    _latest_user_content: &str,
 ) -> TokenBudget {
     let context_window = if configured_context_window > 0 {
         configured_context_window
@@ -146,9 +145,8 @@ fn resolve_token_budget(
     };
     let safety_reserve = ((context_window as f64 * 0.03).ceil() as u32).clamp(256, 2_048);
     let dynamic_output_max = MAX_OUTPUT_RESERVE.min(context_window / 4);
-    let dynamic_output = ((estimate_text_tokens(latest_user_content) as f64 * 1.5).ceil() as u32)
-        .max(MIN_OUTPUT_RESERVE)
-        .min(dynamic_output_max);
+    // A short instruction can require a long answer (and reasoning tokens).
+    let dynamic_output = dynamic_output_max.max(1);
     let output_reserve = max_tokens.unwrap_or(dynamic_output).clamp(
         1,
         context_window.saturating_sub(safety_reserve + 256).max(1),
@@ -510,6 +508,12 @@ mod tests {
         assert!(plan.system_trimmed);
         assert!(plan.system_message.content.contains("核心规则"));
         assert!(plan.system_message.content.contains("最新检索结果"));
+    }
+
+    #[test]
+    fn short_continue_prompt_does_not_shrink_default_output_budget() {
+        assert_eq!(resolve_token_budget(32768, None, "rules", "继续").output_reserve, 8192);
+        assert_eq!(resolve_token_budget(32768, Some(2048), "rules", "继续").output_reserve, 2048);
     }
 
     #[test]

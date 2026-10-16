@@ -33,11 +33,10 @@ import AgentRuntimePanel from "./AgentRuntimePanel";
 import AccessModeSelector from "./AccessModeSelector";
 import ChatDecisionPanel from "./ChatDecisionPanel";
 import AssistantResponseActions from "./AssistantResponseActions";
-import TaskPlanCard from "./TaskPlanCard";
 import ChatAttachmentActions from "./ChatAttachmentActions";
 import type { UseSpeechInputReturn } from "../hooks/useSpeechInput";
 import { formatWebSearchBadge, renderMessageContent } from "../lib/appHelpers";
-import { findPendingClarification, parseClarificationRequest, parseTaskPlan, parseToolCall, parseToolResult } from "../lib/messageHelpers";
+import { findPendingClarification, parseClarificationRequest, parseToolCall, parseToolResult } from "../lib/messageHelpers";
 import type { ParsedToolCall } from "../lib/messageHelpers";
 import type { AgentAccessMode, AgentClarificationAnswer, AgentClarificationRequest, AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../types";
 import type { UseAgentRuntimeReturn } from "../hooks/useAgentRuntime";
@@ -358,7 +357,6 @@ export default function ChatPane({
       <div className="chat-log">
         {messages.filter((message) => !message.metadata?.context_summary).map((message) => {
           const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
-          const taskPlan = message.role === "assistant" ? parseTaskPlan(message.content) : null;
           const clarification = message.role === "assistant" ? parseClarificationRequest(message.content) : null;
           const isLatestAssistant = message.role === "assistant" && messages[messages.length - 1]?.id === message.id;
           const isStreamingResponse = isLatestAssistant && activeStreamRequestId === message.id;
@@ -392,7 +390,6 @@ export default function ChatPane({
                 </div>
               )}
               {renderMessageContent(message.content, { attachmentProjectPath, projectFiles })}
-              {taskPlan && <TaskPlanCard plan={taskPlan} />}
               
               {toolCall && (
                 <div className="tool-call-card">

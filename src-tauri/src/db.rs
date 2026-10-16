@@ -16,7 +16,6 @@ use crate::models::{
 mod code_index_store;
 mod config_store;
 mod conversation_store;
-mod task_summary_store;
 mod item_store;
 mod memory_store;
 pub(crate) mod profile_store;

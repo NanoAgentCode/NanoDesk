@@ -11,10 +11,25 @@ pub(super) async fn apply_decision(
 ) -> AppResult<()> {
     let runtime = state.runtime.lock().await;
     let run = runtime.get_run(&request.run_id)?;
-    if decision.action != "reject" {
+    if !matches!(decision.action.as_str(), "reject" | "reject_plan") {
         if let Some(budget) = runtime.task_budget(&run.id)? { budget.check()?; }
     }
     match decision.action.as_str() {
+        "approve_plan" | "reject_plan" => {
+            if run.status != "awaiting_plan" { return Err("任务当前未等待规划审核。".into()); }
+            let json = run.plan_json.as_deref().ok_or("缺少任务规划")?;
+            if decision.answer.as_deref() != Some(json) { return Err("规划已更新，请重新审核。".into()); }
+            let plan = crate::agent_runner::parse_task_plan_json(json)?;
+            runtime.record_step(AgentStepDraft { run_id: run.id.clone(), kind: "plan_approval".into(),
+                status: if decision.action == "approve_plan" { "approved" } else { "rejected" }.into(),
+                input_summary: Some(plan.goal.clone()), output_summary: Some(super::planning::signature(&plan)?), metadata_json: None })?;
+            runtime.finish_run(&run.id, if decision.action == "approve_plan" { "running" } else { "cancelled" }, None)?;
+            if decision.action == "approve_plan" {
+                drop(runtime);
+                state.db.lock().await.append_message(internal_message(&run.conversation_id,
+                    "[规划审核] 用户已批准当前规划。现在开始执行，按步骤更新进度。规划阶段输出的工具调用没有执行，不得视作成功；需要操作时重新输出工具调用。".into()))?;
+            }
+        }
         "approve" | "reject" | "retry" => {
             let id = decision.tool_call_id.as_deref().ok_or("缺少工具调用 ID")?;
             let tool = runtime.get_tool_call(id)?;
@@ -79,7 +94,7 @@ pub(super) async fn apply_decision(
             let mut budget = runtime.task_budget(&run.id)?;
             let paused_from = budget.as_ref().and_then(|b| b.paused_from.clone());
             runtime.resume_run(&run.id)?;
-            if let Some(status @ ("awaiting_tool" | "awaiting_clarification")) = paused_from.as_deref() {
+            if let Some(status @ ("awaiting_tool" | "awaiting_clarification" | "awaiting_plan")) = paused_from.as_deref() {
                 runtime.finish_run(&run.id, status, None)?;
             }
             if let Some(budget) = budget.as_mut() {

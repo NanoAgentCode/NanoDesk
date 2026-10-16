@@ -52,6 +52,7 @@ export function useChatHistory({ activeConversationIdRef, background, setNotice 
           (timeline) =>
             timeline.run.status === "running" ||
             timeline.run.status === "awaiting_tool" ||
+            timeline.run.status === "awaiting_plan" ||
             timeline.run.status === "awaiting_clarification" ||
             timeline.run.status === "awaiting_recovery"
         )?.run;

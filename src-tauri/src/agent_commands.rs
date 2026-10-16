@@ -320,6 +320,9 @@ pub(crate) async fn resolve_model_output(
     })?;
 
     let (parsed_tool_call, clarification, task_plan) = parsed;
+    if crate::background_agent::planning::gate(&runtime, &run_id, task_plan.as_ref())? {
+        return Ok(AgentModelOutputResolution { run_id, status: "awaiting_plan".into(), tool_call: None, clarification: None, task_plan });
+    }
     if let Some(plan) = &task_plan {
         let plan_json = serde_json::to_string(plan)?;
         runtime.update_run_plan(&run_id, &plan_json)?;

@@ -66,12 +66,21 @@ where
             return Ok(());
         }
         let run = state.runtime.lock().await.get_run(&request.run_id)?;
-        if !matches!(run.status.as_str(), "running" | "awaiting_tool" | "awaiting_clarification") { return Ok(()); }
+        if !matches!(run.status.as_str(), "running" | "awaiting_tool" | "awaiting_clarification" | "awaiting_plan") { return Ok(()); }
+        if run.status == "awaiting_plan" {
+            snapshot.status = "awaiting_plan".into();
+            snapshot.stream_message = None;
+            snapshot.reasoning.clear();
+            emit(snapshot.clone());
+            control.wake.notified().await;
+            continue;
+        }
         if let Err(error) = budget.check() {
             state.runtime.lock().await.pause_chat_task_budget(&request.run_id, error.to_string())?;
             return Ok(());
         }
         if run.status == "awaiting_tool" {
+            if super::planning::gate(&*state.runtime.lock().await, &request.run_id, None)? { continue; }
             let tools = state
                 .runtime
                 .lock()
@@ -298,8 +307,11 @@ where
             .start_profile_foreground_lease(&lease, 30)?;
         let mut content = String::new();
         let mut reasoning = String::new();
+        let stream_base_ms = budget.elapsed_ms;
         let stream_result = {
-            let future = crate::llm::stream_chat_completion(
+            let future = super::continuation::stream(
+                state,
+                &request.run_id,
                 model.clone(),
                 ChatStreamRequest {
                     request_id: request_id.clone(),
@@ -311,6 +323,7 @@ where
                     top_p: None,
                     reasoning_effort: None,
                 },
+                &mut budget,
                 |event| {
                     match event {
                         ChatStreamEvent::Delta { content: delta, .. } => content.push_str(&delta),
@@ -329,20 +342,19 @@ where
             );
             tokio::pin!(future);
             let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
-            let timeout = tokio::time::sleep(Duration::from_secs_f64(remaining.min(300.0)));
+            let timeout = tokio::time::sleep(Duration::from_secs_f64(remaining));
             tokio::pin!(timeout);
             loop {
                 tokio::select! {
                     result=&mut future=>break result,
-                    _=heartbeat.tick()=>{ state.runtime.lock().await.checkpoint_task_time(&request.run_id, budget.elapsed_ms + stream_started.elapsed().as_millis() as u64)?; if let Err(error)=state.db.lock().await.start_profile_foreground_lease(&lease,30){break Err(error);} },
-                    _=&mut timeout=>break Err(AppError::from(if remaining <= 300.0 { "任务预算已达到时间上限，请调整预算后继续。" } else { "后台模型调用超过 300 秒" })),
+                    _=heartbeat.tick()=>{ state.runtime.lock().await.checkpoint_task_time(&request.run_id, stream_base_ms + stream_started.elapsed().as_millis() as u64)?; if let Err(error)=state.db.lock().await.start_profile_foreground_lease(&lease,30){break Err(error);} },
+                    _=&mut timeout=>break Err(AppError::from("任务预算已达到时间上限，请调整预算后继续。")),
                     _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst){break Ok(());}
                 }
             }
         };
         budget.elapsed_ms += stream_started.elapsed().as_millis() as u64;
         if stream_result.as_ref().err().is_some_and(|e| e.to_string().contains("任务预算已达到时间")) { budget.elapsed_ms = budget.elapsed_ms.max(budget.limits.max_seconds * 1000); }
-        if stream_result.is_ok() { budget.settle_model(max_tokens, (content.len() + reasoning.len()) as u64); }
         state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;
         crate::finish_observation(
             state,
@@ -357,9 +369,8 @@ where
             .await
             .finish_profile_foreground_lease(&lease)?;
         let stopped = control.stopped.load(Ordering::SeqCst);
-        let task_summary = if stream_result.is_ok() && !stopped { crate::task_summary::parse(&content) } else { None };
         content = crate::task_summary::visible_content(&content);
-        if content.trim().is_empty() && !stopped {
+        if content.trim().is_empty() && reasoning.is_empty() && !stopped {
             stream_result?;
             return Err("模型返回了空结果。".into());
         }
@@ -384,7 +395,7 @@ where
                     metadata: Some(metadata),
                 };
                 if stream_result.is_ok() && !stopped {
-                    db.append_response_with_task_summary(draft, request.replace_message_id.as_deref(), task_summary.as_ref())?
+                    db.append_background_response(draft, request.replace_message_id.as_deref())?
                 } else {
                     db.append_message(draft)?
                 }
@@ -399,6 +410,9 @@ where
             }
             if !stopped {
                 stream_result?;
+                if content.trim().is_empty() {
+                    return Err("模型仅返回了思考内容，未生成正文或工具调用。".into());
+                }
                 crate::agent_commands::resolve_model_output(
                     state,
                     request.run_id.clone(),

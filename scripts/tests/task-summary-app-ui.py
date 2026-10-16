@@ -11,10 +11,10 @@ window.__TAURI_INTERNALS__={
  invoke:async(command,args={})=>{
   if(command==='list_conversations') return [{id:'a',title:'摘要设计会话',archived:false,project_path:null,model_config_id:null,created_at:'2026-10-15T00:00:00Z',updated_at:'2026-10-15T00:00:00Z'}];
   if(command==='list_messages') return [
-   {id:'u',conversation_id:'a',role:'user',content:'先设计任务摘要，不实施。',created_at:'2026-10-15T00:00:00Z'},
+   {id:'u',conversation_id:'a',role:'user',content:'先设计任务规划，不实施。',created_at:'2026-10-15T00:00:00Z'},
    {id:'s',conversation_id:'a',role:'system',content:'内部压缩记录不应该出现在界面',metadata:{context_summary:{version:1,covered_through_message_id:'u',covered_message_count:1}},created_at:'2026-10-15T00:00:01Z'},
    {id:'r',conversation_id:'a',role:'assistant',content:'我们先确认摘要设计方案。',created_at:'2026-10-15T00:00:02Z'}];
-  if(command==='get_task_summary_items') return ['设计任务摘要与上下文压缩', '先设计，暂不实施', '一个聊天维护一条主任务'];
+  if(command==='list_agent_runs') return [{id:'run-a', status:'awaiting_plan',plan_json:JSON.stringify({goal:'设计任务规划与上下文压缩',steps:[{id:'design',title:'设计规划面板',status:'pending'},{id:'verify',title:'验证执行进度',status:'pending'}]})}];
   if(command==='list_local_skills') return ['D:/skills',[]];
   if(command==='restore_mcp_servers') return [];
   if(command.startsWith('list_') || command.startsWith('search_')) return [];
@@ -35,12 +35,12 @@ with sync_playwright() as p:
     page.goto("http://127.0.0.1:1420/")
     page.wait_for_load_state("networkidle")
     assert not errors, errors
-    panel=page.get_by_role("complementary",name="任务摘要")
+    panel=page.get_by_role("complementary",name="任务规划")
     expect(panel).to_be_visible()
     page.get_by_text("摘要设计会话",exact=True).first.click()
-    expect(panel.get_by_role("listitem")).to_have_count(3)
+    expect(panel.get_by_role("listitem")).to_have_count(2)
     expect(page.get_by_text("内部压缩记录不应该出现在界面")).to_have_count(0)
-    expect(page.get_by_text("先设计任务摘要，不实施。",exact=True)).to_be_visible()
+    expect(page.get_by_text("先设计任务规划，不实施。",exact=True)).to_be_visible()
     expect(page.get_by_text("我们先确认摘要设计方案。",exact=True)).to_be_visible()
     for width in [1440,960]:
         page.set_viewport_size({"width":width,"height":900})
@@ -48,9 +48,9 @@ with sync_playwright() as p:
         assert boxes[0]["x"]+boxes[0]["width"]<=boxes[1]["x"]+1, boxes
         assert boxes[1]["x"]+boxes[1]["width"]<=boxes[2]["x"]+1, boxes
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-        output=Path(".build/task-summary"); output.mkdir(parents=True,exist_ok=True)
+        output=Path("output/playwright"); output.mkdir(parents=True,exist_ok=True)
         page.screenshot(path=str(output/f"app-{width}.png"))
-    page.get_by_role("button",name="收起任务摘要").click()
+    page.get_by_role("button",name="收起任务规划").click()
     expect(panel.get_by_role("list")).to_be_hidden()
     assert not errors, errors
     browser.close()

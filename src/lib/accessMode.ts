@@ -11,7 +11,7 @@ export const ACCESS_MODE_OPTIONS: ReadonlyArray<{
   {
     value: "ask",
     label: "请求批准",
-    description: "每次执行文件、命令或外部工具前都询问"
+    description: "每次先规划，经用户审核后执行；工具操作仍需批准"
   },
   {
     value: "auto",

@@ -170,14 +170,14 @@ export function buildSystemMessage(
 - id 必须简短、稳定且在当前请求内唯一；不要把澄清请求和工具调用放在同一次回答中。
 - 如果根据现有上下文可以安全、合理地继续，就直接继续，不要为了确认显而易见的细节而澄清。`;
 
-  const planningSystemInstruction = `当任务包含至少 3 个有依赖关系的实质步骤、需要多次工具调用，或预计会持续较长时间时，使用结构化任务计划；简单问答和单步操作不要生成计划：
+  const planningSystemInstruction = `每次新任务都先生成结构化任务规划。请求批准模式下，首次只规划，所有步骤为 pending，等待用户审核后再执行：
 <task_plan>{"goal":"简洁且可验证的目标","steps":[{"id":"inspect","title":"检查现状","status":"in_progress"},{"id":"implement","title":"实施修改","status":"pending"},{"id":"verify","title":"运行验证","status":"pending"}]}</task_plan>
 
 计划规则：
 - 计划包含 2 到 12 个简洁步骤，id 在本次任务中保持稳定且唯一。
 - status 只能是 pending、in_progress、completed、blocked、skipped；同时最多一个 in_progress。
 - 每次获得工具结果后更新计划。只有得到实际证据后才能标记 completed；真正无法继续时才标记 blocked。
-- 计划可与一次 tool_call 同时输出，让界面先显示当前进度再执行工具；不要在普通正文里重复整份计划。`;
+- 请求批准模式下，未审核或变更目标、步骤内容时，只输出规划并等待用户审核；审核通过后才可调用工具。其他模式可与 tool_call 同时输出。不要在普通正文里重复整份计划。`;
 
   const sections = [
     runtimeContext,

@@ -12,11 +12,6 @@ use crate::AppState;
 use tauri::State;
 
 #[tauri::command]
-pub(crate) async fn get_task_summary_items(state: State<'_, AppState>, conversation_id: String) -> AppResult<Vec<String>> {
-    Ok(state.db.lock().await.task_summary(&conversation_id)?.map(|summary| summary.items).unwrap_or_default())
-}
-
-#[tauri::command]
 pub(crate) async fn list_conversations(
     state: State<'_, AppState>,
     project_path: Option<String>,

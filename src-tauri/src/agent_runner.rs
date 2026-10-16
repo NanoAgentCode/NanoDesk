@@ -151,6 +151,12 @@ pub fn parse_task_plan(content: &str) -> AppResult<Option<AgentTaskPlan>> {
     Ok(Some(plan))
 }
 
+pub(crate) fn parse_task_plan_json(json: &str) -> AppResult<AgentTaskPlan> {
+    let plan = serde_json::from_str(json)?;
+    validate_task_plan(&plan)?;
+    Ok(plan)
+}
+
 fn validate_task_plan(plan: &AgentTaskPlan) -> AppResult<()> {
     if plan.goal.trim().is_empty() {
         return Err(AppError::Message("task_plan goal is required".to_string()));

@@ -110,6 +110,8 @@ export function formatRuntimeStatus(status: string) {
   const labels: Record<string, string> = {
     running: "运行中",
     awaiting_tool: "等待工具",
+    awaiting_plan: "等待规划审核",
+    plan_approval: "规划审核",
     pending_approval: "等待审批",
     approved: "已批准",
     rejected: "已拒绝",

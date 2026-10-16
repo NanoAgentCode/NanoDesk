@@ -21,7 +21,7 @@ impl RuntimeStore {
 
     pub fn waiting_execution_requests(&self) -> AppResult<Vec<String>> {
         let mut statement=self.conn.prepare("SELECT request_json FROM agent_execution_requests e
-            JOIN agent_runs r ON r.id=e.run_id WHERE r.status IN ('awaiting_tool','awaiting_clarification') ORDER BY r.created_at DESC")?;
+            JOIN agent_runs r ON r.id=e.run_id WHERE r.status IN ('awaiting_tool','awaiting_clarification','awaiting_plan') ORDER BY r.created_at DESC")?;
         let rows = statement.query_map([], |row| row.get(0))?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }

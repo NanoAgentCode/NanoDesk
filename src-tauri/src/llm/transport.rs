@@ -113,9 +113,9 @@ where
     }
 
     if truncated {
-        let message = "模型输出达到单次长度上限，已保留已生成内容；继续任务将从中断处续写。";
+        let message = "模型输出达到单次长度上限。";
         emit_stream_error(emit, request_id, message);
-        return Err(AppError::Message(message.into()));
+        return Err(AppError::OutputTruncated);
     }
     Ok(())
 }

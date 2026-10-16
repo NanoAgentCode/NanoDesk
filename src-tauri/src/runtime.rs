@@ -217,7 +217,7 @@ fn is_valid_run_status(status: &str) -> bool {
         status,
         "running"
             | "awaiting_tool"
-            | "awaiting_clarification"
+            | "awaiting_clarification" | "awaiting_plan"
             | "awaiting_recovery"
             | "completed"
             | "failed"
@@ -231,10 +231,10 @@ fn can_transition_run(current: &str, next: &str) -> bool {
         return true;
     }
     match current {
-        "running" | "awaiting_tool" | "awaiting_clarification" => matches!(
+        "running" | "awaiting_tool" | "awaiting_clarification" | "awaiting_plan" => matches!(
             next,
             "running" | "awaiting_tool"
-                | "awaiting_clarification"
+                | "awaiting_clarification" | "awaiting_plan"
                 | "awaiting_recovery"
                 | "completed"
                 | "failed"

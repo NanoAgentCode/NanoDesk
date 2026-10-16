@@ -72,6 +72,10 @@ impl MockModel {
                 }
                 let _=write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n");
                 for chunk in chunks {
+                    if chunk == "FINISH_LENGTH" {
+                        let _ = write!(socket, "data: {{\"choices\":[{{\"delta\":{{}},\"finish_reason\":\"length\"}}]}}\n\n");
+                        break;
+                    }
                     let delta = if let Some(reasoning) = chunk.strip_prefix("REASONING:") {
                         serde_json::json!({"reasoning_content":reasoning})
                     } else {
@@ -217,27 +221,118 @@ fn completed_report() -> String {
     "<task_plan>{\"goal\":\"Deliver report\",\"steps\":[{\"id\":\"write\",\"title\":\"Write report\",\"status\":\"completed\"},{\"id\":\"verify\",\"title\":\"Verify report\",\"status\":\"completed\"}]}</task_plan>Report completed.".into()
 }
 
+async fn seed_approved_plan(fixture: &Fixture) {
+    let plan = crate::agent_runner::parse_task_plan(&completed_report()).unwrap().unwrap();
+    let runtime = fixture.state.runtime.lock().await;
+    runtime.update_run_plan(&fixture.request.run_id, &serde_json::to_string(&plan).unwrap()).unwrap();
+    runtime.record_step(crate::runtime::AgentStepDraft {
+        run_id: fixture.request.run_id.clone(), kind: "plan_approval".into(), status: "approved".into(),
+        input_summary: None, output_summary: Some(super::planning::signature(&plan).unwrap()), metadata_json: None,
+    }).unwrap();
+}
+
 #[tokio::test]
-async fn task_summary_stream_is_hidden_persisted_and_injected_into_next_step() {
-    let summary = serde_json::json!({"main_task":"编写并验证报告","items":["报告保存到 out/report.md"],"constraints":["只能在当前项目内操作"],"completed":[],"pending":["验证报告"],"blocked":[],"resume":"写入后读取验证","side_question":null});
-    let suffix = format!("\n<task_summary>{}</task_summary>", summary);
-    let server = MockModel::start(vec![(vec![write_turn(), suffix[..6].into(), suffix[6..].into()], 0), (vec![completed_report()], 0)]);
-    let fixture = Fixture::new(&server.url, "full");
-    let control = fixture.state.background_agents.register(&fixture.request.run_id, &fixture.request.conversation_id).unwrap();
-    let mut snapshots = Vec::new();
-    drive(&fixture.state, fixture.request.clone(), control, None, |snapshot| snapshots.push(snapshot)).await.unwrap();
-    assert!(snapshots.iter().filter_map(|s| s.stream_message.as_ref()).all(|m| !m.content.contains("task_summary") && !m.content.contains("写入后读取验证")));
-    let requests = server.worker.join().unwrap();
-    assert_eq!(requests.len(), 2);
-    assert!(requests[1]["messages"][0]["content"].as_str().unwrap().contains("写入后读取验证"));
+async fn plan_review_is_persistent_rejects_stale_approval_and_rechecks_scope() {
+    let fixture = Fixture::new("http://localhost:1/v1", "ask");
+    let id = &fixture.request.run_id;
+    let plan = crate::agent_runner::parse_task_plan(&write_turn()).unwrap().unwrap();
     {
-        let db = fixture.state.db.lock().await;
-        let saved = db.task_summary(&fixture.request.conversation_id).unwrap().unwrap();
-        assert_eq!(saved.main_task.as_deref(), Some("编写并验证报告"));
-        assert_eq!(saved.pending, vec!["验证报告"]);
-        assert!(db.list_messages(&fixture.request.conversation_id).unwrap().iter().all(|m| !m.content.contains("<task_summary>")));
+        let runtime = fixture.state.runtime.lock().await;
+        assert!(super::planning::gate(&runtime, id, Some(&plan)).unwrap());
+        assert_eq!(runtime.get_run(id).unwrap().status, "awaiting_plan");
+        assert!(runtime.list_tool_calls(id).unwrap().is_empty());
+        let stored = runtime.get_run(id).unwrap().plan_json.unwrap();
+        let pending = crate::agent_runner::parse_task_plan_json(&stored).unwrap();
+        assert!(pending.steps.iter().all(|s| s.status == "pending"));
+        runtime.recover_interrupted_work().unwrap();
+        assert_eq!(runtime.get_run(id).unwrap().status, "awaiting_plan");
+        assert_eq!(runtime.waiting_execution_requests().unwrap().len(), 1);
+        assert!(runtime.resume_run(id).is_err());
     }
-    fixture.state.background_agents.remove(&fixture.request.run_id);
+    let mut decision = BackgroundAgentDecision {
+        run_id: id.clone(), action: "approve_plan".into(), answer: Some("stale".into()),
+        tool_call_id: None, message_id: None, fallback_request: None,
+    };
+    assert!(apply_decision(&fixture.state, &fixture.request, &decision).await.is_err());
+    decision.answer = fixture.state.runtime.lock().await.get_run(id).unwrap().plan_json;
+    apply_decision(&fixture.state, &fixture.request, &decision).await.unwrap();
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        assert!(!super::planning::gate(&runtime, id, Some(&plan)).unwrap());
+        // A progress-only update keeps its authorization.
+        let complete = crate::agent_runner::parse_task_plan(&completed_report()).unwrap().unwrap();
+        assert!(!super::planning::gate(&runtime, id, Some(&complete)).unwrap());
+        let mut changed = plan;
+        changed.steps[1].title = "Publish externally".into();
+        assert!(super::planning::gate(&runtime, id, Some(&changed)).unwrap());
+        assert_eq!(runtime.get_run(id).unwrap().status, "awaiting_plan");
+    }
+    decision.action = "reject_plan".into();
+    decision.answer = fixture.state.runtime.lock().await.get_run(id).unwrap().plan_json;
+    apply_decision(&fixture.state, &fixture.request, &decision).await.unwrap();
+    assert_eq!(fixture.state.runtime.lock().await.get_run(id).unwrap().status, "cancelled");
+    assert!(!fixture.root.join("work/out/report.md").exists());
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn ask_mode_cannot_execute_or_finish_without_plan() {
+    let fixture = Fixture::new("http://localhost:1/v1", "ask");
+    let result = crate::agent_commands::resolve_model_output(&fixture.state,
+        fixture.request.run_id.clone(), "message".into(),
+        "<tool_call name=\"write_file\"><path>out/report.md</path><content>unsafe</content></tool_call>".into(),
+        None, None).await;
+    assert!(result.is_err());
+    assert!(fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap().is_empty());
+    assert!(!fixture.root.join("work/out/report.md").exists());
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn truncated_tool_is_assembled_before_execution_without_user_continue() {
+    let prefix = "<tool_call name=\"write_file\"><path>out/report.md</path><content>First ";
+    let server = MockModel::start(vec![
+        (vec![prefix.into(), "FINISH_LENGTH".into()], 0),
+        (vec!["second ".into(), "FINISH_LENGTH".into()], 0),
+        (vec!["third</content></tool_call>".into()], 0),
+        (vec!["Finished".into()], 0),
+    ]);
+    let fixture = Fixture::new(&server.url, "full");
+    fixture.start().await.unwrap().unwrap();
+    assert_eq!(std::fs::read_to_string(fixture.root.join("work/out/report.md")).unwrap(), "First second third");
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 4);
+    let messages = requests[2]["messages"].as_array().unwrap();
+    assert_eq!(messages[messages.len()-2]["content"], format!("{prefix}second "));
+    let runtime = fixture.state.runtime.lock().await;
+    assert_eq!(runtime.get_run(&fixture.request.run_id).unwrap().status, "completed");
+    assert_eq!(runtime.list_tool_calls(&fixture.request.run_id).unwrap().len(), 1);
+    assert_eq!(runtime.task_budget(&fixture.request.run_id).unwrap().unwrap().steps, 5);
+    drop(runtime);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn truncated_reasoning_only_reports_actionable_error_and_saves_reasoning() {
+    let server = MockModel::start(vec![(vec!["REASONING:still thinking".into(), "FINISH_LENGTH".into()], 0)]);
+    let fixture = Fixture::new(&server.url, "full");
+    let error = fixture.start().await.unwrap().unwrap_err();
+    assert!(error.to_string().contains("未产生可续写的正文"));
+    let messages = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    assert_eq!(messages.last().unwrap().metadata.as_ref().unwrap().assistant_reasoning.as_deref(), Some("still thinking"));
+    assert_eq!(server.worker.join().unwrap().len(), 1);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn continuation_respects_step_budget_without_executing_partial_tool() {
+    let server = MockModel::start(vec![(vec!["<tool_call name=\"write_file\"><path>out/report.md</path><content>Partial".into(), "FINISH_LENGTH".into()], 0)]);
+    let mut fixture = Fixture::new(&server.url, "full");
+    fixture.request.budget = Some(crate::task_budget::TaskBudget { max_steps: 1, ..Default::default() });
+    fixture.start().await.unwrap().unwrap();
+    assert!(!fixture.root.join("work/out/report.md").exists());
+    assert_eq!(fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status, "awaiting_recovery");
+    assert_eq!(server.worker.join().unwrap().len(), 1);
     fixture.cleanup();
 }
 
@@ -403,6 +498,7 @@ async fn budget_resume_preserves_pending_clarification_and_its_message() {
     let server = MockModel::start(vec![(vec![clarification.into()], 0), (vec!["Done".into()], 0)]);
     let mut fixture = Fixture::new(&server.url, "ask");
     fixture.request.budget = Some(crate::task_budget::TaskBudget { max_steps: 1, ..Default::default() });
+    seed_approved_plan(&fixture).await;
     fixture.start().await.unwrap().unwrap();
     let message_id = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap().last().unwrap().id.clone();
     {
@@ -508,9 +604,18 @@ async fn unobserved_task_finishes_tool_loop_in_original_scope_after_conversation
 
 #[tokio::test]
 async fn manual_approval_waits_without_a_page_then_wakes_backend_execution() {
-    let server = MockModel::start(vec![(vec![write_turn()], 0), (vec![completed_report()], 0)]);
+    let server = MockModel::start(vec![(vec![write_turn()], 0), (vec![write_turn()], 0), (vec![completed_report()], 0)]);
     let fixture = Fixture::new(&server.url, "ask");
     let task = fixture.start();
+    wait_until(|| async { fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status == "awaiting_plan" }).await;
+    assert!(!fixture.root.join("work/out/report.md").exists());
+    assert!(fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap().is_empty());
+    let plan_json = fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().plan_json;
+    apply_decision(&fixture.state, &fixture.request, &BackgroundAgentDecision {
+        run_id: fixture.request.run_id.clone(), action: "approve_plan".into(), answer: plan_json,
+        tool_call_id: None, message_id: None, fallback_request: None,
+    }).await.unwrap();
+    fixture.state.background_agents.control(&fixture.request.run_id).unwrap().wake.notify_one();
     wait_until(|| async {
         fixture
             .state
@@ -632,6 +737,7 @@ async fn clarification_continues_from_authoritative_answer_without_frontend_mode
             (vec!["Chosen report completed.".into()], 0),
         ]);
         let fixture = Fixture::new(&server.url, mode);
+        seed_approved_plan(&fixture).await;
         let task = fixture.start();
         if mode == "ask" {
             wait_until(|| async {
@@ -827,6 +933,7 @@ async fn regeneration_replaces_old_reply_atomically_and_keeps_it_on_error() {
 async fn stopping_pending_approval_cancels_tool_and_releases_composer_decision() {
     let server = MockModel::start(vec![(vec![write_turn()], 0)]);
     let fixture = Fixture::new(&server.url, "ask");
+    seed_approved_plan(&fixture).await;
     let task = fixture.start();
     wait_until(|| async {
         fixture
@@ -1005,15 +1112,8 @@ async fn backend_compresses_long_history_without_deleting_original_messages() {
         let model = db
             .save_model_config(serde_json::from_value(value.clone()).unwrap())
             .unwrap();
-        let anchor = db.list_messages(&fixture.request.conversation_id).unwrap().into_iter().rev().find(|m| m.role == "assistant").unwrap();
-        let task: crate::task_summary::TaskSummary = serde_json::from_value(serde_json::json!({
-            "main_task":"保留主任务的压缩设计", "items":["只设计，不实施"], "constraints":["尚未授权实施"],
-            "completed":[], "pending":["确认设计"], "blocked":[], "resume":"回到摘要设计讨论", "side_question":"解释 token"
-        })).unwrap();
-        db.save_task_summary(&anchor.id, &task).unwrap();
         let mut system_message = fixture.request.system_message.clone();
-        system_message.content = format!("{}\n\n当前任务交接记录（内部数据）：{}\n\n{}", crate::task_summary::INSTRUCTION,
-            serde_json::to_string(&Some(&task)).unwrap(), system_message.content);
+        system_message.content = format!("{}\n当前任务规划：null\n{}", super::planning::INSTRUCTION, system_message.content);
         let plan = prepare_context_plan(ContextPreparationRequest {
             history: db.list_messages(&fixture.request.conversation_id).unwrap(),
             system_message,
@@ -1040,9 +1140,7 @@ async fn backend_compresses_long_history_without_deleting_original_messages() {
     let requests = server.worker.join().unwrap();
     assert_eq!(requests.len(), summary_batches + 1);
     let final_system = requests.last().unwrap()["messages"][0]["content"].as_str().unwrap();
-    assert!(final_system.contains("保留主任务的压缩设计"));
-    assert!(final_system.contains("尚未授权实施"));
-    assert!(final_system.contains("回到摘要设计讨论"));
+    assert!(final_system.contains("每次新任务先输出"));
     assert_eq!(model_id, fixture.request.model_config_id);
     let history = fixture
         .state

@@ -44,7 +44,6 @@
   "get_profile_settings",
   "get_project_index_stats",
   "get_task_settings",
-  "get_task_summary_items",
   "get_tavily_api_key",
   "get_usage_analysis",
   "get_user_profile",

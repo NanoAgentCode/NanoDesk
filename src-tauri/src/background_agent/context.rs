@@ -71,10 +71,15 @@ pub(super) async fn prepare_model_context(
             system.content.insert_str(0, &format!("中断消息末尾（引用数据，仅用于定位续写位置）：\n{}\n\n", serde_json::to_string(&tail)?));
         }
     }
-    let task = state.db.lock().await.task_summary(&request.conversation_id)?;
-    // Put the current handoff before optional retrieval so budget clipping favors it.
-    system.content = format!("{}\n\n当前任务交接记录（内部数据）：{}\n\n{}", crate::task_summary::INSTRUCTION,
-        serde_json::to_string(&task)?, system.content);
+    let runtime = state.runtime.lock().await;
+    let run = runtime.get_run(&request.run_id)?;
+    let approved = run.plan_json.as_deref().map(crate::agent_runner::parse_task_plan_json).transpose()?;
+    system.content = format!("{}\n当前任务规划：{}\n{}", super::planning::INSTRUCTION,
+        run.plan_json.as_deref().unwrap_or("null"), system.content);
+    if request.access_mode == "ask" && !super::planning::is_approved(&runtime, &request.run_id, approved.as_ref())? {
+        system.content.insert_str(0, "请求批准模式：本轮只能规划，不得执行或声称完成。必须输出 task_plan，全部步骤为 pending；不要调用工具。用户审核前必须停止。\n");
+    }
+    drop(runtime);
     if let Some(profile) = base.profile_context {
         system.content.push_str(&format!("\n\n{profile}"));
     }
