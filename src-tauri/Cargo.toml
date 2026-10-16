@@ -1,6 +1,6 @@
 [package]
 name = "nano-desk"
-version = "0.2.2"
+version = "0.2.3"
 description = "A local productivity client for notes, search, and external LLMs."
 authors = ["NanoDesk"]
 edition = "2021"
