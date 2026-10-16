@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ListTree, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { AlertTriangle, Check, ListTree, LoaderCircle, Minus, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { APP_STORAGE_PREFIX } from "../config/brand";
 import "./TaskSummaryPanel.css";
 import type { AgentRun, AgentTaskPlan } from "../types";
@@ -53,7 +53,7 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
       document.body.style.userSelect = previousSelect;
     };
   }, [resizing]);
-  const [result, setResult] = useState<{ id: string; run: AgentRun | null; error: string } | null>(null);
+  const [result, setResult] = useState<{ id: string; runs: AgentRun[]; error: string } | null>(null);
   const [acting, setActing] = useState(false);
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -62,10 +62,10 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
     if (!conversationId) return;
     async function refresh() {
       try {
-        const runs = await invoke<AgentRun[]>("list_agent_runs", { conversationId, limit: 1 });
-        if (active) setResult({ id: conversationId, run: runs[0] || null, error: "" });
+        const runs = await invoke<AgentRun[]>("list_agent_runs", { conversationId, limit: 200 });
+        if (active) setResult({ id: conversationId, runs, error: "" });
       } catch (error) {
-        if (active) setResult(previous => ({ id: conversationId, run: previous?.id === conversationId ? previous.run : null, error: String(error) }));
+        if (active) setResult(previous => ({ id: conversationId, runs: previous?.id === conversationId ? previous.runs : [], error: String(error) }));
       }
       if (active) timer = setTimeout(refresh, 1000);
     }
@@ -73,12 +73,9 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
     return () => { active = false; clearTimeout(timer); };
   }, [conversationId, revision, busy, retry]);
   const current = result?.id === conversationId ? result : null;
-  const run = current?.run;
-  const plan: AgentTaskPlan | null = run?.plan_json ? parseTaskPlan(`<task_plan>${run.plan_json}</task_plan>`) : null;
-  const completed = plan?.steps.filter(step => step.status === "completed").length || 0;
-  const skipped = plan?.steps.filter(step => step.status === "skipped").length || 0;
+  const run = current?.runs[0];
   const labels = { pending: "待执行", in_progress: "进行中", completed: "已完成", blocked: "已阻塞", skipped: "已跳过" };
-  async function decide(action: "approve_plan" | "reject_plan") {
+  async function decide(run: AgentRun, action: "approve_plan" | "reject_plan") {
     if (!run || acting) return;
     setActing(true);
     try {
@@ -135,22 +132,37 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
     {collapsed && <button type="button" className="task-summary-rail" onClick={toggle} aria-label="展开任务规划">任务规划</button>}
     <div id="task-summary-content" className="task-summary-content" hidden={collapsed}>
       {current?.error && <div className="task-summary-empty" role="alert"><p>{current.error}</p><button type="button" onClick={() => setRetry(value => value + 1)}>重新读取</button></div>}
-      {plan ? <>
-        <h3 className="task-plan-goal">{plan.goal}</h3>
-        <p className="task-summary-hint" role="status">{run?.status === "awaiting_plan" ? "等待用户审核，尚未执行" : run?.status === "cancelled" ? "任务已取消" : run?.status === "completed" ? "任务已结束" : run?.status === "awaiting_tool" ? "等待工具批准" : run?.status === "awaiting_recovery" || run?.status === "failed" ? "任务已暂停或失败" : "执行进度"} · 已完成 {completed}/{plan.steps.length}{skipped ? ` · 已跳过 ${skipped}` : ""}</p>
-        <progress aria-label="任务完成进度" value={completed} max={plan.steps.length} />
-        <ol className="task-plan-steps">{plan.steps.map(step => <li key={step.id} data-status={step.status}>
-          <span className="task-plan-status">{labels[step.status]}</span><strong>{step.title}</strong>
-          {step.detail && <p>{step.detail}</p>}
-        </li>)}</ol>
-        {run?.status === "awaiting_plan" && <div className="task-plan-actions">
-          <button type="button" disabled={acting} onClick={() => void decide("approve_plan")}>批准规划并执行</button>
-          <button type="button" disabled={acting} onClick={() => void decide("reject_plan")}>拒绝执行</button>
-          <p className="task-summary-hint">需要调整时先拒绝，再在对话中说明修改要求。</p>
-        </div>}
-        {run?.error && <p role="alert">{run.error}</p>}
-      </> : conversationId && !current ? <p className="task-summary-loading">正在读取规划…</p>
-        : <div className="task-summary-empty"><ListTree size={28} aria-hidden="true" /><h3>{run?.status === "running" ? "正在生成规划" : "暂无任务规划"}</h3><p>任务的规划步骤和执行进度将在这里显示。请求批准模式下，审核通过后才开始执行。</p></div>}
+      {conversationId && !current ? <p className="task-summary-loading">正在读取规划…</p> : <>
+        {!run?.plan_json && <div className="task-summary-empty"><ListTree size={28} aria-hidden="true" /><h3>{run?.status === "running" ? "正在生成规划" : "暂无任务规划"}</h3><p>任务的规划步骤和执行进度将在这里显示。请求批准模式下，审核通过后才开始执行。</p></div>}
+        {current?.runs.map((task, index) => {
+          const plan: AgentTaskPlan | null = task.plan_json ? parseTaskPlan(`<task_plan>${task.plan_json}</task_plan>`) : null;
+          if (!plan) return null;
+          const isLatest = index === 0;
+          const completed = plan.steps.filter(step => step.status === "completed").length;
+          const skipped = plan.steps.filter(step => step.status === "skipped").length;
+          // Remount when a new task supersedes this one so its old expanded state resets.
+          return <details key={`${task.id}:${isLatest}`} className="task-plan-entry" open={isLatest}>
+            <summary className="task-plan-entry-header">
+              <span className="task-plan-goal">{plan.goal}</span>
+              <small>{isLatest ? "当前任务" : "历史任务"} · {completed}/{plan.steps.length}</small>
+            </summary>
+            <div className="task-plan-entry-body">
+              <p className="task-summary-hint" role="status">{task.status === "awaiting_plan" ? "等待用户审核，尚未执行" : task.status === "cancelled" ? "任务已取消" : task.status === "completed" ? "任务已结束" : task.status === "awaiting_tool" ? "等待工具批准" : task.status === "awaiting_recovery" || task.status === "failed" ? "任务已暂停或失败" : "执行进度"} · 已完成 {completed}/{plan.steps.length}{skipped ? ` · 已跳过 ${skipped}` : ""}</p>
+              <ol className="task-plan-steps" aria-label="任务步骤时间轴">{plan.steps.map((step, stepIndex) => <li key={step.id} data-status={step.status} aria-current={step.status === "in_progress" ? "step" : undefined}>
+                <span className="task-plan-node" aria-hidden="true">{step.status === "completed" ? <Check size={13} /> : step.status === "in_progress" ? <LoaderCircle size={13} /> : step.status === "blocked" ? <AlertTriangle size={12} /> : step.status === "skipped" ? <Minus size={13} /> : stepIndex + 1}</span>
+                <span className="task-plan-status">{labels[step.status]}</span><strong>{step.title}</strong>
+                {step.detail && <p>{step.detail}</p>}
+              </li>)}</ol>
+              {isLatest && task.status === "awaiting_plan" && <div className="task-plan-actions">
+                <button type="button" disabled={acting} onClick={() => void decide(task, "approve_plan")}>批准规划并执行</button>
+                <button type="button" disabled={acting} onClick={() => void decide(task, "reject_plan")}>拒绝执行</button>
+                <p className="task-summary-hint">需要调整时先拒绝，再在对话中说明修改要求。</p>
+              </div>}
+              {task.error && <p role="alert">{task.error}</p>}
+            </div>
+          </details>;
+        })}
+      </>}
 
     </div>
   </aside>;
