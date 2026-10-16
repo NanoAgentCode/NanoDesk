@@ -155,7 +155,11 @@ fn evaluate_path_tool(
     reason: &str,
 ) -> AppResult<PolicyDecision> {
     let path = required_policy_arg(args, "path")?;
-    let normalized_path = validate_project_relative_path(&context.project_path, path)?;
+    let normalized_path = if authorized_tool == AuthorizedTool::OcrImage {
+        validate_ocr_image_path(&context.project_path, path)?
+    } else {
+        validate_project_relative_path(&context.project_path, path)?
+    };
     let mut normalized_args = args.clone();
     normalized_args.insert("path".to_string(), normalized_path);
     Ok(decision(
@@ -248,6 +252,24 @@ fn validate_project_relative_path(project_path: &str, path: &str) -> AppResult<S
     let root = project_root(project_path)?;
     let target_path = resolve_project_relative_path(&root, &normalized)?;
     reject_symlink_escape(&root, &target_path)?;
+    Ok(normalized)
+}
+
+fn validate_ocr_image_path(project_path: &str, path: &str) -> AppResult<String> {
+    let normalized = normalize_relative_path(path)?;
+    let uploads = format!("{}/", crate::brand::IMAGE_UPLOADS_DIRECTORY);
+    if !normalized.starts_with(&uploads) {
+        return validate_project_relative_path(project_path, &normalized);
+    }
+    // Only OCR can read uploaded images inside the otherwise private data directory.
+    let root = project_root(project_path)?;
+    let target = resolve_project_relative_path(&root, &normalized)?.canonicalize()?;
+    let relative = target
+        .strip_prefix(&root)
+        .map_err(|_| AppError::from("文件路径必须位于当前项目内"))?;
+    if !relative.starts_with(crate::brand::IMAGE_UPLOADS_DIRECTORY) {
+        return Err(AppError::from("OCR 上传图片路径不能指向其他目录"));
+    }
     Ok(normalized)
 }
 
@@ -536,6 +558,46 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn ocr_allows_uploaded_images_but_keeps_control_paths_protected() {
+        let root = test_project();
+        let upload = format!(
+            "{}/uploads/images/sample.jpg",
+            crate::brand::PROJECT_DATA_DIRECTORY
+        );
+        fs::create_dir_all(root.join(&upload).parent().unwrap()).unwrap();
+        fs::write(root.join(&upload), b"image").unwrap();
+        let ctx = context(&root, true);
+        let decision = evaluate_tool_call("ocr_image", &args(&[("path", &upload)]), &ctx)
+            .expect("OCR must accept images saved by the upload command");
+        assert_eq!(decision.authorized_tool, AuthorizedTool::OcrImage);
+        for tool in ["read_file", "write_file"] {
+            assert!(
+                evaluate_tool_call(tool, &args(&[("path", &upload), ("content", "x")]), &ctx)
+                    .is_err()
+            );
+        }
+        for path in [
+            format!("{}/config.jpg", crate::brand::PROJECT_DATA_DIRECTORY),
+            format!(
+                "{}/uploads/images-other/sample.jpg",
+                crate::brand::PROJECT_DATA_DIRECTORY
+            ),
+            format!(
+                "{}/uploads/images/../../config.jpg",
+                crate::brand::PROJECT_DATA_DIRECTORY
+            ),
+            ".git/config".into(),
+            "../outside.jpg".into(),
+        ] {
+            assert!(
+                evaluate_tool_call("ocr_image", &args(&[("path", &path)]), &ctx).is_err(),
+                "{path}"
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
