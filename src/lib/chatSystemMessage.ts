@@ -129,37 +129,12 @@ export function buildSystemMessage(
       ].join("\n")
     : "";
 
-  const toolsSystemInstruction = `
-如果你需要使用已启用的技能来执行操作（如读取文件、写入文件或执行命令），你必须在回答中输出以下格式的 XML 标签来发出工具调用请求：
-
-1. 写入文件（如果文件不存在会自动创建并写入，用于创建或修改文件）：
-<tool_call name="write_file">
-  <path>文件名或路径（如 a.txt）</path>
-  <content>写入的完整文件内容</content>
-</tool_call>
-
-2. 读取文件（读取本地文件内容）：
-<tool_call name="read_file">
-  <path>文件名或路径</path>
-</tool_call>
-
-3. 执行命令（对应 Bash Tool，仅在已启用 Bash Tool 时可用；Windows 下会根据命令语法自动识别 PowerShell 或 cmd 执行）：
-<tool_call name="execute_command">
-  <command>具体的终端命令行，例如 PowerShell: Get-ChildItem 或 cmd: dir /b</command>
-</tool_call>
-
-4. 图片 OCR（使用设置中选择的 OCR 服务，仅处理当前项目内图片路径）：
-<tool_call name="ocr_image">
-  <path>项目内图片相对路径，如 screenshots/page.png</path>
-  <output_format>text</output_format>
-</tool_call>
-
-5. 调用 MCP 工具（仅限上方列出的已连接 MCP 工具）：
-<tool_call name="mcp__server_id__tool_name">
-  <arguments>{"key":"value"}</arguments>
-</tool_call>
-
-注意：一次仅发出一个工具调用，等待执行结果回传后，再继续后续思考或操作。`;
+  const toolsSystemInstruction = `工具调用使用 XML，每次只调用一个，等待结果后继续；只能调用已启用工具：
+写文件：<tool_call name="write_file"><path>路径</path><content>完整内容</content></tool_call>
+读文件：<tool_call name="read_file"><path>路径</path></tool_call>
+命令（需启用 Bash Tool，Windows 自动识别 PowerShell/cmd）：<tool_call name="execute_command"><command>命令</command></tool_call>
+OCR（仅项目内图片）：<tool_call name="ocr_image"><path>相对路径</path><output_format>text</output_format></tool_call>
+MCP（仅已连接工具，参数遵循 schema）：<tool_call name="mcp__server_id__tool_name"><arguments>{"key":"value"}</arguments></tool_call>`;
 
   const clarificationSystemInstruction = `当继续任务所需的信息缺失，而且不同选择会显著改变结果时，不要只在普通文本中提问。请输出一个结构化澄清请求：
 <clarification>{"questions":[{"id":"stable_question_id","prompt":"需要用户确认的问题","options":[{"id":"recommended","label":"推荐选项","description":"选择后的影响","recommended":true},{"id":"alternative","label":"其他选项","description":"选择后的影响","recommended":false}],"allow_custom":true}]}</clarification>
@@ -183,11 +158,11 @@ export function buildSystemMessage(
     runtimeContext,
     profileContext || "",
     projectContext,
-    activeProject ? "代码定位优先使用当前问题的代码索引检索结果，先按命中路径和行号读取文件。索引不足或过期时，可在明确的项目子目录内搜索（例如 rg -n pattern src/components，或 Get-ChildItem -Path src/components -Recurse -Filter *.tsx）；不要从项目根目录递归扫描。没有索引时提示使用左侧项目名称旁的数据库图标建立项目索引，但仍可读取已知文件或执行限定目录的搜索。工具被拒绝后应缩小范围，不要原样重复失败命令。" : "",
+    activeProject && !deferRetrieval ? "代码定位优先使用当前问题的代码索引检索结果，先按命中路径和行号读取文件。索引不足或过期时，可在明确的项目子目录内搜索（例如 rg -n pattern src/components，或 Get-ChildItem -Path src/components -Recurse -Filter *.tsx）；不要从项目根目录递归扫描。没有索引时提示使用左侧项目名称旁的数据库图标建立项目索引，但仍可读取已知文件或执行限定目录的搜索。工具被拒绝后应缩小范围，不要原样重复失败命令。" : "",
     mcpContext,
     skillsContext || mcpContext ? `当前已启用的技能列表与工具调用规范：\n${skillsContext || "无已启用本地技能"}\n\n${toolsSystemInstruction}` : "",
     clarificationSystemInstruction,
-    planningSystemInstruction,
+    deferRetrieval ? "" : planningSystemInstruction,
     memoryContext ? [
       "用户个性化记忆（用于保持跨会话一致性）：",
       "- 这些记忆可能包含用户偏好、身份背景、工作方式、常用技术栈或长期项目上下文。",

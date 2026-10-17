@@ -2,6 +2,26 @@ import { describe, expect, it } from "vitest";
 import { buildSystemMessage } from "./chatSystemMessage";
 
 describe("buildSystemMessage structured agent protocols", () => {
+  it("defers duplicated rules to the authoritative background assembler", () => {
+    const project = { id: "p", name: "P", path: "C:/p" } as Parameters<typeof buildSystemMessage>[2];
+    const standalone = buildSystemMessage([], null, project);
+    const deferred = buildSystemMessage([], null, project, [], [], [], [], [], [], undefined, true);
+    expect(deferred.content).not.toContain("<task_plan>");
+    expect(deferred.content).not.toContain("代码定位优先");
+    expect(deferred.content).toContain("<clarification>");
+    expect(deferred.content).toContain("C:/p");
+    expect(standalone.content.length - deferred.content.length).toBeGreaterThan(800);
+  });
+
+  it("keeps all tool wire formats in a compact protocol", () => {
+    const message = buildSystemMessage([], null, null, [], [{ enabled: true, parameters: {}, name: "Bash", id: "bash_tool" }]);
+    for (const name of ["write_file", "read_file", "execute_command", "ocr_image", "mcp__server_id__tool_name"]) {
+      expect(message.content).toContain(`<tool_call name="${name}">`);
+    }
+    expect(message.content).toContain("每次只调用一个");
+    expect(message.content).toContain("完整内容");
+    expect(message.content).toContain("仅已连接工具");
+  });
   it("guides project searches through index evidence and bounded fallback", () => {
     const message = buildSystemMessage([], null, {
       id: "project", name: "Project", path: "C:/workspace/project"
