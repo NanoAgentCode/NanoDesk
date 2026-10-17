@@ -102,6 +102,201 @@ struct Fixture {
 }
 
 #[tokio::test]
+async fn temporary_task_updates_remaining_mainline_without_replaying_completed_or_stale_tools() {
+    let updated = |status: &str| format!(r#"<task_plan>{{"goal":"Main goal","steps":[{{"id":"inspect","title":"Inspect existing code","status":"completed"}},{{"id":"implement","title":"Implement changed requirement","status":"{status}"}}]}}</task_plan>"#);
+    let model = MockModel::start(vec![
+        (vec![write_turn()],0), (vec![completed_report()],0),
+        (vec![format!("{}<tool_call name=\"write_file\"><path>out/updated.md</path><content>Updated requirement</content></tool_call>",updated("in_progress"))],0),
+        (vec![format!("{}Done with updated requirement.",updated("completed"))],0),
+    ]);
+    let fixture = Fixture::new(&model.url,"full");
+    let main = &fixture.request.run_id;
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        let plan=updated("pending").replace("Implement changed requirement","Implement original requirement");
+        let plan=crate::agent_runner::parse_task_plan(&plan).unwrap().unwrap();
+        runtime.update_run_plan(main,&serde_json::to_string(&plan).unwrap()).unwrap();
+        let old = runtime.create_tool_call(crate::runtime::AgentToolCallDraft{run_id:main.clone(),message_id:"old-tool".into(),name:"write_file".into(),args_json:r#"{"path":"out/stale.md","content":"stale"}"#.into()}).unwrap();
+        runtime.approve_tool_call(&old.id).unwrap();
+        runtime.finish_run(main,"awaiting_tool",None).unwrap();
+    }
+    let (conversation, temporary) = temporary::create_temporary(&fixture.state,main,"Change the remaining implementation requirement; inspect temporary report first").await.unwrap();
+    assert_ne!(conversation.id, fixture.request.conversation_id);
+    assert_eq!(fixture.state.runtime.lock().await.get_run(main).unwrap().status,"paused");
+    let control=fixture.state.background_agents.register(&temporary.run_id,&temporary.conversation_id).unwrap();
+    drive(&fixture.state,temporary.clone(),control,None,|_|{}).await.unwrap();
+    fixture.state.background_agents.remove(&temporary.run_id);
+    let (request,control)=temporary::restore_parent(&fixture.state,&temporary.run_id).await.unwrap().unwrap();
+    drive(&fixture.state,request.clone(),control,None,|_|{}).await.unwrap();
+    fixture.state.background_agents.remove(&request.run_id);
+    {
+        let runtime=fixture.state.runtime.lock().await;
+        let run=runtime.get_run(main).unwrap();
+        assert_eq!(run.status,"completed");
+        assert!(run.plan_json.unwrap().contains("Implement changed requirement"));
+        assert_eq!(runtime.list_tool_calls(main).unwrap().iter().filter(|tool|tool.message_id=="old-tool").next().unwrap().status,"skipped");
+        assert!(runtime.temporary_parent(&temporary.run_id).unwrap().is_none());
+    }
+    assert!(!fixture.root.join("work/out/stale.md").exists());
+    assert_eq!(std::fs::read_to_string(fixture.root.join("work/out/updated.md")).unwrap(),"Updated requirement");
+    let requests=model.worker.join().unwrap();
+    assert!(!requests[0]["messages"].to_string().contains("Write and verify a report"),"temporary context must be isolated");
+    let restored=requests[2]["messages"].to_string();
+    assert!(restored.contains("Change the remaining implementation requirement"));
+    assert!(restored.contains("Inspect existing code"));
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn pause_stream_persists_partial_response_and_plan_then_allows_resume() {
+    let model=MockModel::start(vec![(vec!["Partial answer".into()," still streaming".into()],300)]);
+    let fixture=Fixture::new(&model.url,"full");
+    let task=fixture.start();
+    wait_until(||async {fixture.state.background_agents.list().iter().any(|s|s.stream_message.as_ref().is_some_and(|m|m.content.contains("Partial answer")))}).await;
+    temporary::pause(&fixture.state,&fixture.request.run_id).await.unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status,"paused");
+    let history=fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    assert!(history.iter().any(|message|message.content.contains("Partial answer") && message.metadata.as_ref().and_then(|m|m.generation_status.as_deref())==Some("interrupted")));
+    assert!(fixture.state.runtime.lock().await.resume_run(&fixture.request.run_id).is_ok());
+    model.worker.join().unwrap();
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn root_search_policy_failure_is_replanned_before_execution() {
+    let bad=r#"<tool_call name="execute_command"><command>Get-ChildItem -Recurse -Filter *.rs</command></tool_call>"#;
+    let model=MockModel::start(vec![(vec![bad.into()],0),(vec!["No command executed; narrowed investigation is complete.".into()],0)]);
+    let fixture=Fixture::new(&model.url,"full");
+    fixture.start().await.unwrap().unwrap();
+    assert_eq!(fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status,"completed");
+    assert_eq!(fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap().iter().filter(|s|s.kind=="tool_repair").count(),1);
+    let requests=model.worker.join().unwrap();
+    assert!(requests[1]["messages"].to_string().contains("必须限定在具体子目录"));
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn pausing_an_inflight_tool_records_outcome_before_temporary_work_and_never_replays_it() {
+    let command = if cfg!(windows) { "Start-Sleep -Milliseconds 300; Add-Content -LiteralPath once.txt -Value once" } else { "sleep 0.3; echo once >> once.txt" };
+    let server=MockModel::start(vec![(vec![format!("<tool_call name=\"execute_command\"><command>{command}</command></tool_call>")],0),(vec!["Tool completed once; task done.".into()],0)]);
+    let fixture=Fixture::new(&server.url,"full");
+    let task=fixture.start();
+    wait_until(||async {fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap().iter().any(|tool|tool.status=="running")}).await;
+    temporary::pause(&fixture.state,&fixture.request.run_id).await.unwrap();
+    task.await.unwrap().unwrap();
+    let tools=fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap();
+    assert_eq!(tools[0].status,"completed");
+    assert_eq!(tools[0].attempt_count,1);
+    fixture.state.runtime.lock().await.resume_run(&fixture.request.run_id).unwrap();
+    fixture.start().await.unwrap().unwrap();
+    assert_eq!(std::fs::read_to_string(fixture.root.join("work/once.txt")).unwrap().lines().count(),1);
+    server.worker.join().unwrap();
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn preexecution_syntax_failure_repairs_once_but_not_ambiguous_side_effects() {
+    if !cfg!(windows) {return;}
+    let bad=r#"<tool_call name="execute_command"><command>Write-Output 'bad'; )</command></tool_call>"#;
+    let server=MockModel::start(vec![(vec![bad.into()],0),(vec!["Syntax repaired without executing the malformed command.".into()],0)]);
+    let fixture=Fixture::new(&server.url,"full");
+    fixture.start().await.unwrap().unwrap();
+    let runtime=fixture.state.runtime.lock().await;
+    assert_eq!(runtime.get_run(&fixture.request.run_id).unwrap().status,"completed");
+    assert_eq!(runtime.list_tool_calls(&fixture.request.run_id).unwrap()[0].status,"skipped");
+    drop(runtime);
+    assert_eq!(server.worker.join().unwrap().len(),2);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn repeated_unsafe_root_scans_stop_after_three_repairs() {
+    let bad=r#"<tool_call name="execute_command"><command>rg service .</command></tool_call>"#;
+    let server=MockModel::start((0..4).map(|_|(vec![bad.into()],0)).collect());
+    let fixture=Fixture::new(&server.url,"full");
+    assert!(fixture.start().await.unwrap().is_err());
+    assert_eq!(fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap().iter().filter(|s|s.kind=="tool_repair").count(),3);
+    assert_eq!(server.worker.join().unwrap().len(),4);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn changed_mainline_requires_new_approval_and_keeps_completed_steps() {
+    let fixture=Fixture::new("http://localhost:1/v1","ask");
+    let main=&fixture.request.run_id;
+    let old=r#"{"goal":"Main","steps":[{"id":"done","title":"Inspected","status":"completed","detail":"verified"},{"id":"todo","title":"Original implementation","status":"pending"}]}"#;
+    {
+        let runtime=fixture.state.runtime.lock().await;
+        runtime.update_run_plan(main,old).unwrap();
+        runtime.record_step(crate::runtime::AgentStepDraft{run_id:main.clone(),kind:"plan_approval".into(),status:"approved".into(),input_summary:None,output_summary:Some(planning::signature(&crate::agent_runner::parse_task_plan_json(old).unwrap()).unwrap()),metadata_json:None}).unwrap();
+    }
+    let (_,child)=temporary::create_temporary(&fixture.state,main,"Change original implementation to updated implementation").await.unwrap();
+    fixture.state.runtime.lock().await.finish_run(&child.run_id,"failed",Some("temporary failure".into())).unwrap();
+    assert!(temporary::restore_parent(&fixture.state,&child.run_id).await.unwrap().is_none(),"a failed temporary task must not silently resume its parent");
+    assert_eq!(fixture.state.runtime.lock().await.get_run(main).unwrap().status,"paused");
+    fixture.state.runtime.lock().await.release_temporary_task(&child.run_id).unwrap();
+    let (request,_control)=temporary::restore_parent(&fixture.state,&child.run_id).await.unwrap().unwrap();
+    let updated=crate::agent_runner::parse_task_plan_json(&old.replace("Original implementation","Updated implementation")).unwrap();
+    let runtime=fixture.state.runtime.lock().await;
+    assert_eq!(request.access_mode,"ask");
+    assert!(planning::gate(&runtime,main,Some(&updated)).unwrap());
+    let plan=crate::agent_runner::parse_task_plan_json(&runtime.get_run(main).unwrap().plan_json.unwrap()).unwrap();
+    assert_eq!(plan.steps[0].status,"completed");
+    assert_eq!(plan.steps[0].detail.as_deref(),Some("verified"));
+    assert_eq!(plan.steps[1].status,"pending");
+    assert_eq!(runtime.get_run(main).unwrap().status,"awaiting_plan");
+    drop(runtime);
+    fixture.state.background_agents.remove(main);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn runtime_command_failure_with_syntax_words_is_not_replayed() {
+    if !cfg!(windows) {return;}
+    let command="Add-Content -LiteralPath once.txt -Value once; [Console]::Error.WriteLine('PowerShell syntax error: application error'); exit 7";
+    let server=MockModel::start(vec![(vec![format!("<tool_call name=\"execute_command\"><command>{command}</command></tool_call>")],0)]);
+    let fixture=Fixture::new(&server.url,"full");
+    fixture.start().await.unwrap().unwrap();
+    assert_eq!(fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status,"awaiting_recovery");
+    assert_eq!(std::fs::read_to_string(fixture.root.join("work/once.txt")).unwrap().lines().count(),1);
+    assert_eq!(fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap().iter().filter(|s|s.kind=="tool_repair").count(),0);
+    server.worker.join().unwrap();
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn temporary_completion_with_exhausted_parent_budget_can_resume_after_adjustment() {
+    let server=MockModel::start(vec![(vec!["Temporary task done.".into()],0),(vec!["Main task resumed.".into()],0)]);
+    let fixture=Fixture::new(&server.url,"full");
+    let id=&fixture.request.run_id;
+    {
+        let runtime=fixture.state.runtime.lock().await;
+        let mut record=runtime.ensure_task_budget(id,Some(&fixture.request.model_config_id),None).unwrap();
+        record.limits.max_steps=1;record.steps=1;runtime.put_task_budget(id,&record).unwrap();
+    }
+    let (_,child)=temporary::create_temporary(&fixture.state,id,"Handle a temporary question before continuing").await.unwrap();
+    let control=fixture.state.background_agents.register(&child.run_id,&child.conversation_id).unwrap();
+    drive(&fixture.state,child.clone(),control,None,|_|{}).await.unwrap();
+    fixture.state.background_agents.remove(&child.run_id);
+    assert!(temporary::restore_parent(&fixture.state,&child.run_id).await.is_err());
+    assert_eq!(fixture.state.runtime.lock().await.get_run(id).unwrap().status,"paused");
+    assert!(!fixture.state.background_agents.owns_conversation(&fixture.request.conversation_id));
+    {
+        let runtime=fixture.state.runtime.lock().await;
+        let mut record=runtime.task_budget(id).unwrap().unwrap();
+        record.limits.max_steps=8;runtime.put_task_budget(id,&record).unwrap();
+    }
+    apply_decision(&fixture.state,&fixture.request,&BackgroundAgentDecision{run_id:id.clone(),action:"resume".into(),tool_call_id:None,message_id:None,answer:None,fallback_request:None}).await.unwrap();
+    fixture.start().await.unwrap().unwrap();
+    assert_eq!(fixture.state.runtime.lock().await.get_run(id).unwrap().status,"completed");
+    assert!(fixture.state.runtime.lock().await.task_budget(id).unwrap().unwrap().steps>1);
+    assert!(fixture.state.runtime.lock().await.temporary_parent(&child.run_id).unwrap().is_none());
+    assert_eq!(server.worker.join().unwrap().len(),2);
+    fixture.cleanup();
+}
+
+#[tokio::test]
 async fn heartbeat_does_not_block_queued_context_or_tool_work() {
     let fixture = Fixture::new("http://127.0.0.1:1/v1", "auto");
     let state = &fixture.state;
@@ -1016,6 +1211,9 @@ async fn stopping_pending_approval_cancels_tool_and_releases_composer_decision()
     let server = MockModel::start(vec![(vec![write_turn()], 0)]);
     let fixture = Fixture::new(&server.url, "ask");
     seed_approved_plan(&fixture).await;
+    // This scenario has not executed the approved plan yet.
+    let plan = crate::agent_runner::parse_task_plan(&write_turn()).unwrap().unwrap();
+    fixture.state.runtime.lock().await.update_run_plan(&fixture.request.run_id, &serde_json::to_string(&plan).unwrap()).unwrap();
     let task = fixture.start();
     wait_until(|| async {
         fixture

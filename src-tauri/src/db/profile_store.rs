@@ -1652,6 +1652,7 @@ mod tests {
             role: "user".to_string(),
             content: "记住：项目发布前运行 cargo test".to_string(),
             metadata: Some(crate::models::MessageMetadata {
+                task_control: None,
                 web_search: None,
                 exclude_from_profile: Some(true),
                 context_summary: None,
@@ -1684,6 +1685,7 @@ mod tests {
             role: "user".to_string(),
             content: "[工具执行结果: read_file] 我主要使用 Rust".to_string(),
             metadata: Some(crate::models::MessageMetadata {
+                task_control: None,
                 web_search: None,
                 exclude_from_profile: Some(true),
                 context_summary: None,

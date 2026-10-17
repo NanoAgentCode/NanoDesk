@@ -9,6 +9,8 @@ import {
 import { getConversationTaskBudget } from "../lib/taskBudget";
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   appendMessage,
   createMemory,
@@ -21,10 +23,11 @@ import {
   updateConversationModel,
   listConversations,
   listArchivedConversations,
-  respondBackgroundAgent,
-  stopBackgroundAgent
+  respondBackgroundAgent
 } from "../api";
 import { buildSystemMessage } from "../lib/chatSystemMessage";
+import { formatUserFacingError } from "../lib/notices";
+import { steerConversationTask } from "../lib/taskSteering";
 import { fileToDataUrl } from "../lib/imageAttachments";
 import { appendTranscript } from "../lib/speech";
 import {
@@ -69,6 +72,23 @@ export function useChat({
   chatVisible = true
 }: UseChatArgs): UseChatReturn {
   const activeConversationIdRef = useRef("");
+  const temporaryReturnsRef = useRef(new Map<string, {parent:string;expires:number}>());
+  useEffect(() => {
+    let active = true;
+    const subscription = listen<{temporary_conversation_id:string;parent_conversation_id:string}>("temporary-task-return", event => {
+      if (!active) return;
+      const {temporary_conversation_id: child, parent_conversation_id: parent} = event.payload;
+      if (activeConversationIdRef.current === child) {
+        temporaryReturnsRef.current.delete(child);
+        conv.setActiveConversationId(parent);
+      } else {
+        // Cover a very fast completion before initial navigation, not later
+        // intentional visits to the historical temporary conversation.
+        temporaryReturnsRef.current.set(child, {parent,expires:Date.now()+2000});
+      }
+    });
+    return () => { active = false; void subscription.then(unlisten=>unlisten()).catch(console.error); };
+  }, []);
   const attachmentScopeRef = useRef("");
   const attachmentBusyRef = useRef(false);
   const attachmentLockedRef = useRef(false);
@@ -87,6 +107,8 @@ export function useChat({
 
   // ── State owned by useChat ──
   const [localBusy, setBusy] = useState(false);
+  const sendingRef = useRef(new Set<string>());
+  const [sendingConversationIds, setSendingConversationIds] = useState<string[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [interruptingGeneration, setInterruptingGeneration] = useState(false);
   const [fallbackExecutingId, setExecutingToolMessageId] = useState<string | null>(null);
@@ -95,7 +117,8 @@ export function useChat({
   const history = useChatHistory({ activeConversationIdRef, background, setNotice });
   const { messages, setMessages, messageReasoning, setMessageReasoning, messageToolCalls, setMessageToolCalls,
     conversationRunIds, setConversationRunIds, clarificationFallbackIds, setClarificationFallbackIds, loadMessages } = history;
-  const busy = localBusy || background.busy;
+  const sendingMessage = localBusy || sendingConversationIds.includes(conv.activeConversationId);
+  const busy = sendingMessage || background.busy;
   const executingToolMessageId = background.current?.executing_tool_message_id || fallbackExecutingId;
   const backgroundRunId = background.current?.run_id || null;
   const activeStreamRequestId = background.current?.stream_message?.id || null;
@@ -125,6 +148,11 @@ export function useChat({
   // ── Sync activeConversationId ref ──
   useEffect(() => {
     activeConversationIdRef.current = conv.activeConversationId;
+    const pendingReturn = temporaryReturnsRef.current.get(conv.activeConversationId);
+    if (pendingReturn) {
+      temporaryReturnsRef.current.delete(conv.activeConversationId);
+      if (pendingReturn.expires>Date.now()) {conv.setActiveConversationId(pendingReturn.parent);return;}
+    }
     setInterruptingGeneration(false);
     setExecutingToolMessageId(null);
     setMessageReasoning({});
@@ -221,7 +249,7 @@ export function useChat({
         void loadMessages(snapshot.conversation_id);
         setInterruptingGeneration(false);
       }
-      if (snapshot.error) setNotice(snapshot.error);
+      if (snapshot.error) setNotice(formatUserFacingError(snapshot.error, "任务执行失败，请重试。"));
     }
     if (!snapshot.stream_message) void refreshConversationLists().catch(console.error);
   }
@@ -254,13 +282,48 @@ export function useChat({
 
   // ── Send message ──
   async function handleSendMessage(assistantText?: string) {
+    const conversationKey = conv.activeConversationId;
+    if (sendingRef.current.has(conversationKey)) return;
+    sendingRef.current.add(conversationKey);
+    setSendingConversationIds([...sendingRef.current]);
+    try { await sendMessageInner(assistantText); }
+    finally { sendingRef.current.delete(conversationKey); setSendingConversationIds([...sendingRef.current]); }
+  }
+
+  async function sendMessageInner(assistantText?: string) {
     if (attachmentBusyRef.current || speech.isBusy()) {
       setNotice("请先等待附件或语音处理完成，或取消语音输入。");
       return;
     }
-    if (busy) return;
+    if (localBusy) return;
     const textContent = (typeof assistantText === "string" ? assistantText : input.chatInput).trim();
     const content = buildMessageContentWithImageAttachments(textContent, attachments.pendingImageAttachments);
+    const originConversationId = conv.activeConversationId;
+    if (originConversationId && content.trim()) {
+      try {
+        const steering = await steerConversationTask({conversationId:originConversationId,text:content,accessMode,
+          allowCommand:skills.skills.some(skill=>skill.id==="bash_tool"&&skill.enabled),invoke:(command,args)=>invoke(command,args)});
+        if (steering.handled) {
+          input.setChatInput("");
+          attachments.clearPendingImageAttachments();
+          if (steering.notice) setNotice(steering.notice);
+          try {
+            await refreshConversationLists();
+            await background.refresh();
+            if ((!steering.conversationId || steering.conversationId === originConversationId) && activeConversationIdRef.current === originConversationId) await loadMessages(originConversationId);
+          } catch (error) {
+            console.error("Task steering succeeded but refresh failed", error);
+            setNotice("任务调整已生效，界面刷新失败，请重新打开会话查看。");
+          }
+          if (steering.conversationId && activeConversationIdRef.current === originConversationId) conv.setActiveConversationId(steering.conversationId);
+          return;
+        }
+      } catch(error) {
+        setNotice(formatUserFacingError(error,"任务调整失败，请重试。"));
+        if(typeof assistantText === "string") throw error;
+        return;
+      }
+    }
     const memoryRoute = resolveUserMemoryRoute(textContent, content);
     const explicitProfileInstruction = memoryRoute.kind === "profile";
     const memoryDraft = memoryRoute.memoryDraft;
@@ -369,7 +432,7 @@ export function useChat({
         });
         void safeFinishAgentRun(agentRun.id, "failed", String(error));
       }
-      setNotice(String(error));
+      setNotice(formatUserFacingError(error));
       if (typeof assistantText === "string") throw error;
     } finally {
       setBusy(false);
@@ -380,13 +443,13 @@ export function useChat({
     if (!backgroundRunId || interruptingGeneration) return;
     setInterruptingGeneration(true);
     try {
-      if (!(await stopBackgroundAgent(backgroundRunId))) {
-        setInterruptingGeneration(false);
-        setNotice("任务已经结束。");
-      }
+      await invoke("pause_background_agent", {runId:backgroundRunId});
+      await background.refresh();
+      setInterruptingGeneration(false);
+      setNotice("任务已暂停，可插入临时任务或恢复未完成任务。");
     } catch (error) {
       setInterruptingGeneration(false);
-      setNotice(String(error));
+      setNotice(formatUserFacingError(error));
     }
   }
 
@@ -418,7 +481,7 @@ export function useChat({
       await launchBackground(run, project, modelId, messageId);
     } catch (error) {
       if (run) await safeFinishAgentRun(run.id, "failed", String(error));
-      setNotice(String(error));
+      setNotice(formatUserFacingError(error));
     } finally {
       setBusy(false);
     }
@@ -433,7 +496,7 @@ export function useChat({
     try {
       await decide(tool.run_id, { action, tool_call_id: tool.id });
     } catch (error) {
-      setNotice(String(error));
+      setNotice(formatUserFacingError(error, "工具调用失败，请重试。"));
     }
   }
   async function handleExecuteTool(messageId: string, _toolCall: ParsedToolCall) {
@@ -453,7 +516,7 @@ export function useChat({
     try {
       await decide(runId, { action: "resume" });
     } catch (error) {
-      setNotice(String(error));
+      setNotice(formatUserFacingError(error, "任务恢复失败，请重试。"));
     }
   }
   async function handleClarificationAnswer(
@@ -474,7 +537,7 @@ export function useChat({
       });
       setClarificationFallbackIds((current) => current.filter((id) => id !== messageId));
     } catch (error) {
-      setNotice(String(error));
+      setNotice(formatUserFacingError(error));
     }
   }
 
@@ -611,7 +674,7 @@ export function useChat({
       input.handleChatInputKeyDown(event);
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (!busy && !attachmentBusyRef.current && !speech.isBusy() && (input.chatInput.trim() || attachments.pendingImageAttachments.length > 0)) {
+      if (!sendingRef.current.has(conv.activeConversationId) && !attachmentBusyRef.current && !speech.isBusy() && (input.chatInput.trim() || attachments.pendingImageAttachments.length > 0)) {
         void handleSendMessage();
       }
     }
@@ -667,6 +730,7 @@ export function useChat({
 
     // Busy / tool state
     busy, setBusy,
+    sendingMessage,
     executingToolMessageId, setExecutingToolMessageId,
     messageToolCalls, setMessageToolCalls,
     conversationRunIds, setConversationRunIds,

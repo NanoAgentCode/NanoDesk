@@ -19,6 +19,9 @@ pub async fn start_background_agent(
 ) -> AppResult<()> {
     let run = state.runtime.lock().await.get_run(&request.run_id)?;
     validate_scope(&app, &request, &run)?;
+    if state.runtime.lock().await.list_runs(&run.conversation_id, 200)?.iter().any(|other| other.id != run.id && other.status == "paused") {
+        return Err("此会话有暂停的主任务，请恢复它或使用插入临时任务。".into());
+    }
     if run.status != "running" {
         return Err("新任务必须处于运行状态。".into());
     }
@@ -96,6 +99,9 @@ pub async fn respond_background_agent(
         Err(error) => return Err(error),
     };
     state.runtime.lock().await.ensure_task_budget(&request.run_id, Some(&request.model_config_id), request.budget.as_ref())?;
+    if state.runtime.lock().await.get_run(&request.run_id)?.status == "paused" && decision.action != "resume" {
+        return Err("任务已暂停，请先恢复任务。".into());
+    }
     // Reserve ownership before changing state on recovery, including after restart.
     let existing = state.background_agents.control(&decision.run_id);
     let control = match existing.clone() {
@@ -121,4 +127,55 @@ pub async fn respond_background_agent(
 #[tauri::command]
 pub async fn stop_background_agent(state: State<'_, AppState>, run_id: String) -> AppResult<bool> {
     state.background_agents.stop(&run_id)
+}
+
+#[tauri::command]
+pub async fn pause_background_agent(state: State<'_, AppState>, run_id: String) -> AppResult<()> {
+    super::temporary::pause(&state, &run_id).await
+}
+
+#[tauri::command]
+pub async fn start_temporary_task(app: AppHandle, state: State<'_, AppState>, parent_run_id: String, content: String, access_mode: String, allow_command: bool) -> AppResult<crate::models::Conversation> {
+    crate::tool_policy::requires_user_approval(&access_mode,"high")?;
+    let parent = state.runtime.lock().await.get_run(&parent_run_id)?;
+    let saved: BackgroundAgentRequest = serde_json::from_str(&state.runtime.lock().await.load_execution_request(&parent.id)?)?;
+    validate_scope(&app, &saved, &parent)?;
+    let (conversation, mut request) = super::temporary::create_temporary(&state, &parent_run_id, &content).await?;
+    request.access_mode=access_mode.clone();
+    request.allow_command=allow_command;
+    {
+        let runtime=state.runtime.lock().await;
+        let mut main:BackgroundAgentRequest=serde_json::from_str(&runtime.load_execution_request(&parent_run_id)?)?;
+        main.access_mode=access_mode;
+        main.allow_command=allow_command;
+        runtime.save_execution_request(&parent_run_id,&serde_json::to_string(&main)?)?;
+        runtime.save_execution_request(&request.run_id,&serde_json::to_string(&request)?)?;
+    }
+    let control = state.background_agents.register(&request.run_id, &request.conversation_id)?;
+    spawn(app, request, control);
+    Ok(conversation)
+}
+
+#[tauri::command]
+pub async fn get_task_interruption(state: State<'_, AppState>, run_id: String) -> AppResult<super::temporary::TaskInterruption> {
+    let runtime = state.runtime.lock().await;
+    Ok(super::temporary::TaskInterruption { parent: runtime.temporary_parent_history(&run_id)?, child: runtime.unfinished_temporary_task(&run_id)? })
+}
+
+#[tauri::command]
+pub async fn return_to_parent_task(app: AppHandle, state: State<'_, AppState>, run_id: String) -> AppResult<String> {
+    if state.runtime.lock().await.unfinished_temporary_task(&run_id)?.is_some() { return Err("请先结束当前任务插入的临时子任务。".into()); }
+    let parent = state.runtime.lock().await.temporary_parent_history(&run_id)?.ok_or("此任务没有待恢复的主任务。")?;
+    if state.runtime.lock().await.temporary_parent(&run_id)?.is_none() { return Ok(parent.conversation_id); }
+    if state.background_agents.control(&run_id).is_some() { super::temporary::pause(&state, &run_id).await?; }
+    {
+        let runtime = state.runtime.lock().await;
+        let child = runtime.get_run(&run_id)?;
+        if !matches!(child.status.as_str(), "completed" | "cancelled" | "failed" | "rejected") {
+            runtime.finish_run(&run_id, "cancelled", Some("用户结束临时任务并返回主任务".into()))?;
+        }
+        runtime.release_temporary_task(&run_id)?;
+    }
+    if let Some((request, control)) = super::temporary::restore_parent(&state, &run_id).await? { spawn(app, request, control); }
+    Ok(parent.conversation_id)
 }

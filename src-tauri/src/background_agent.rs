@@ -9,6 +9,8 @@ mod executor;
 mod context;
 pub(crate) mod planning;
 mod continuation;
+mod temporary;
+mod repair;
 
 pub(crate) use ownership::BackgroundAgentManager;
 pub(crate) use lifecycle::restore_waiting_runs;

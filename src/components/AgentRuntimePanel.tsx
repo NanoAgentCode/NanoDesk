@@ -6,6 +6,7 @@ import ObservabilityDetailPanel from "./ObservabilityDetailPanel";
 import TaskBudgetCard from "./TaskBudgetCard";
 import TaskPlanCard from "./TaskPlanCard";
 import { parseTaskPlan } from "../lib/messageHelpers";
+import FriendlyError from "./FriendlyError";
 import {
   buildAgentTimelineEvents,
   formatAgentRunTitle,
@@ -83,8 +84,8 @@ export default function AgentRuntimePanel({
             </div>
             <small>{formatShortTime(activeTimeline.run.created_at)}</small>
           </div>
-          {activeTimeline.budget && <TaskBudgetCard id={activeTimeline.run.id} kind="chat" record={activeTimeline.budget} editable={!busy && ["failed", "awaiting_recovery"].includes(activeTimeline.run.status)} />}
-          {activeTimeline.run.error && <p role="status">{activeTimeline.run.error}</p>}
+          {activeTimeline.budget && <TaskBudgetCard id={activeTimeline.run.id} kind="chat" record={activeTimeline.budget} editable={!busy && ["failed", "awaiting_recovery", "paused"].includes(activeTimeline.run.status)} />}
+          {activeTimeline.run.error && <FriendlyError error={activeTimeline.run.error} fallback="任务执行失败，请重试。" />}
           {persistedPlan && <TaskPlanCard plan={persistedPlan} compact />}
           {timelineEvents.map((event) => {
             const rowId = `runtime-${event.id}`;
@@ -115,7 +116,7 @@ export default function AgentRuntimePanel({
           {timelineEvents.length === 0 && (
             <div className="empty">该 run 暂无步骤</div>
           )}
-          {(activeTimeline.run.status === "failed" || activeTimeline.run.status === "awaiting_recovery") && (
+          {(["failed","awaiting_recovery","paused"].includes(activeTimeline.run.status)) && (
             <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border-color)" }}>
               <Button
                 size="xs"

@@ -84,6 +84,10 @@ where
             cancel_task(state, &request).await?;
             return Ok(());
         }
+        if control.paused.load(Ordering::SeqCst) {
+            state.runtime.lock().await.pause_run(&request.run_id)?;
+            return Ok(());
+        }
         let run = state.runtime.lock().await.get_run(&request.run_id)?;
         if !matches!(run.status.as_str(), "running" | "awaiting_tool" | "awaiting_clarification" | "awaiting_plan") { return Ok(()); }
         if run.status == "awaiting_plan" {
@@ -126,7 +130,20 @@ where
                         request.allow_command,
                         scopes,
                     ),
-                )?;
+                );
+                let policy = match policy {
+                    Ok(policy) => policy,
+                    Err(error) => {
+                        if super::repair::try_repair(state, &request, &tool.id, &error).await? {
+                            budget.steps += 1;
+                            state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;
+                            continue;
+                        }
+                        state.runtime.lock().await.update_tool_call(&tool.id,"rejected",Some("policy_denied".into()),Some(error.to_string()))?;
+                        state.db.lock().await.append_message(internal_message(&request.conversation_id,format!("[工具执行结果: {}] 执行失败（策略校验拒绝，工具未执行）：{error}",tool.name)))?;
+                        return Err(error);
+                    }
+                };
                 if !crate::tool_policy::requires_user_approval(&request.access_mode, &policy.risk)?
                 {
                     let runtime = state.runtime.lock().await;
@@ -195,6 +212,9 @@ where
                         .finish_run(&request.run_id, "running", None)?;
                 }
                 Err(error) => {
+                    if super::repair::try_repair(state, &request, &tool.id, &error).await? {
+                        continue;
+                    }
                     state.db.lock().await.append_message(internal_message(
                         &request.conversation_id,
                         format!("[工具执行结果: {}] 执行失败: {error}", tool.name),
@@ -286,7 +306,7 @@ where
                     result=&mut context_future=>break Some(result),
                     _=heartbeat.tick()=>if let Err(error)=checkpoint_progress(state, &request.run_id, context_base_ms + context_started.elapsed().as_millis() as u64, Some(&lease)){break Some(Err(error));},
                     _=&mut context_timeout=>break Some(Err(AppError::from(if remaining <= 300.0 { "任务预算已达到时间上限，请调整预算后继续。" } else { "后台上下文准备超过 300 秒" }))),
-                    _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst) { break None; }
+                    _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst) { break None; }
                 }
             }
         };
@@ -379,7 +399,7 @@ where
                     result=&mut future=>break result,
                     _=heartbeat.tick()=>if let Err(error)=checkpoint_progress(state, &request.run_id, stream_base_ms + stream_started.elapsed().as_millis() as u64, Some(&lease)){break Err(error);},
                     _=&mut timeout=>break Err(AppError::from("任务预算已达到时间上限，请调整预算后继续。")),
-                    _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst){break Ok(());}
+                    _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst){break Ok(());}
                 }
             }
         };
@@ -398,7 +418,7 @@ where
             .lock()
             .await
             .finish_profile_foreground_lease(&lease)?;
-        let stopped = control.stopped.load(Ordering::SeqCst);
+        let stopped = control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst);
         content = crate::task_summary::visible_content(&content);
         if content.trim().is_empty() && reasoning.is_empty() && !stopped {
             stream_result?;
@@ -406,6 +426,7 @@ where
         }
         if !content.is_empty() || !reasoning.is_empty() {
             let metadata = MessageMetadata {
+                task_control: None,
                 web_search: None,
                 exclude_from_profile: Some(true),
                 context_summary: None,
@@ -430,7 +451,7 @@ where
                     db.append_message(draft)?
                 }
             };
-            if stream_result.is_ok() && !stopped {
+            if (stream_result.is_ok() && !stopped) || control.paused.load(Ordering::SeqCst) {
                 request.replace_message_id = None;
                 state
                     .runtime
@@ -443,7 +464,7 @@ where
                 if content.trim().is_empty() {
                     return Err("模型仅返回了思考内容，未生成正文或工具调用。".into());
                 }
-                crate::agent_commands::resolve_model_output(
+                let resolution = crate::agent_commands::resolve_model_output(
                     state,
                     request.run_id.clone(),
                     message.id,
@@ -451,7 +472,18 @@ where
                     Some("model".into()),
                     None,
                 )
-                .await?;
+                .await;
+                if let Err(error) = resolution {
+                    let runtime = state.runtime.lock().await;
+                    let attempts = runtime.list_steps(&request.run_id)?.iter().filter(|step|step.kind=="planning_repair").count();
+                    if error.to_string().contains("任务规划不能修改或重置") && attempts < 3 {
+                        runtime.record_step(AgentStepDraft{run_id:request.run_id.clone(),kind:"planning_repair".into(),status:"completed".into(),input_summary:None,output_summary:Some(error.to_string()),metadata_json:None})?;
+                        drop(runtime);
+                        state.db.lock().await.append_message(internal_message(&request.conversation_id,format!("[规划校验失败] {error}。请重新输出修正后的规划；未执行任何新工具。")))?;
+                        continue;
+                    }
+                    return Err(error);
+                }
             }
         }
         if stopped {

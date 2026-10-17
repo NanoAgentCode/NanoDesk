@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use crate::error::{AppError, AppResult};
 use tokio::time::timeout;
+use base64::Engine;
 
 const PROJECT_COMMAND_TIMEOUT: Duration = Duration::from_secs(45);
 
@@ -43,6 +44,10 @@ pub async fn run_project_command(
         })??;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if cfg!(target_os="windows") && detect_windows_command_shell(command) == WindowsCommandShell::PowerShell
+        && output.status.code() == Some(65) && stdout.is_empty() && stderr.trim_start().starts_with("PowerShell syntax error:") {
+        return Err(AppError::CommandSyntax(stderr));
+    }
 
     if output.status.success() {
         Ok(stdout)
@@ -72,14 +77,14 @@ impl WindowsCommandShell {
 
     fn args(self, command: &str) -> Vec<String> {
         match self {
-            Self::PowerShell => vec![
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-            ].into_iter().map(String::from).chain(std::iter::once(format!(
-                "[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new($false); {command}"
-            ))).collect(),
+            Self::PowerShell => {
+                // Parse user code only after UTF-8 is configured. A parse error in
+                // -Command previously bypassed the encoding prelude entirely.
+                let payload = base64::engine::general_purpose::STANDARD.encode(command.as_bytes());
+                let script = format!("[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new($false); $ErrorActionPreference='Stop'; try {{ $script=[ScriptBlock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{payload}'))) }} catch {{ [Console]::Error.WriteLine('PowerShell syntax error: ' + $_.ToString()); exit 65 }}; try {{ & $script; if ($LASTEXITCODE) {{ exit $LASTEXITCODE }} }} catch {{ [Console]::Error.WriteLine($_.ToString()); exit 1 }}");
+                let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+                vec!["-NoProfile".into(), "-NonInteractive".into(), "-ExecutionPolicy".into(), "Bypass".into(), "-EncodedCommand".into(), base64::engine::general_purpose::STANDARD.encode(bytes)]
+            },
             Self::Cmd => vec!["/D", "/S", "/C", command].into_iter().map(String::from).collect(),
         }
     }
@@ -323,5 +328,15 @@ mod tests {
         .to_string();
         assert!(error.contains("Some(7)"), "{error}");
         assert!(error.contains("错误 🧪"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn malformed_commands_report_utf8_and_do_not_execute_a_prefix() {
+        let error = run_project_command(Path::new("."), "Write-Output 'should-not-run'; Write-Output '中文'; )", None).await.unwrap_err().to_string();
+        assert!(error.contains("PowerShell syntax error:"), "{error}");
+        assert!(!error.contains('\u{fffd}'), "{error}");
+        assert!(!error.starts_with("Command failed"), "syntax failures must be classified separately: {error}");
+        let output = run_project_command(Path::new("."), "@{ Name='中文'; Value=3 } | ForEach-Object { Write-Output ($_.Name + ':' + $_.Value) }", None).await.unwrap();
+        assert_eq!(output.trim(), "中文:3");
     }
 }

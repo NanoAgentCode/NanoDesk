@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { listAgentRunTimelines } from "../api";
 import type { AgentRunTimeline } from "../types";
+import { formatUserFacingError } from "../lib/notices";
 
 export interface UseAgentRuntimeReturn {
   agentRunTimelines: AgentRunTimeline[];
@@ -24,7 +25,7 @@ export function useAgentRuntime(
     try {
       setAgentRunTimelines(activeConversationId ? await listAgentRunTimelines(activeConversationId, 20) : []);
     } catch (error) {
-      setNotice(String(error));
+      setNotice(formatUserFacingError(error, "读取运行记录失败，请重试。"));
     }
   }
 

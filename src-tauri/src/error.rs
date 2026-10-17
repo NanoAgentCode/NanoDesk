@@ -5,6 +5,8 @@ pub type AppResult<T> = Result<T, AppError>;
 
 #[derive(Debug, Error)]
 pub enum AppError {
+    #[error("{0}")]
+    CommandSyntax(String),
     #[error("模型输出达到单次长度上限，已保留部分输出。")]
     OutputTruncated,
     #[error("database error: {0}")]

@@ -38,6 +38,18 @@ impl RuntimeStore {
                 completed_at TEXT,
                 FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS agent_run_pauses (
+                run_id TEXT PRIMARY KEY REFERENCES agent_runs(id) ON DELETE CASCADE,
+                resume_status TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS agent_task_interruptions (
+                child_run_id TEXT PRIMARY KEY REFERENCES agent_runs(id) ON DELETE CASCADE,
+                parent_run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+                released INTEGER NOT NULL DEFAULT 0,
+                restored INTEGER NOT NULL DEFAULT 0,
+                request_text TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_task_interruptions_parent ON agent_task_interruptions(parent_run_id);
 
             CREATE TABLE IF NOT EXISTS agent_tool_calls (
                 id TEXT PRIMARY KEY,
@@ -78,6 +90,7 @@ impl RuntimeStore {
         )?;
         self.ensure_column("agent_runs", "plan_json", "TEXT")?;
         self.ensure_column("agent_runs", "plan_updated_at", "TEXT")?;
+        self.ensure_column("agent_task_interruptions","request_text","TEXT NOT NULL DEFAULT ''")?;
         self.init_task_budgets()?;
         Ok(())
     }

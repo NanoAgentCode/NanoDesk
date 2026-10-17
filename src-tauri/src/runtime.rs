@@ -107,6 +107,7 @@ mod schema;
 mod recovery;
 mod runs;
 mod execution_requests;
+mod interruptions;
 mod timeline;
 mod tools;
 
@@ -219,6 +220,7 @@ fn is_valid_run_status(status: &str) -> bool {
             | "awaiting_tool"
             | "awaiting_clarification" | "awaiting_plan"
             | "awaiting_recovery"
+            | "paused"
             | "completed"
             | "failed"
             | "cancelled"
@@ -236,12 +238,14 @@ fn can_transition_run(current: &str, next: &str) -> bool {
             "running" | "awaiting_tool"
                 | "awaiting_clarification" | "awaiting_plan"
                 | "awaiting_recovery"
+                | "paused"
                 | "completed"
                 | "failed"
                 | "cancelled"
                 | "rejected"
         ),
-        "awaiting_recovery" => matches!(next, "failed" | "cancelled"),
+        "awaiting_recovery" => matches!(next, "failed" | "cancelled" | "paused"),
+        "paused" => matches!(next, "cancelled" | "failed"),
         _ => false,
     }
 }

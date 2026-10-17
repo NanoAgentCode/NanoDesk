@@ -266,9 +266,14 @@ export function findPendingClarification(messages: PersistedMessage[]) {
     const answered = messages.slice(index + 1).some((item) =>
       item.role === "user" && item.content.startsWith(responsePrefix)
     );
-    if (!answered) return { messageId: message.id, request };
+    const superseded = messages.slice(index + 1).some(isTaskSupersessionMessage);
+    if (!answered && !superseded) return { messageId: message.id, request };
   }
   return null;
+}
+
+export function isTaskSupersessionMessage(message: PersistedMessage) {
+  return message.role === "user" && message.metadata?.task_control === true && message.content.startsWith("[临时任务结束，更新主线]");
 }
 
 export function getLastResponseRegenerationContext(

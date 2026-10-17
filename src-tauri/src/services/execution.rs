@@ -125,6 +125,7 @@ pub(crate) async fn execute_registered_tool(
             });
             finish_observation(state, span, &result, output).await;
             let result = result?;
+            if result.is_error { return Err(crate::error::AppError::from(format!("MCP 工具调用失败：{}", result.content_json.chars().take(5000).collect::<String>()))); }
             Ok(format!(
                 "MCP 工具调用完成，结果如下：\n\n```json\n{}\n```",
                 result.content_json

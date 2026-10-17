@@ -4,15 +4,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle, Check, ListTree, LoaderCircle, Minus, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { APP_STORAGE_PREFIX } from "../config/brand";
 import "./TaskSummaryPanel.css";
-import type { AgentRun, AgentTaskPlan } from "../types";
+import type { AgentRun, AgentTaskPlan, AgentAccessMode } from "../types";
 import { parseTaskPlan } from "../lib/messageHelpers";
+import FriendlyError from "./FriendlyError";
+import { Button, Modal, Textarea } from "@mantine/core";
 
 const COLLAPSED_KEY = `${APP_STORAGE_PREFIX}-task-summary-collapsed`;
 const WIDTH_KEY = `${APP_STORAGE_PREFIX}-task-summary-width`;
 const DEFAULT_WIDTH = 280;
 
-export default function TaskSummaryPanel({ conversationId, revision, busy }: {
-  conversationId: string; revision: string; busy: boolean;
+export default function TaskSummaryPanel({ conversationId, revision, busy, onNavigate, accessMode = "ask", allowCommand = false }: {
+  conversationId: string; revision: string; busy: boolean; onNavigate?: (id: string) => void; accessMode?:AgentAccessMode;allowCommand?:boolean;
 }) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSED_KEY) === "true");
   const [width, setWidth] = useState(() => {
@@ -56,6 +58,11 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
   const [result, setResult] = useState<{ id: string; runs: AgentRun[]; error: string } | null>(null);
   const [acting, setActing] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [temporaryText, setTemporaryText] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [temporaryOpened, setTemporaryOpened] = useState(false);
+  useEffect(()=>{setTemporaryOpened(false);setTemporaryText("");setActionError("");},[conversationId]);
+  const [interruption, setInterruption] = useState<{ id: string; parent: AgentRun | null; child: AgentRun | null } | null>(null);
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -63,6 +70,8 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
     async function refresh() {
       try {
         const runs = await invoke<AgentRun[]>("list_agent_runs", { conversationId, limit: 200 });
+        const links = runs[0] ? await invoke<{parent: AgentRun | null; child: AgentRun | null}>("get_task_interruption", {runId: runs[0].id}) : {parent:null,child:null};
+        if (active) setInterruption({id: conversationId, ...links});
         if (active) setResult({ id: conversationId, runs, error: "" });
       } catch (error) {
         if (active) setResult(previous => ({ id: conversationId, runs: previous?.id === conversationId ? previous.runs : [], error: String(error) }));
@@ -74,6 +83,31 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
   }, [conversationId, revision, busy, retry]);
   const current = result?.id === conversationId ? result : null;
   const run = current?.runs[0];
+  const links = interruption?.id === conversationId ? interruption : null;
+  async function taskAction(action: "pause" | "temporary" | "return") {
+    if (!run || acting) return;
+    setActing(true);
+    setActionError("");
+    try {
+      if (action === "temporary") {
+        const conversation = await invoke<{id:string}>("start_temporary_task", {parentRunId:run.id, content:temporaryText,accessMode,allowCommand});
+        setTemporaryOpened(false); setTemporaryText(""); onNavigate?.(conversation.id);
+      } else if (action === "return") {
+        onNavigate?.(await invoke<string>("return_to_parent_task", {runId:run.id}));
+      } else { await invoke("pause_background_agent", {runId:run.id}); }
+      setRetry(value => value+1);
+    } catch (error) {
+      setActionError(String(error));
+    } finally { setActing(false); }
+  }
+  async function resumeTask() {
+    if (!run || acting) return;
+    setActing(true);
+    setActionError("");
+    try { await invoke("respond_background_agent", {decision:{run_id:run.id, action:"resume"}}); setRetry(value=>value+1); }
+    catch(error) {setActionError(String(error));}
+    finally {setActing(false);}
+  }
   const labels = { pending: "待执行", in_progress: "进行中", completed: "已完成", blocked: "已阻塞", skipped: "已跳过" };
   async function decide(run: AgentRun, action: "approve_plan" | "reject_plan") {
     if (!run || acting) return;
@@ -131,7 +165,15 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
     </header>
     {collapsed && <button type="button" className="task-summary-rail" onClick={toggle} aria-label="展开任务规划">任务规划</button>}
     <div id="task-summary-content" className="task-summary-content" hidden={collapsed}>
-      {current?.error && <div className="task-summary-empty" role="alert"><p>{current.error}</p><button type="button" onClick={() => setRetry(value => value + 1)}>重新读取</button></div>}
+      {actionError && !temporaryOpened && <FriendlyError error={actionError} />}
+      {run && <div className="task-plan-actions">
+        {["running","awaiting_tool","awaiting_plan","awaiting_clarification"].includes(run.status) && <Button size="xs" disabled={acting} onClick={()=>void taskAction("pause")}>暂停任务</Button>}
+        {["paused","awaiting_recovery","failed"].includes(run.status) && !links?.child && <Button size="xs" disabled={acting} onClick={()=>void resumeTask()}>恢复未完成任务</Button>}
+        {!["completed","rejected"].includes(run.status) && !links?.child && <Button size="xs" disabled={acting} onClick={()=>setTemporaryOpened(true)}>插入临时任务</Button>}
+        {links?.child && <Button size="xs" onClick={()=>onNavigate?.(links.child!.conversation_id)}>查看未完成的临时任务</Button>}
+        {links?.parent && !links.child && <Button size="xs" disabled={acting} onClick={()=>void taskAction("return")}>{links.parent.status === "paused" ? "结束临时任务并恢复主任务" : "返回主任务"}</Button>}
+      </div>}
+      {current?.error && <div className="task-summary-empty"><FriendlyError error={current.error} fallback="读取任务规划失败，请重试。" /><button type="button" onClick={() => setRetry(value => value + 1)}>重新读取</button></div>}
       {conversationId && !current ? <p className="task-summary-loading">正在读取规划…</p> : <>
         {!run?.plan_json && <div className="task-summary-empty"><ListTree size={28} aria-hidden="true" /><h3>{run?.status === "running" ? "正在生成规划" : "暂无任务规划"}</h3><p>任务的规划步骤和执行进度将在这里显示。请求批准模式下，审核通过后才开始执行。</p></div>}
         {current?.runs.map((task, index) => {
@@ -147,7 +189,7 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
               <small>{isLatest ? "当前任务" : "历史任务"} · {completed}/{plan.steps.length}</small>
             </summary>
             <div className="task-plan-entry-body">
-              <p className="task-summary-hint" role="status">{task.status === "awaiting_plan" ? "等待用户审核，尚未执行" : task.status === "cancelled" ? "任务已取消" : task.status === "completed" ? "任务已结束" : task.status === "awaiting_tool" ? "等待工具批准" : task.status === "awaiting_recovery" || task.status === "failed" ? "任务已暂停或失败" : "执行进度"} · 已完成 {completed}/{plan.steps.length}{skipped ? ` · 已跳过 ${skipped}` : ""}</p>
+              <p className="task-summary-hint" role="status">{task.status === "paused" ? "任务已暂停，可插入临时任务或恢复" : task.status === "awaiting_plan" ? "等待用户审核，尚未执行" : task.status === "cancelled" ? "任务已取消" : task.status === "completed" ? "任务已结束" : task.status === "awaiting_tool" ? "等待工具批准" : task.status === "awaiting_recovery" || task.status === "failed" ? "任务已暂停或失败" : "执行进度"} · 已完成 {completed}/{plan.steps.length}{skipped ? ` · 已跳过 ${skipped}` : ""}</p>
               <ol className="task-plan-steps" aria-label="任务步骤时间轴">{plan.steps.map((step, stepIndex) => <li key={step.id} data-status={step.status} aria-current={step.status === "in_progress" ? "step" : undefined}>
                 <span className="task-plan-node" aria-hidden="true">{step.status === "completed" ? <Check size={13} /> : step.status === "in_progress" ? <LoaderCircle size={13} /> : step.status === "blocked" ? <AlertTriangle size={12} /> : step.status === "skipped" ? <Minus size={13} /> : stepIndex + 1}</span>
                 <span className="task-plan-status">{labels[step.status]}</span><strong>{step.title}</strong>
@@ -158,12 +200,18 @@ export default function TaskSummaryPanel({ conversationId, revision, busy }: {
                 <button type="button" disabled={acting} onClick={() => void decide(task, "reject_plan")}>拒绝</button>
                 <p className="task-summary-hint">需要调整时先拒绝，再在对话中说明修改要求。</p>
               </div>}
-              {task.error && <p role="alert">{task.error}</p>}
+              {task.error && <FriendlyError error={task.error} fallback="任务执行失败，请重试。" />}
             </div>
           </details>;
         })}
       </>}
 
     </div>
+    <Modal opened={temporaryOpened} onClose={()=>{if(!acting)setTemporaryOpened(false);}} title="插入临时任务" centered>
+      <p>主任务会先暂停并保存进度。临时任务在独立会话执行，完成后同步结果、更新主线未完成步骤并自动恢复。</p>
+      <Textarea label="临时任务或主线调整要求" value={temporaryText} onChange={event=>setTemporaryText(event.currentTarget.value)} minRows={4} disabled={acting} />
+      {actionError && <FriendlyError error={actionError} />}
+      <Button mt="md" loading={acting} disabled={!temporaryText.trim()} onClick={()=>void taskAction("temporary")}>暂停主任务并开始</Button>
+    </Modal>
   </aside>;
 }

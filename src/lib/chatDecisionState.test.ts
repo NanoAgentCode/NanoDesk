@@ -3,6 +3,14 @@ import { findPendingToolApproval, resolveChatDecisionState } from "./chatDecisio
 import type { AgentToolCall, PersistedMessage } from "../types";
 
 describe("resolveChatDecisionState", () => {
+  it("does not revive stale tool approval after a temporary task updates the mainline",()=>{
+    const message={id:"old",role:"assistant",content:'<tool_call name="read_file"><path>old.txt</path></tool_call>'} as PersistedMessage;
+    const boundary={id:"update",role:"user",content:"[临时任务结束，更新主线] new requirement",metadata:{task_control:true}} as PersistedMessage;
+    expect(findPendingToolApproval([message,boundary],{})).toBeNull();
+    expect(findPendingToolApproval([message,boundary],{old:{status:"pending_approval"} as AgentToolCall})).toBeNull();
+    const fresh={...message,id:"new"};
+    expect(findPendingToolApproval([message,boundary,fresh],{})?.messageId).toBe("new");
+  });
   it("uses the same pending-tool lock for attachments and the composer", () => {
     const message = { id: "tool", role: "assistant", content: '<tool_call name="read_file"><path>a.txt</path></tool_call>' } as PersistedMessage;
     expect(findPendingToolApproval([message], {})?.messageId).toBe("tool");

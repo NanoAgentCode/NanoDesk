@@ -118,6 +118,7 @@ export function formatRuntimeStatus(status: string) {
     completed: "已完成",
     failed: "失败",
     interrupted: "已中断",
+    paused: "已暂停",
     awaiting_recovery: "等待恢复",
     skipped: "已跳过",
     cancelled: "已取消"

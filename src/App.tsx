@@ -471,6 +471,7 @@ function App() {
       ) : (
         <div className="chat-workspace">
         <ChatPane
+          sendingMessage={chat.sendingMessage}
           activeConversationId={activeConversationId}
           activeConversation={activeConversation}
           messages={messages}
@@ -522,7 +523,7 @@ function App() {
             model.handleOpenModelConfig(setShowModelConfig);
           }}
         />
-        <TaskSummaryPanel conversationId={activeConversationId} revision={messages[messages.length - 1]?.id || ""} busy={busy} />
+        <TaskSummaryPanel conversationId={activeConversationId} revision={messages[messages.length - 1]?.id || ""} busy={busy} accessMode={accessMode} allowCommand={skills.skills.some(skill=>skill.id==="bash_tool"&&skill.enabled)} onNavigate={id=>{void Promise.all([chat.refreshConversations(id),projects.refreshProjectConversationMap()]).catch(error=>{console.error("Task navigation failed",error);setNotice("打开任务会话失败，请重试。");});}} />
         </div>
       )}
 

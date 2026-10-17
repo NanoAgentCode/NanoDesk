@@ -48,6 +48,7 @@ import { getRoutingModeLabel } from "../lib/modelRouting";
 import { attachChatScroll } from "../lib/chatScroll";
 
 interface ChatPaneProps {
+  sendingMessage?: boolean;
   activeConversationId: string;
   activeConversation: Conversation | undefined;
   messages: PersistedMessage[];
@@ -145,6 +146,7 @@ function getProjectName(projectPath: string) {
 }
 
 export default function ChatPane({
+  sendingMessage = false,
   activeConversationId,
   activeConversation,
   messages,
@@ -286,7 +288,7 @@ export default function ChatPane({
       return <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>已跳过</span>;
     }
     if (status === "skipped") {
-      return <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>已跳过失败步骤</span>;
+      return <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>已跳过</span>;
     }
     return null;
   }
@@ -329,7 +331,7 @@ export default function ChatPane({
             <ConversationTaskBudgetButton conversationId={activeConversationId} disabled={busy} />
             {backgroundRunId && !activeStreamRequestId && (
               <Button size="compact-xs" variant="subtle" color="red" loading={interruptingGeneration}
-                onClick={() => void handleInterruptGeneration()}>停止任务</Button>
+                onClick={() => void handleInterruptGeneration()}>暂停任务</Button>
             )}
             <Tooltip label="运行详情" openDelay={450}>
               <MantineActionIcon
@@ -375,7 +377,7 @@ export default function ChatPane({
       <div className="chat-log-region">
       <div className="chat-log" ref={chatLogRef} tabIndex={0} aria-label="对话消息">
         <div className="chat-log-content" ref={chatContentRef}>
-        {messages.filter((message) => !message.metadata?.context_summary).map((message) => {
+        {messages.filter((message) => !message.metadata?.context_summary && !message.metadata?.task_control).map((message) => {
           const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
           const clarification = message.role === "assistant" ? parseClarificationRequest(message.content) : null;
           const isLatestAssistant = message.role === "assistant" && messages[messages.length - 1]?.id === message.id;
@@ -571,7 +573,7 @@ export default function ChatPane({
           </MantineActionIcon>
         </Tooltip>
       </div>
-      <div className={`chat-input${composerExpanded ? " is-expanded" : ""}${decisionPending ? " decision-locked" : ""}${isRagDragging ? " rag-dragging" : ""}${uploadingImageAttachment ? " image-uploading" : ""}`}>
+      <div className={`chat-input${composerExpanded ? " is-expanded" : ""}${isRagDragging ? " rag-dragging" : ""}${uploadingImageAttachment ? " image-uploading" : ""}`}>
         {!decisionPending && promptSuggestions.length > 0 && (
           <div className="prompt-suggestions-dropdown">
             {promptSuggestions.map((prompt, index) => (
@@ -641,8 +643,8 @@ export default function ChatPane({
           onKeyDown={handleChatInputKeyDown}
           onPaste={handleChatInputPaste}
           aria-label="输入消息"
-          disabled={busy || decisionPending}
-          placeholder={decisionPending ? decisionPlaceholder : activeModel ? "描述目标、粘贴错误信息，或输入 # 使用提示词…" : "可以先输入内容，发送前请在下方选择或配置模型…"}
+          disabled={sendingMessage || uploadingAttachment || uploadingImageAttachment}
+          placeholder={busy || decisionPending ? "可直接发送新要求插入临时任务；也可输入“暂停任务”或“继续任务”…" : activeModel ? "描述目标、补充任务要求，或输入“继续任务”恢复未完成工作…" : "可以先输入内容，发送前请在下方选择或配置模型…"}
         />
         <div className="chat-input-footer">
           <div className="chat-input-left">
@@ -676,13 +678,13 @@ export default function ChatPane({
                 <Plus size={16} />
               </MantineActionIcon>
             </Tooltip>
-            <Tooltip label={busy ? "正在生成" : "发送（Enter）"} openDelay={450}>
+            <Tooltip label={busy || decisionPending ? "发送新要求，暂停当前任务后插入执行" : "发送（Enter）"} openDelay={450}>
               <MantineActionIcon
                 className="chat-header-square send"
                 aria-label="发送"
                 variant="filled"
                 onClick={handleSendMessage}
-                disabled={busy || decisionPending || uploadingAttachment || speech.status !== "idle" || (!chatInput.trim() && pendingImageAttachments.length === 0)}
+                disabled={sendingMessage || uploadingAttachment || speech.status !== "idle" || (!chatInput.trim() && pendingImageAttachments.length === 0)}
               >
                 <SendHorizontal size={20} />
               </MantineActionIcon>

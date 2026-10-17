@@ -25,7 +25,14 @@ pub(super) fn is_broad_search(command: &str, root: &str) -> bool {
             let name = lower.strip_suffix(".exe").unwrap_or(&lower);
             matches!(
                 name,
-                "rg" | "grep" | "findstr" | "get-childitem" | "gci" | "dir" | "ls" | "where"
+                "rg" | "grep"
+                    | "find"
+                    | "findstr"
+                    | "get-childitem"
+                    | "gci"
+                    | "dir"
+                    | "ls"
+                    | "where"
             )
             .then(|| (i, name.to_string()))
         }) else {
@@ -33,13 +40,20 @@ pub(super) fn is_broad_search(command: &str, root: &str) -> bool {
         };
         let args = &tokens[position + 1..];
         let recursive = name == "rg"
+            || (name == "find"
+                && !args
+                    .iter()
+                    .any(|a| matches!(a.to_ascii_lowercase().as_str(), "/c" | "/v" | "/n" | "/i")))
+            || (name == "grep" && position > 0 && tokens[position - 1].eq_ignore_ascii_case("git"))
             || args.iter().any(|arg| {
                 let lower = arg.to_ascii_lowercase();
-                matches!(lower.as_str(), "-recurse" | "/s" | "-r" | "--recursive")
-                    || (name == "grep"
-                        && lower.starts_with('-')
-                        && !lower.starts_with("--")
-                        && lower.contains('r'))
+                matches!(
+                    lower.as_str(),
+                    "-recurse" | "-recurse:$true" | "-depth" | "/s" | "-r" | "--recursive"
+                ) || (name == "grep"
+                    && lower.starts_with('-')
+                    && !lower.starts_with("--")
+                    && lower.contains('r'))
             });
         let piped = tokens.first().map(String::as_str) == Some("|stdin|");
         recursive && (changes_directory || !has_bounded_paths(&name, args, root, piped))
@@ -47,8 +61,10 @@ pub(super) fn is_broad_search(command: &str, root: &str) -> bool {
 }
 
 fn has_bounded_paths(name: &str, args: &[String], root: &str, piped: bool) -> bool {
-    let listing = matches!(name, "get-childitem" | "gci" | "dir" | "ls" | "where")
-        || args.iter().any(|arg| arg == "--files");
+    let listing = matches!(
+        name,
+        "get-childitem" | "gci" | "dir" | "ls" | "where" | "find"
+    ) || args.iter().any(|arg| arg == "--files");
     let mut needs_pattern = !listing;
     let mut paths = Vec::new();
     let mut i = 0;
@@ -65,7 +81,7 @@ fn has_bounded_paths(name: &str, args: &[String], root: &str, piped: bool) -> bo
             };
             paths.push(path.as_str());
         } else if options
-            && matches!(
+            && (matches!(
                 lower.as_str(),
                 "-g" | "--glob"
                     | "-t"
@@ -76,7 +92,8 @@ fn has_bounded_paths(name: &str, args: &[String], root: &str, piped: bool) -> bo
                     | "--max-count"
                     | "-m"
                     | "--max-depth"
-            )
+                    | "-depth"
+            ) || (name == "find" && matches!(lower.as_str(), "-name" | "-iname" | "-type")))
         {
             i += 1;
             if i >= args.len() {
@@ -105,6 +122,7 @@ fn has_bounded_paths(name: &str, args: &[String], root: &str, piped: bool) -> bo
                     | "-rni"
                     | "--recursive"
                     | "-recurse"
+                    | "-recurse:$true"
                     | "-file"
                     | "-directory"
                     | "-force"
@@ -238,6 +256,9 @@ mod tests {
             "findstr /s /n service src/*.rs",
             "rg service src/app.rs",
             "rg cd src",
+            "git grep service -- src/components",
+            "find src -name '*.rs'",
+            "Get-ChildItem src -Depth 2 -Filter *.rs",
             "rg service src | rg model",
             "Get-ChildItem src -Recurse | Select-String service",
             "git status --short",
@@ -253,6 +274,10 @@ mod tests {
         ));
         for command in [
             "rg service",
+            "git grep service",
+            "find . -name '*.rs'",
+            "Get-ChildItem -Depth 3",
+            "Get-ChildItem -Recurse:$true",
             "rg --files",
             "rg service .",
             "rg service ./",

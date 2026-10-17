@@ -22,7 +22,7 @@ export function useBackgroundAgents(
   function receive(snapshot: BackgroundAgentSnapshot) {
     revisionRef.current++;
     const next = { ...runsRef.current };
-    if (["completed", "failed", "cancelled", "rejected", "awaiting_recovery"].includes(snapshot.status))
+    if (["completed", "failed", "cancelled", "rejected", "awaiting_recovery", "paused"].includes(snapshot.status))
       delete next[snapshot.run_id];
     else next[snapshot.run_id] = snapshot;
     runsRef.current = next;

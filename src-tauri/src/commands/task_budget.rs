@@ -30,7 +30,7 @@ pub async fn update_task_budget(
         if state
             .background_agents
             .owns_conversation(&run.conversation_id)
-            || !matches!(run.status.as_str(), "awaiting_recovery" | "failed")
+            || !matches!(run.status.as_str(), "awaiting_recovery" | "failed" | "paused")
         {
             return Err("请在任务暂停或失败后调整预算。".into());
         }

@@ -12,6 +12,14 @@ import {
 } from "./messageHelpers";
 
 describe("resolveUserMemoryRoute", () => {
+  it("invalidates old clarification only when a trusted mainline update supersedes it",()=>{
+    const clarification={id:"old",role:"assistant",content:'<clarification>{"questions":[{"id":"q","prompt":"Old question?","options":[{"id":"a","label":"A","description":"A","recommended":true},{"id":"b","label":"B","description":"B","recommended":false}],"allow_custom":true}]}</clarification>'} as import("../types").PersistedMessage;
+    expect(findPendingClarification([clarification])?.messageId).toBe("old");
+    const boundary={id:"update",role:"user",content:"[临时任务结束，更新主线] changed",metadata:{task_control:true}} as import("../types").PersistedMessage;
+    expect(findPendingClarification([clarification,boundary])).toBeNull();
+    expect(findPendingClarification([clarification,{...boundary,metadata:undefined}])?.messageId).toBe("old");
+    expect(findPendingClarification([clarification,boundary,{...clarification,id:"new"}])?.messageId).toBe("new");
+  });
   it("routes an explicit profile preference only to profile analysis", () => {
     expect(resolveUserMemoryRoute("请记住我的回答偏好是简洁中文")).toEqual({
       kind: "profile",

@@ -1,11 +1,12 @@
 import type { AgentAccessMode, AgentToolCall, PersistedMessage } from "../types";
-import { parseToolCall } from "./messageHelpers";
+import { parseToolCall, isTaskSupersessionMessage } from "./messageHelpers";
 
 export function findPendingToolApproval(messages: PersistedMessage[], runtimeCalls: Record<string, AgentToolCall>) {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
     const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
     if (!toolCall) continue;
+    if (messages.slice(index + 1).some(isTaskSupersessionMessage)) continue;
     const runtime = runtimeCalls[message.id];
     const pending = runtime ? runtime.status === "pending_approval" : !messages.slice(index + 1).some((item) =>
       item.role === "user" && item.content.startsWith(`[工具执行结果: ${toolCall.name}]`)

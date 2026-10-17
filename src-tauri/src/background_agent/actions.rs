@@ -93,10 +93,11 @@ pub(super) async fn apply_decision(
             runtime.finish_run(&run.id, "running", None)?;
         }
         "resume" => {
+            let was_paused = run.status == "paused";
             let mut budget = runtime.task_budget(&run.id)?;
             let paused_from = budget.as_ref().and_then(|b| b.paused_from.clone());
             runtime.resume_run(&run.id)?;
-            if let Some(status @ ("awaiting_tool" | "awaiting_clarification" | "awaiting_plan")) = paused_from.as_deref() {
+            if let Some(status @ ("awaiting_tool" | "awaiting_clarification" | "awaiting_plan")) = paused_from.as_deref().filter(|_| !was_paused) {
                 runtime.finish_run(&run.id, status, None)?;
             }
             if let Some(budget) = budget.as_mut() {
@@ -104,7 +105,10 @@ pub(super) async fn apply_decision(
                 runtime.put_task_budget(&run.id, budget)?;
             }
             drop(runtime);
-            if paused_from.is_none() {
+            if was_paused {
+                state.db.lock().await.append_message(internal_message(&run.conversation_id,
+                    "[任务恢复] 继续此任务原有规划和未完成步骤。保留已完成步骤及其证据；不要重复已完成的工具调用。之前中断且未执行的工具调用需要重新完整生成。".into()))?;
+            } else if paused_from.is_none() {
                 state.db.lock().await.append_message(internal_message(&run.conversation_id,
                     "[任务恢复] 用户选择从持久化消息继续，并跳过此前失败或结果未知的工具。不要假定该操作成功。".into()))?;
             }
@@ -114,11 +118,13 @@ pub(super) async fn apply_decision(
     Ok(())
 }
 pub(super) fn internal_message(conversation_id: &str, content: String) -> MessageDraft {
+    let task_control = ["[规划审核]", "[任务恢复]", "[临时任务结束，更新主线]", "[规划校验失败]"].iter().any(|prefix|content.starts_with(prefix)).then_some(true);
     MessageDraft {
         conversation_id: conversation_id.into(),
         role: "user".into(),
         content,
         metadata: Some(MessageMetadata {
+            task_control,
             web_search: None,
             exclude_from_profile: Some(true),
             context_summary: None,

@@ -9,6 +9,7 @@ use tokio::sync::Notify;
 
 pub(super) struct Control {
     pub(super) stopped: AtomicBool,
+    pub(super) paused: AtomicBool,
     pub(super) wake: Notify,
 }
 struct OwnedRun {
@@ -34,6 +35,7 @@ impl BackgroundAgentManager {
         }
         let control = Arc::new(Control {
             stopped: AtomicBool::new(false),
+            paused: AtomicBool::new(false),
             wake: Notify::new(),
         });
         runs.insert(
@@ -81,6 +83,13 @@ impl BackgroundAgentManager {
         } else {
             Ok(false)
         }
+    }
+    pub(super) fn pause(&self, id: &str) -> bool {
+        if let Some(control) = self.control(id) {
+            control.paused.store(true, Ordering::SeqCst);
+            control.wake.notify_one();
+            true
+        } else { false }
     }
     pub(super) fn remove(&self, id: &str) {
         if let Ok(mut runs) = self.runs.lock() {

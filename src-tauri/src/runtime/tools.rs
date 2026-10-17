@@ -1,6 +1,17 @@
 use super::*;
 
 impl RuntimeStore {
+    pub fn skip_tool_for_preexecution_repair(&self, id: &str) -> AppResult<()> {
+        let tool = self.get_tool_call(id)?;
+        if tool.status == "failed" {
+            let diagnostic=tool.error.as_deref().unwrap_or("");
+            if !diagnostic.starts_with("PowerShell syntax error:") && !diagnostic.starts_with("工具策略拒绝未限定范围") { return Err("只有执行前校验失败可以自动修正。".into()); }
+            self.conn.execute("UPDATE agent_tool_calls SET status='skipped',result_summary='repair_before_execution',updated_at=?2 WHERE id=?1 AND status='failed'", params![id,Utc::now().to_rfc3339()])?;
+        } else {
+            self.update_tool_call(id, "skipped", Some("repair_before_execution".into()), None)?;
+        }
+        Ok(())
+    }
     pub fn list_tool_calls(&self, run_id: &str) -> AppResult<Vec<AgentToolCall>> {
         let mut stmt = self.conn.prepare(
             "

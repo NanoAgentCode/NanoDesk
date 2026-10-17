@@ -274,6 +274,7 @@ export interface WebSearchResponse {
 }
 
 export interface MessageMetadata {
+  task_control?: boolean | null;
   web_search?: MessageWebSearchMetadata | null;
   exclude_from_profile?: boolean | null;
   context_summary?: ContextSummaryMetadata | null;

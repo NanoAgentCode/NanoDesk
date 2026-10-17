@@ -28,18 +28,21 @@ pub(super) async fn prepare_model_context(
         .into_iter()
         .filter(|message| Some(&message.id) != request.replace_message_id.as_ref())
         .collect::<Vec<_>>();
-    let query = history
+    let (run, latest_requirement) = {
+        let runtime=state.runtime.lock().await;
+        (runtime.get_run(&request.run_id)?,runtime.temporary_requirements(&request.run_id)?.pop())
+    };
+    let mut query = history
         .iter()
-        .rev()
-        .find(|message| message.role == "user")
+        .find(|message| Some(&message.id) == run.trigger_message_id.as_ref())
+        .or_else(|| history.iter().rev().find(|message| message.role == "user"))
         .map(|message| message.content.clone())
         .unwrap_or_default();
-    let project_path = state
-        .runtime
-        .lock()
-        .await
-        .get_run(&request.run_id)?
-        .project_path;
+    if let Some(requirement)=latest_requirement {
+        query.push_str("\n当前补充要求：");
+        query.extend(requirement.chars().take(2048));
+    }
+    let project_path = run.project_path;
     let base =
         crate::context::load_base_context_with_state(state, project_path, query.clone()).await?;
     let rag = match crate::rag::search_rag_with_state(
@@ -201,6 +204,7 @@ pub(super) async fn prepare_model_context(
                     summary_plan.version, rolling.content
                 ),
                 metadata: Some(MessageMetadata {
+                    task_control: None,
                     web_search: None,
                     exclude_from_profile: Some(true),
                     generation_status: None,

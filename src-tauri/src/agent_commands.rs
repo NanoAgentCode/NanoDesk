@@ -320,6 +320,14 @@ pub(crate) async fn resolve_model_output(
     })?;
 
     let (parsed_tool_call, clarification, task_plan) = parsed;
+    if let (Some(proposed), Some(previous)) = (&task_plan, runtime.get_run(&run_id)?.plan_json) {
+        let previous = agent_runner::parse_task_plan_json(&previous)?;
+        for completed in previous.steps.iter().filter(|step| step.status == "completed") {
+            if !proposed.steps.iter().any(|step| step.id == completed.id && step.title == completed.title && step.status == "completed") {
+                return Err("任务规划不能修改或重置已完成步骤；请保留其 ID、标题和完成状态，只更新未完成步骤。".into());
+            }
+        }
+    }
     if crate::background_agent::planning::gate(&runtime, &run_id, task_plan.as_ref())? {
         return Ok(AgentModelOutputResolution { run_id, status: "awaiting_plan".into(), tool_call: None, clarification: None, task_plan });
     }

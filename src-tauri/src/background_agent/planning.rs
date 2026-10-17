@@ -27,7 +27,11 @@ pub fn gate(runtime: &RuntimeStore, id: &str, proposed: Option<&AgentTaskPlan>) 
     let plan = proposed.or(previous.as_ref()).ok_or("请求批准模式必须先提供任务规划，尚未执行任何操作。")?;
     if is_approved(runtime, id, Some(plan))? { return Ok(false); }
     let mut pending = plan.clone();
-    for step in &mut pending.steps { step.status = "pending".into(); step.detail = None; }
+    for step in &mut pending.steps {
+        if let Some(completed) = previous.as_ref().and_then(|plan|plan.steps.iter().find(|known|known.id==step.id && known.title==step.title && known.status=="completed")) {
+            *step = completed.clone();
+        } else { step.status = "pending".into(); step.detail = None; }
+    }
     runtime.update_run_plan(id, &serde_json::to_string(&pending)?)?;
     runtime.finish_run(id, "awaiting_plan", None)?;
     Ok(true)

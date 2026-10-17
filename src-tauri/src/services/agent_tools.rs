@@ -16,6 +16,10 @@ pub(crate) async fn execute_agent_tool_with_state(
 ) -> AppResult<AgentToolExecution> {
     let running_tool_call = {
         let runtime = state.runtime.lock().await;
+        let tool = runtime.get_tool_call(&request.tool_call_id)?;
+        if runtime.get_run(&tool.run_id)?.status == "paused" {
+            return Err("任务已暂停，不能执行旧工具调用，请先恢复任务。".into());
+        }
         runtime.start_tool_call(&request.tool_call_id)?
     };
 

@@ -45,6 +45,6 @@ describe("independent conversation runtime", () => {
     const notice = vi.fn();
     mocks.list.mockRejectedValue(new Error("runtime unavailable"));
     await render(notice).refreshRuntime();
-    expect(notice).toHaveBeenCalledWith("Error: runtime unavailable");
+    expect(notice).toHaveBeenCalledWith("读取运行记录失败，请重试。");
   });
 });

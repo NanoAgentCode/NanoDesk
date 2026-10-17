@@ -834,6 +834,7 @@ mod tests {
             role: "assistant".to_string(),
             content: "second".to_string(),
             metadata: Some(MessageMetadata {
+                task_control: None,
                 web_search: None,
                 exclude_from_profile: None,
                 context_summary: None,
@@ -847,6 +848,7 @@ mod tests {
             role: "system".to_string(),
             content: "structured summary".to_string(),
             metadata: Some(MessageMetadata {
+                task_control: None,
                 web_search: None,
                 exclude_from_profile: None,
                 context_summary: Some(ContextSummaryMetadata {
