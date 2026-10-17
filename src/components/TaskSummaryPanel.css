@@ -43,6 +43,13 @@
 .task-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .task-plan-actions button { border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; color: var(--text-primary); background: var(--chat-pane-bg); cursor: pointer; }
 .task-plan-actions button:disabled { opacity: .5; cursor: wait; }
+.task-plan-review { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color); }
+.task-plan-review .task-plan-actions { align-items: center; }
+.task-plan-review button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 64px; height: 32px; padding: 0 14px; font-size: 13px; line-height: 1; white-space: nowrap; }
+.task-plan-review button.task-plan-approve { background: var(--accent-color, #3b82f6); border-color: var(--accent-color, #3b82f6); color: #fff; }
+.task-plan-review button:hover:not(:disabled) { filter: brightness(.95); }
+.task-plan-review button:focus-visible { outline: 2px solid var(--accent-color, #3b82f6); outline-offset: 2px; }
+.task-plan-review-hint { margin: 10px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .task-summary-content ul { padding-left: 17px; margin: 0; }
 .task-summary-content li { padding-left: 4px; margin-bottom: 18px; line-height: 1.8; font-size: 13px; overflow-wrap: anywhere; }
 .task-summary-content li::marker { color: var(--text-secondary); }

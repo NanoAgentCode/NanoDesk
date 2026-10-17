@@ -195,10 +195,12 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
                 <span className="task-plan-status">{labels[step.status]}</span><strong>{step.title}</strong>
                 {step.detail && <p>{step.detail}</p>}
               </li>)}</ol>
-              {isLatest && task.status === "awaiting_plan" && <div className="task-plan-actions">
-                <button type="button" disabled={acting} onClick={() => void decide(task, "approve_plan")}>批准</button>
-                <button type="button" disabled={acting} onClick={() => void decide(task, "reject_plan")}>拒绝</button>
-                <p className="task-summary-hint">需要调整时先拒绝，再在对话中说明修改要求。</p>
+              {isLatest && task.status === "awaiting_plan" && <div className="task-plan-review">
+                <div className="task-plan-actions">
+                  <button className="task-plan-approve" type="button" disabled={acting} onClick={() => void decide(task, "approve_plan")}>批准</button>
+                  <button type="button" disabled={acting} onClick={() => void decide(task, "reject_plan")}>拒绝</button>
+                </div>
+                <p className="task-plan-review-hint">需要调整时先拒绝，再在对话中说明修改要求。</p>
               </div>}
               {task.error && <FriendlyError error={task.error} fallback="任务执行失败，请重试。" />}
             </div>
