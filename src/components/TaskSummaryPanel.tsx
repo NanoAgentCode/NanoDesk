@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { respondBackgroundAgent } from "../api/agents";
+import { pauseBackgroundAgent, returnToParentTask, startTemporaryTask } from "../api/taskControl";
+import { useTaskSummary } from "../hooks/useTaskSummary";
 import { AlertTriangle, Check, ListTree, LoaderCircle, Minus, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { APP_STORAGE_PREFIX } from "../config/brand";
 import "./TaskSummaryPanel.css";
@@ -55,69 +57,33 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
       document.body.style.userSelect = previousSelect;
     };
   }, [resizing]);
-  const [result, setResult] = useState<{ id: string; runs: AgentRun[]; error: string } | null>(null);
-  const [acting, setActing] = useState(false);
-  const [retry, setRetry] = useState(0);
+  const { current, run, links, acting, actionError, clearActionError, refresh, perform } = useTaskSummary(conversationId, revision, busy);
   const [temporaryText, setTemporaryText] = useState("");
-  const [actionError, setActionError] = useState("");
   const [temporaryOpened, setTemporaryOpened] = useState(false);
-  useEffect(()=>{setTemporaryOpened(false);setTemporaryText("");setActionError("");},[conversationId]);
-  const [interruption, setInterruption] = useState<{ id: string; parent: AgentRun | null; child: AgentRun | null } | null>(null);
-  useEffect(() => {
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    if (!conversationId) return;
-    async function refresh() {
-      try {
-        const runs = await invoke<AgentRun[]>("list_agent_runs", { conversationId, limit: 200 });
-        const links = runs[0] ? await invoke<{parent: AgentRun | null; child: AgentRun | null}>("get_task_interruption", {runId: runs[0].id}) : {parent:null,child:null};
-        if (active) setInterruption({id: conversationId, ...links});
-        if (active) setResult({ id: conversationId, runs, error: "" });
-      } catch (error) {
-        if (active) setResult(previous => ({ id: conversationId, runs: previous?.id === conversationId ? previous.runs : [], error: String(error) }));
-      }
-      if (active) timer = setTimeout(refresh, 1000);
-    }
-    void refresh();
-    return () => { active = false; clearTimeout(timer); };
-  }, [conversationId, revision, busy, retry]);
-  const current = result?.id === conversationId ? result : null;
-  const run = current?.runs[0];
-  const links = interruption?.id === conversationId ? interruption : null;
+  useEffect(() => { setTemporaryOpened(false); setTemporaryText(""); }, [conversationId]);
+
   async function taskAction(action: "pause" | "temporary" | "return") {
-    if (!run || acting) return;
-    setActing(true);
-    setActionError("");
-    try {
-      if (action === "temporary") {
-        const conversation = await invoke<{id:string}>("start_temporary_task", {parentRunId:run.id, content:temporaryText,accessMode,allowCommand});
-        setTemporaryOpened(false); setTemporaryText(""); onNavigate?.(conversation.id);
-      } else if (action === "return") {
-        onNavigate?.(await invoke<string>("return_to_parent_task", {runId:run.id}));
-      } else { await invoke("pause_background_agent", {runId:run.id}); }
-      setRetry(value => value+1);
-    } catch (error) {
-      setActionError(String(error));
-    } finally { setActing(false); }
+    if (!run) return;
+    if (action === "temporary") {
+      await perform(() => startTemporaryTask(run.id, temporaryText, accessMode, allowCommand), conversation => {
+        setTemporaryOpened(false);
+        setTemporaryText("");
+        onNavigate?.(conversation.id);
+      });
+    } else if (action === "return") {
+      await perform(() => returnToParentTask(run.id), id => onNavigate?.(id));
+    } else {
+      await perform(() => pauseBackgroundAgent(run.id));
+    }
   }
+
   async function resumeTask() {
-    if (!run || acting) return;
-    setActing(true);
-    setActionError("");
-    try { await invoke("respond_background_agent", {decision:{run_id:run.id, action:"resume"}}); setRetry(value=>value+1); }
-    catch(error) {setActionError(String(error));}
-    finally {setActing(false);}
+    if (run) await perform(() => respondBackgroundAgent({ run_id: run.id, action: "resume" }));
   }
+
   const labels = { pending: "待执行", in_progress: "进行中", completed: "已完成", blocked: "已阻塞", skipped: "已跳过" };
-  async function decide(run: AgentRun, action: "approve_plan" | "reject_plan") {
-    if (!run || acting) return;
-    setActing(true);
-    try {
-      await invoke("respond_background_agent", { decision: { run_id: run.id, action, answer: run.plan_json } });
-      setRetry(value => value + 1);
-    } catch (error) {
-      setResult(previous => previous?.id === conversationId ? { ...previous, error: String(error) } : previous);
-    } finally { setActing(false); }
+  async function decide(task: AgentRun, action: "approve_plan" | "reject_plan") {
+    await perform(() => respondBackgroundAgent({ run_id: task.id, action, answer: task.plan_json ?? undefined }));
   }
   const toggle = () => setCollapsed(value => {
     localStorage.setItem(COLLAPSED_KEY, String(!value));
@@ -169,11 +135,11 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
       {run && <div className="task-plan-actions">
         {["running","awaiting_tool","awaiting_plan","awaiting_clarification"].includes(run.status) && <Button size="xs" disabled={acting} onClick={()=>void taskAction("pause")}>暂停任务</Button>}
         {["paused","awaiting_recovery","failed"].includes(run.status) && !links?.child && <Button size="xs" disabled={acting} onClick={()=>void resumeTask()}>恢复未完成任务</Button>}
-        {!["completed","rejected"].includes(run.status) && !links?.child && <Button size="xs" disabled={acting} onClick={()=>setTemporaryOpened(true)}>插入临时任务</Button>}
+        {!["completed","rejected"].includes(run.status) && !links?.child && <Button size="xs" disabled={acting} onClick={()=>{clearActionError();setTemporaryOpened(true);}}>插入临时任务</Button>}
         {links?.child && <Button size="xs" onClick={()=>onNavigate?.(links.child!.conversation_id)}>查看未完成的临时任务</Button>}
         {links?.parent && !links.child && <Button size="xs" disabled={acting} onClick={()=>void taskAction("return")}>{links.parent.status === "paused" ? "结束临时任务并恢复主任务" : "返回主任务"}</Button>}
       </div>}
-      {current?.error && <div className="task-summary-empty"><FriendlyError error={current.error} fallback="读取任务规划失败，请重试。" /><button type="button" onClick={() => setRetry(value => value + 1)}>重新读取</button></div>}
+      {current?.error && <div className="task-summary-empty"><FriendlyError error={current.error} fallback="读取任务规划失败，请重试。" /><button type="button" onClick={refresh}>重新读取</button></div>}
       {conversationId && !current ? <p className="task-summary-loading">正在读取规划…</p> : <>
         {!run?.plan_json && <div className="task-summary-empty"><ListTree size={28} aria-hidden="true" /><h3>{run?.status === "running" ? "正在生成规划" : "暂无任务规划"}</h3><p>任务的规划步骤和执行进度将在这里显示。请求批准模式下，审核通过后才开始执行。</p></div>}
         {current?.runs.map((task, index) => {
