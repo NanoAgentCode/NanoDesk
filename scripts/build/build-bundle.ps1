@@ -35,11 +35,7 @@ if (-not $SkipEnv) {
 # Keep the version used when starting this build; source files may change while it runs.
 $Version = (Get-Content -LiteralPath (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).version
 
-$StateDir = Join-Path $ProjectRoot ".build"
-New-Item -ItemType Directory -Path $StateDir -Force | Out-Null
-$OverrideConfig = Join-Path $StateDir "tauri-bundle-config.json"
-@{ build = @{ beforeBuildCommand = "" } } | ConvertTo-Json |
-  Set-Content -LiteralPath $OverrideConfig -Encoding UTF8
+$OverrideConfig = Get-TauriOverrideConfig -Root $ProjectRoot
 
 $timer = Start-Stage -StageId "bundle"
 Write-Host "==> [stage/bundle] tauri build --bundles nsis (beforeBuildCommand: skipped)"

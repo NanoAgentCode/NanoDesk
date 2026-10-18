@@ -37,6 +37,7 @@ function global:cmd.exe {
     $version = (Get-Content -LiteralPath "src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json).version
     $bundle = Join-Path (Get-Location) "src-tauri\target\release\bundle\nsis"
     New-Item -ItemType Directory -Force $bundle | Out-Null
+    Set-Content -LiteralPath "src-tauri\target\release\nano-desk.exe" -Value "test app"
     Set-Content -LiteralPath (Join-Path $bundle "NanoDesk_${version}_x64-setup.exe") -Value "test installer"
     Set-Content -LiteralPath "src-tauri\tauri.conf.json" -Value '{"version":"0.2.2"}'
     $global:LASTEXITCODE = 0
@@ -131,6 +132,29 @@ try {
   $records = @(Get-FrontendRecords)
   if ($records[-1].skipped) { throw "Standalone bundle must refresh stale frontend" }
   Write-Host "PASS: standalone bundle refreshes stale frontend before packaging."
+
+  $asset = Join-Path $global:InstallerTestRoot "dist\asset.js"
+  Set-Content -LiteralPath $asset -Value "fixture"
+  Save-FrontendFingerprint -Root $global:InstallerTestRoot
+  Remove-Item -LiteralPath $asset
+  if ((Test-FrontendUpToDate -Root $global:InstallerTestRoot).Fresh) { throw "Missing asset must invalidate frontend cache" }
+  Save-FrontendFingerprint -Root $global:InstallerTestRoot
+  Set-Content -LiteralPath (Join-Path $global:InstallerTestRoot "package-lock.json") -Value "{}"
+  if ((Test-FrontendUpToDate -Root $global:InstallerTestRoot).Fresh) { throw "Lockfile must invalidate cache" }
+  $before = Get-FrontendFingerprint -Root $global:InstallerTestRoot
+  Set-Content -LiteralPath (Join-Path $global:InstallerTestRoot ".env.production") -Value "VITE_LABEL=changed"
+  $rejected = $false
+  try { Save-FrontendFingerprint -Root $global:InstallerTestRoot -ExpectedFingerprint $before } catch { $rejected = $true }
+  if (-not $rejected) { throw "Source changes during build must not be stamped as fresh" }
+  Write-Host "PASS: missing assets, lockfile and build-time input changes invalidate cache."
+
+  $overridePath = Get-TauriOverrideConfig -Root $global:InstallerTestRoot
+  $overrideTime = (Get-Item -LiteralPath $overridePath).LastWriteTimeUtc
+  Get-TauriOverrideConfig -Root $global:InstallerTestRoot | Out-Null
+  if ((Get-Item -LiteralPath $overridePath).LastWriteTimeUtc -ne $overrideTime) { throw "Identical override must not be rewritten" }
+  & (Join-Path $global:InstallerTestRoot "scripts\build\build-app.ps1") -SkipEnv | Out-Null
+  if (-not (Test-FrontendUpToDate -Root $global:InstallerTestRoot).Fresh) { throw "Standalone app must refresh frontend" }
+  Write-Host "PASS: stable override and standalone app refresh."
 } finally {
   Remove-Item Function:\Get-FileHash -ErrorAction SilentlyContinue
   $env:VCVARS64 = $PreviousVcVars

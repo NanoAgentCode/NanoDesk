@@ -14,13 +14,6 @@ Import-Module (Join-Path $PSScriptRoot "common.psm1") -DisableNameChecking
 if (-not $ProjectRoot) { $ProjectRoot = Get-ProjectRoot }
 if (-not $RunId) { Set-BuildRunId -RunId ([guid]::NewGuid().ToString("N")) } else { Set-BuildRunId -RunId $RunId }
 
-if (-not $SkipEnv -and -not $DryRun) {
-  $envTimer = Start-Stage -StageId "env"
-  Initialize-WorkspaceMarker -Root $ProjectRoot
-  Initialize-MSVCEnvironment -Root $ProjectRoot
-  Complete-Stage -Timer $envTimer -EntryPoint $EntryPoint | Out-Null
-}
-
 $fresh = Test-FrontendUpToDate -Root $ProjectRoot
 $willSkip = -not $Force -and $fresh.Fresh
 if ($DryRun) {
@@ -37,6 +30,7 @@ if ($willSkip) {
 }
 
 Write-Host "==> [stage/frontend] brand:check + tsc + vite build"
+$inputFingerprint = Get-FrontendFingerprint -Root $ProjectRoot
 Push-Location $ProjectRoot
 try {
   & cmd.exe /d /s /c "npm.cmd run build"
@@ -44,7 +38,7 @@ try {
     throw "Frontend build failed. Exit code: $LASTEXITCODE"
   }
   # 先于任何 dist 之后的写入保存指纹，保证指纹记录总是新于 dist。
-  Save-FrontendFingerprint -Root $ProjectRoot
+  Save-FrontendFingerprint -Root $ProjectRoot -ExpectedFingerprint $inputFingerprint
 } finally {
   Pop-Location
 }

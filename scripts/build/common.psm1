@@ -182,96 +182,22 @@ function Get-ProjectRoot {
   return (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 }
 
-# ── 前端指纹 ─────────────────────────────────────────────────
-# 指纹输入清单：新增构建输入（配置文件等）必须同步登记到这里。
-$script:FrontendFingerprintInputs = @(
-  "src",
-  "index.html",
-  "package.json",
-  "brand.config.json",
-  "scripts/sync-branding.mjs"
-)
+. (Join-Path $PSScriptRoot "frontend-cache.ps1")
 
-function Get-FrontendFingerprint {
-  # 相对路径 + 内容哈希合并为单一 SHA-256；src/ 下排除 *.test.*。
-  param([string]$Root)
-  $inputs = @()
-  foreach ($pattern in @("vite.config.*", "tsconfig*.json")) {
-    $inputs += @(Get-ChildItem -LiteralPath $Root -Filter $pattern -File -ErrorAction SilentlyContinue |
-      ForEach-Object { $_.Name })
-  }
-  $inputs += $script:FrontendFingerprintInputs
-
-  $entries = New-Object System.Collections.Generic.List[string]
-  foreach ($item in $inputs) {
-    $full = Join-Path $Root $item
-    if (-not (Test-Path -LiteralPath $full)) {
-      $entries.Add("$item|missing")
-      continue
-    }
-    $files = if (Test-Path -LiteralPath $full -PathType Container) {
-      Get-ChildItem -LiteralPath $full -Recurse -File
-    } else {
-      @(Get-Item -LiteralPath $full)
-    }
-    foreach ($file in $files) {
-      if ($file.Name -like "*.test.*") { continue }
-      $rel = $file.FullName.Substring($Root.Length).TrimStart('\').Replace('\', '/').ToLowerInvariant()
-      # Use .NET directly so hashing does not depend on host module discovery
-      # after importing the MSVC environment (PowerShell 5.1/7 interoperability).
-      $fileSha = [System.Security.Cryptography.SHA256]::Create()
-      $stream = [System.IO.File]::OpenRead($file.FullName)
-      try {
-        $fileHash = ([BitConverter]::ToString($fileSha.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
-        $entries.Add("$rel|$fileHash")
-      } finally {
-        $stream.Dispose()
-        $fileSha.Dispose()
-      }
-    }
-  }
-  $joined = ($entries | Sort-Object) -join "`n"
-  $sha = [System.Security.Cryptography.SHA256]::Create()
-  try {
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($joined)
-    return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
-  } finally {
-    $sha.Dispose()
-  }
-}
-
-function Test-FrontendUpToDate {
-  # 阶段 1 跳过条件：指纹一致、dist/index.html 存在、dist 未晚于指纹记录被改动。
-  param([string]$Root)
-  $stampPath = Join-Path $Root ".build\frontend-fingerprint.json"
-  $distIndex = Join-Path $Root "dist\index.html"
-  if (-not (Test-Path -LiteralPath $stampPath)) {
-    return @{ Fresh = $false; Reason = "尚无前端指纹记录" }
-  }
-  if (-not (Test-Path -LiteralPath $distIndex)) {
-    return @{ Fresh = $false; Reason = "缺少 dist/index.html" }
-  }
-  $stamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json
-  if ($stamp.fingerprint -ne (Get-FrontendFingerprint -Root $Root)) {
-    return @{ Fresh = $false; Reason = "前端输入指纹已变化" }
-  }
-  if ((Get-Item -LiteralPath $distIndex).LastWriteTimeUtc -gt (Get-Item -LiteralPath $stampPath).LastWriteTimeUtc) {
-    return @{ Fresh = $false; Reason = "dist 在指纹记录之后被修改" }
-  }
-  return @{ Fresh = $true; Reason = "前端指纹未变化，dist 为最新" }
-}
-
-function Save-FrontendFingerprint {
+function Get-TauriOverrideConfig {
   param([string]$Root)
   $stateDir = Join-Path $Root ".build"
   New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
-  $stampPath = Join-Path $stateDir "frontend-fingerprint.json"
-  @{ fingerprint = Get-FrontendFingerprint -Root $Root; saved_at = (Get-Date).ToString("o") } |
-    ConvertTo-Json | Set-Content -LiteralPath $stampPath -Encoding UTF8
+  $path = Join-Path $stateDir "tauri-bundle-config.json"
+  $content = '{"build":{"beforeBuildCommand":""}}'
+  if (-not (Test-Path -LiteralPath $path) -or [System.IO.File]::ReadAllText($path) -cne $content) {
+    [System.IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding($false)))
+  }
+  return $path
 }
 
 Export-ModuleMember -Function `
-  Get-BrandConfig, `
+  Get-TauriOverrideConfig, Get-BrandConfig, `
   Initialize-WorkspaceMarker, `
   Initialize-MSVCEnvironment, `
   Set-BuildRunId, `
