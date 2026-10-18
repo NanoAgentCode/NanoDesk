@@ -1,0 +1,57 @@
+import type { UseSpeechInputReturn } from "../../hooks/useSpeechInput";
+import type { ParsedToolCall } from "../../lib/messageHelpers";
+import type { AgentAccessMode, AgentClarificationAnswer, AgentClarificationRequest, AgentToolCall, PersistedMessage, RagFile, Item, Conversation, ChatImageAttachment, ProjectEntry, ProjectFileEntry } from "../../types";
+import type { UseAgentRuntimeReturn } from "../../hooks/useAgentRuntime";
+import type { UseModelReturn } from "../../hooks/useModel";
+
+export interface ChatPaneProps {
+  sendingMessage?: boolean;
+  activeConversationId: string;
+  activeConversation: Conversation | undefined;
+  messages: PersistedMessage[];
+  messageReasoning: Record<string, string>;
+  chatInput: string;
+  ragFiles: RagFile[];
+  indexingRagFileName: string;
+  promptSuggestions: Item[];
+  selectedPromptIndex: number;
+  busy: boolean;
+  uploadingImageAttachment: boolean;
+  uploadingAttachment: boolean;
+  speech: UseSpeechInputReturn;
+  pendingImageAttachments: ChatImageAttachment[];
+  isRagDragging: boolean;
+  executingToolMessageId: string | null;
+  messageToolCalls: Record<string, AgentToolCall>;
+  clarificationFallbackIds: string[];
+  activeStreamRequestId: string | null;
+  backgroundRunId: string | null;
+  interruptingGeneration: boolean;
+  attachmentProjectPath: string;
+  project: ProjectEntry | null;
+  projectFiles: ProjectFileEntry[];
+  obs: UseAgentRuntimeReturn;
+  model: UseModelReturn;
+  accessMode: AgentAccessMode;
+  onAccessModeChange: (mode: AgentAccessMode) => void;
+  handleSendMessage: () => Promise<void>;
+  handleInterruptGeneration: () => Promise<void>;
+  handleRegenerateLastResponse: (messageId: string) => Promise<void>;
+  handleNewConversation: () => Promise<void>;
+  handleCloseConversation: () => void;
+  handleExecuteTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  handleRejectTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  handleSkipTool: (messageId: string, toolCall: ParsedToolCall) => Promise<void>;
+  handleRetryTool: (messageId: string) => Promise<void>;
+  handleResumeAgentRun: (runId: string) => Promise<void>;
+  handleClarificationAnswer: (messageId: string, request: AgentClarificationRequest, answers: AgentClarificationAnswer[]) => Promise<void>;
+  handleInputChange: (value: string, cursorIndex: number) => Promise<void>;
+  handleChatInputKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  handleChatInputPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
+  handleAttachmentFiles: (files: FileList | File[]) => Promise<void>;
+  removePendingImageAttachment: (relativePath: string) => void;
+  insertPrompt: (item: Item) => void;
+  handleDeleteRagFile: (id: string) => Promise<void>;
+  onOpenModelSettings: () => void;
+}
+
