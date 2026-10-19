@@ -4,6 +4,8 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 
 ![NanoDesk Main UI](docs/assets/nanodesk-main-ui.jpg)
 
+![NanoDesk 内容总结与任务摘要](docs/assets/nanodesk-task-summary-example.png)
+
 ## 核心能力
 
 - 桌面助手模式：通用设置开关控制置顶常驻图标，点击在图标上方展开输入条（图标始终保留）创建新聊天，输入 `@` 选择普通或项目会话继续聊天，「+」支持上传图片、音频和文档；发送后后台运行，不弹出主窗口，可手动打开查看结果，右键菜单可显示主窗口或关闭助手。详见[桌面助手模式](docs/桌面助手模式.md)。
