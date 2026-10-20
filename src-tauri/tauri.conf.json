@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "windows": { "nsis": { "installerHooks": "document-chat-hooks.nsh" } },
     "icon": ["icons/icon.ico"]
   }
 }

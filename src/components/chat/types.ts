@@ -5,6 +5,7 @@ import type { UseAgentRuntimeReturn } from "../../hooks/useAgentRuntime";
 import type { UseModelReturn } from "../../hooks/useModel";
 
 export interface ChatPaneProps {
+  welcome?: React.ReactNode;
   sendingMessage?: boolean;
   activeConversationId: string;
   activeConversation: Conversation | undefined;

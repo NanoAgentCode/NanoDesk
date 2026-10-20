@@ -111,6 +111,7 @@ export interface UseChatReturn {
 }
 
 export interface UseChatArgs {
+  documentSource?: import("../../lib/documentChat").DocumentSource | null;
   setNotice: (message: string) => void;
   onMemoryCreated: (memory: Memory) => void;
   projects: UseProjectsReturn;

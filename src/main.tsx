@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import AssistantMode from "./components/AssistantMode";
+import DocumentChat from "./components/DocumentChat";
 
 import "@mantine/core/styles.css";
 
@@ -21,9 +22,10 @@ import "./components/settings/SettingsSkillsTab.css";
 import "./components/settings/SettingsMcpTab.css";
 import "./components/settings/SettingsEnvironmentTab.css";
 
+const documentPath = new URLSearchParams(window.location.search).get("document-chat");
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    {new URLSearchParams(window.location.search).has("assistant") ? <AssistantMode /> : <App />}
+    {documentPath !== null ? <DocumentChat path={documentPath} /> : new URLSearchParams(window.location.search).has("assistant") ? <AssistantMode /> : <App />}
   </React.StrictMode>
 );
 

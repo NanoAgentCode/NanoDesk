@@ -9,6 +9,9 @@
         if (new URLSearchParams(window.location.search).has("assistant")) {
           document.documentElement.classList.add("assistant-document");
         }
+        if (new URLSearchParams(window.location.search).has("document-chat")) {
+          document.documentElement.classList.add("document-chat-document");
+        }
         try {
           var mode = localStorage.getItem("%APP_STORAGE_PREFIX%-theme") || "system";
           var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -26,6 +29,10 @@
       html.assistant-document body,
       html.assistant-document #root { background: transparent; min-width: 0; overflow: hidden; }
       html.assistant-document #nano-startup { display: none; }
+      html.document-chat-document,
+      html.document-chat-document body,
+      html.document-chat-document #root { min-width: 0; overflow: hidden; }
+      html.document-chat-document #nano-startup { display: none; }
       :root {
         color-scheme: dark;
         --startup-bg: #070b12;

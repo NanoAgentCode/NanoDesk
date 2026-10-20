@@ -2687,8 +2687,11 @@ dependencies = [
  "base64 0.22.1",
  "calamine",
  "chrono",
+ "encoding_rs",
  "futures-util",
  "pdf_oxide",
+ "quick-xml 0.31.0",
+ "rclip-rtf",
  "reqwest 0.12.28",
  "rpassword",
  "rusqlite",
@@ -3713,6 +3716,21 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "rclip-core"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6414ce752a0d18ee3d000b6c76fccbc30e90b93c2a8c1e7fdd855ab9b7ea0af6"
+
+[[package]]
+name = "rclip-rtf"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e64929d6244eea54b6ae4276d5724ae8833c269b8156dd63d48b4f13d39a78ed"
+dependencies = [
+ "rclip-core",
 ]
 
 [[package]]

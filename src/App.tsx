@@ -1,5 +1,6 @@
 import { useAppCloseBehavior } from "./hooks/useAppCloseBehavior";
 import { useAssistantHandoff } from "./hooks/useAssistantHandoff";
+import { useDocumentChatEvents } from "./hooks/useDocumentChatEvents";
 import ProjectDialogs from "./components/app/ProjectDialogs";
 import RenameConversationDialog from "./components/app/RenameConversationDialog";
 import CloseAppDialog from "./components/app/CloseAppDialog";
@@ -106,6 +107,7 @@ function App() {
     chatVisible: !appPlugins.findMainView(activeMainView)
   });
   chatRef.current = chat;
+  useDocumentChatEvents(chat, () => { setActiveMainView("chat"); setShowModelConfig(false); }, setNotice);
   useAssistantHandoff(chat, projects, model, () => { setActiveMainView("chat"); setShowModelConfig(false); }, setNotice);
   const {
     conversations,

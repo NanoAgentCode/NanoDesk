@@ -31,6 +31,9 @@ tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-t
 thiserror = "1"
 futures-util = "0.3"
 pdf_oxide = "0.3"
+rclip-rtf = "0.1"
+quick-xml = "0.31"
+encoding_rs = "0.8"
 zip = { version = "2.1", default-features = false, features = ["deflate"] }
 calamine = "0.26"
 ssh2 = "0.9"

@@ -18,6 +18,7 @@ function getProjectName(projectPath: string) {
 }
 
 export default function ChatPane({
+  welcome,
   sendingMessage = false,
   activeConversationId,
   activeConversation,
@@ -208,7 +209,7 @@ export default function ChatPane({
           handleRegenerateLastResponse={handleRegenerateLastResponse}
         />
         {messages.length === 0 && (
-          <ChatWelcome projectName={projectName} activeModel={activeModel} onStarterAction={handleStarterAction} onOpenModelSettings={onOpenModelSettings} />
+          welcome || <ChatWelcome projectName={projectName} activeModel={activeModel} onStarterAction={handleStarterAction} onOpenModelSettings={onOpenModelSettings} />
         )}
         </div>
       </div>

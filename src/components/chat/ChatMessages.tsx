@@ -1,5 +1,6 @@
 import { Button } from "@mantine/core";
 import MarkdownMessage from "../MarkdownMessage";
+import { splitDocumentMessage } from "../../lib/documentChat";
 import AssistantResponseActions from "../AssistantResponseActions";
 import { formatWebSearchBadge, renderMessageContent } from "../../lib/appHelpers";
 import { parseClarificationRequest, parseToolCall, parseToolResult } from "../../lib/messageHelpers";
@@ -85,6 +86,7 @@ export default function ChatMessages({
 
   return <>
         {messages.filter((message) => !message.metadata?.context_summary && !message.metadata?.task_control).map((message) => {
+          const document = message.role === "user" ? splitDocumentMessage(message.content) : null;
           const toolCall = message.role === "assistant" ? parseToolCall(message.content) : null;
           const clarification = message.role === "assistant" ? parseClarificationRequest(message.content) : null;
           const isLatestAssistant = message.role === "assistant" && messages[messages.length - 1]?.id === message.id;
@@ -118,7 +120,10 @@ export default function ChatMessages({
                   )}
                 </div>
               )}
-              {renderMessageContent(message.content, { attachmentProjectPath, projectFiles })}
+              {document ? <>
+                <details className="reasoning-panel"><summary>文档：{document.name}</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 280, overflow: "auto" }}>{document.document}</pre></details>
+                {renderMessageContent(document.question, { attachmentProjectPath, projectFiles })}
+              </> : renderMessageContent(message.content, { attachmentProjectPath, projectFiles })}
               
               {toolCall && (
                 <div className="tool-call-card">

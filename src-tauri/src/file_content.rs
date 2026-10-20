@@ -13,6 +13,26 @@ pub struct AbsoluteFileContent {
     content: String,
 }
 
+fn read_document(path: &str) -> AppResult<AbsoluteFileContent> {
+    let path_buf = std::path::Path::new(path);
+    let extension = path_buf.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+    if !crate::document_chat::EXTENSIONS.contains(&extension.as_str()) {
+        return Err("不支持此文档格式。".into());
+    }
+    let metadata = std::fs::metadata(path_buf)?;
+    if !metadata.is_file() { return Err("请选择普通文档文件。".into()); }
+    if metadata.len() > 10 * 1024 * 1024 { return Err("文件超过 10MB 限制。".into()); }
+    let content = extract_text_from_file(path)?;
+    if content.trim().is_empty() { return Err("文档没有可提取的文字；扫描 PDF 请先进行 OCR。".into()); }
+    Ok(AbsoluteFileContent { name: path_buf.file_name().unwrap_or_default().to_string_lossy().into_owned(), size: metadata.len(), content })
+}
+
+#[tauri::command]
+pub async fn read_document_chat_file(path: String) -> AppResult<AbsoluteFileContent> {
+    tauri::async_runtime::spawn_blocking(move || read_document(&path)).await
+        .map_err(|error| AppError::Message(format!("文档读取失败：{error}")))?
+}
+
 #[derive(serde::Deserialize)]
 pub struct UploadedFileExtractionRequest {
     name: String,
@@ -135,7 +155,7 @@ fn extract_uploaded_file_content(
     })
 }
 
-fn extract_text_from_file(path: &str) -> AppResult<String> {
+pub(crate) fn extract_text_from_file(path: &str) -> AppResult<String> {
     let path_buf = std::path::Path::new(path);
     let extension = path_buf
         .extension()
@@ -144,6 +164,22 @@ fn extract_text_from_file(path: &str) -> AppResult<String> {
         .to_lowercase();
 
     match extension.as_str() {
+        "rtf" => {
+            let bytes = std::fs::read(path)?;
+            let parser = rclip_rtf::Parser::new(&bytes)
+                .map_err(|err| AppError::Message(format!("RTF 解析失败：{err:?}")))?;
+            let mut text = String::new();
+            for run in parser {
+                let run = run.map_err(|err| AppError::Message(format!("RTF 解析失败：{err:?}")))?;
+                match run.text {
+                    rclip_rtf::RunText::Text(value) => text.push_str(value),
+                    rclip_rtf::RunText::Char(value) => text.push(value),
+                    _ => text.push('\n'),
+                }
+            }
+            if text.contains('\u{fffd}') { return Err("RTF 包含无法识别的编码，请另存为 DOCX 或 UTF-8 文本后重试。".into()); }
+            Ok(text)
+        }
         "doc" => {
             let data = std::fs::read(path)?;
             Ok(extract_doc_binary_text(&data))
@@ -156,10 +192,9 @@ fn extract_text_from_file(path: &str) -> AppResult<String> {
                 .page_count()
                 .map_err(|err| AppError::Message(err.to_string()))?;
             for index in 0..num_pages {
-                if let Ok(page_text) = doc.extract_text(index) {
-                    text.push_str(&page_text);
-                    text.push('\n');
-                }
+                let page_text = doc.extract_text(index).map_err(|err| AppError::Message(format!("PDF 第 {} 页读取失败：{err}", index + 1)))?;
+                text.push_str(&page_text);
+                text.push('\n');
             }
             Ok(text)
         }
@@ -209,8 +244,23 @@ fn extract_text_from_file(path: &str) -> AppResult<String> {
             Ok(text.trim().to_string())
         }
         "xlsx" => extract_xlsx_as_markdown(path),
-        _ => Ok(std::fs::read_to_string(path)?),
+        _ => decode_document_text(&std::fs::read(path)?),
     }
+}
+
+fn decode_document_text(bytes: &[u8]) -> AppResult<String> {
+    let (encoding, skip) = if bytes.starts_with(&[0xff, 0xfe]) {
+        (encoding_rs::UTF_16LE, 2)
+    } else if bytes.starts_with(&[0xfe, 0xff]) {
+        (encoding_rs::UTF_16BE, 2)
+    } else {
+        let source = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
+        if let Ok(text) = std::str::from_utf8(source) { return Ok(text.to_owned()); }
+        (encoding_rs::GBK, 0)
+    };
+    let (text, _, errors) = encoding.decode(&bytes[skip..]);
+    if errors { return Err("文档文字编码无法识别，请另存为 UTF-8 后重试。".into()); }
+    Ok(text.into_owned())
 }
 
 fn extract_xml_text(xml_content: &str, tag_name: &str) -> String {
@@ -221,6 +271,11 @@ fn extract_xml_text(xml_content: &str, tag_name: &str) -> String {
 
     while let Some(start) = xml_content[pos..].find(&open_prefix) {
         let absolute_start = pos + start;
+        let after_name = absolute_start + open_prefix.len();
+        if !xml_content[after_name..].starts_with(|ch: char| ch == '>' || ch.is_whitespace()) {
+            pos = after_name;
+            continue;
+        }
         let Some(close_tag_end) = xml_content[absolute_start..].find('>') else {
             break;
         };
@@ -229,7 +284,8 @@ fn extract_xml_text(xml_content: &str, tag_name: &str) -> String {
             break;
         };
         let absolute_end = text_start + end;
-        text.push_str(&xml_content[text_start..absolute_end]);
+        let raw = &xml_content[text_start..absolute_end];
+        text.push_str(&quick_xml::escape::unescape(raw).unwrap_or_else(|_| raw.into()));
         text.push(' ');
         pos = absolute_end + close_tag.len();
     }
@@ -359,6 +415,38 @@ mod tests {
 
     use super::*;
     use zip::write::SimpleFileOptions;
+
+    fn fixture(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("nanodesk-document-{}-{name}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn document_chat_reads_full_text_and_rejects_empty_or_unsupported() {
+        for extension in ["txt", "md", "markdown", "csv"] {
+            let text = format!("开头\n{}\n最后一段", "正文".repeat(30000));
+            let path = fixture(&format!("资料.{extension}"), text.as_bytes());
+            assert_eq!(read_document(path.to_str().unwrap()).unwrap().content, text);
+            std::fs::remove_file(path).unwrap();
+        }
+        for (name, bytes) in [("empty.txt", &b"  "[..]), ("script.exe", &b"body"[..])] {
+            let path = fixture(name, bytes);
+            assert!(read_document(path.to_str().unwrap()).is_err());
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn document_chat_extracts_rtf_unicode_and_formatting() {
+        let path = fixture("example.rtf", br"{\rtf1\ansi{\fonttbl\f0\fswiss Arial;}\f0\pard Hello {\b world} \u20013?\u25991?\par End}");
+        let text = read_document(path.to_str().unwrap()).unwrap().content;
+        std::fs::remove_file(path).unwrap();
+        assert!(text.contains("Hello"), "{text}");
+        assert!(text.contains("world"), "{text}");
+        assert!(text.contains("中文"), "{text}");
+        assert!(!text.contains("Arial"), "{text}");
+    }
 
     #[test]
     fn uploaded_docx_uses_the_document_extractor() {

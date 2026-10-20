@@ -40,6 +40,7 @@ mod task_notifications;
 mod commands;
 mod services;
 mod desktop;
+mod document_chat;
 
 pub(crate) use app_state::{AppState, ChatStreamInterrupts};
 pub(crate) use services::observation::{start_observation, finish_observation, ObservationStart};
@@ -60,7 +61,8 @@ use tokio::sync::Mutex;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            if document_chat::open_from_args(app, args, cwd.into()) { return; }
             if let Err(err) = show_main_window(app) {
                 logging::error(
                     "single-instance",
@@ -134,9 +136,18 @@ pub fn run() {
             profile::start_worker(app.handle().clone());
             automation::start_worker(app.handle().clone());
             background_agent::restore_waiting_runs(app.handle().clone());
+            let args: Vec<String> = std::env::args().collect();
+            if args.iter().any(|arg| arg == "--document-chat") {
+                if let Some(window) = app.get_webview_window("main") { window.hide()?; }
+            }
+            document_chat::open_from_args(app.handle(), args, std::env::current_dir()?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            document_chat::get_document_context_menu,
+            document_chat::set_document_context_menu,
+            document_chat::open_document_conversation,
+            file_content::read_document_chat_file,
             commands::task_budget::get_task_settings,
             commands::task_budget::save_task_settings,
             commands::task_budget::update_task_budget,

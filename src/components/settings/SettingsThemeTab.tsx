@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { Checkbox, Group, Radio, SegmentedControl, Stack, Switch, Text } from "@mantine/core";
 import TaskSettingsSection from "./TaskSettingsSection";
+import { getDocumentContextMenu, setDocumentContextMenu } from "../../api/documentChat";
 import { themeLabels } from "../../lib/appHelpers";
 import type { ThemeMode } from "../../types";
 import { getAutostart, setAutostart } from "../../api";
@@ -22,6 +23,16 @@ interface SettingsThemeTabProps {
 
 export default function SettingsThemeTab({ themeMode, setThemeMode }: SettingsThemeTabProps) {
   const [autostart, setAutostartState] = useState(false);
+  const [documentMenu, setDocumentMenu] = useState(false);
+  const [documentMenuBusy, setDocumentMenuBusy] = useState(true);
+  const [documentMenuError, setDocumentMenuError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void getDocumentContextMenu().then((value) => { if (active) setDocumentMenu(value); })
+      .catch((e) => { if (active) setDocumentMenuError(String(e)); })
+      .finally(() => { if (active) setDocumentMenuBusy(false); });
+    return () => { active = false; };
+  }, []);
   const [assistantVisible, setAssistantVisibleState] = useState(getStoredAssistantVisible);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantError, setAssistantError] = useState("");
@@ -109,6 +120,16 @@ export default function SettingsThemeTab({ themeMode, setThemeMode }: SettingsTh
       <section className="general-settings-section" aria-labelledby="general-system-heading">
         <Text component="h4" id="general-system-heading" fw={650} size="sm" mb="sm">系统选项</Text>
         <Stack gap="md">
+          <Switch label="文档右键对话" checked={documentMenu} disabled={documentMenuBusy}
+            description="在桌面或文件夹中右键文档，选择「使用 NanoDesk 对话」。Windows 11 可在「显示更多选项」中找到。"
+            onChange={(event) => {
+              const enabled = event.currentTarget.checked;
+              setDocumentMenuBusy(true); setDocumentMenuError("");
+              void setDocumentContextMenu(enabled).then(() => setDocumentMenu(enabled))
+                .catch((e) => setDocumentMenuError(`右键菜单设置失败：${String(e)}`))
+                .finally(() => setDocumentMenuBusy(false));
+            }} />
+          {documentMenuError && <Text c="red" size="sm" role="alert">{documentMenuError}</Text>}
           <Switch
             checked={assistantVisible}
             disabled={assistantBusy}

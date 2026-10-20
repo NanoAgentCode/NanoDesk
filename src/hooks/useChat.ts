@@ -1,5 +1,6 @@
 import { useBackgroundAgents } from "./chat/useBackgroundAgents";
 import { useChatHistory } from "./chat/useChatHistory";
+import { buildDocumentMessage } from "../lib/documentChat";
 import {
   mergeBackgroundMessages,
   type BackgroundAgentDecision,
@@ -22,6 +23,7 @@ import {
   readAbsoluteFile,
   updateConversationModel,
   listConversations,
+  renameConversation,
   listArchivedConversations,
   respondBackgroundAgent
 } from "../api";
@@ -60,6 +62,7 @@ import type { UseChatArgs, UseChatReturn } from "./chat/types";
 export type { UseChatArgs, UseChatReturn } from "./chat/types";
 
 export function useChat({
+  documentSource,
   setNotice,
   onMemoryCreated,
   projects,
@@ -291,6 +294,10 @@ export function useChat({
   }
 
   async function sendMessageInner(assistantText?: string) {
+    if (documentSource === null) {
+      setNotice("请先等待文档读取成功。");
+      return;
+    }
     if (attachmentBusyRef.current || speech.isBusy()) {
       setNotice("请先等待附件或语音处理完成，或取消语音输入。");
       return;
@@ -352,7 +359,7 @@ export function useChat({
     let agentRun: AgentRun | null = null;
 
     try {
-      const projectHint = conv.getConversationProjectHint();
+      const projectHint = documentSource ? null : conv.getConversationProjectHint();
       const conversationId = await conv.ensureConversation(projectHint);
       if (activeModelId && activeModelId !== conversationModelId) {
         await updateConversationModel(conversationId, activeModelId);
@@ -361,12 +368,14 @@ export function useChat({
       if (routingDecision) setNotice(`智能路由：${routingDecision.reason}`);
       const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
       const persistedMessages = await listMessages(conversationId);
+      const firstDocumentMessage = documentSource && persistedMessages.length === 0;
+      if (firstDocumentMessage) await renameConversation(conversationId, documentSource.name);
       const userMessage = await appendMessage({
         conversation_id: conversationId,
         role: "user",
-        content,
+        content: firstDocumentMessage ? buildDocumentMessage(documentSource, content) : content,
         metadata: {
-          ...(memoryRoute.kind === "memory" ? { exclude_from_profile: true } : {}),
+          ...(memoryRoute.kind === "memory" || firstDocumentMessage ? { exclude_from_profile: true } : {}),
           ...(routingDecision ? { model_routing: routingDecision } : {})
         }
       });
