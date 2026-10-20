@@ -323,6 +323,7 @@ export interface RagFile {
   chunk_count: number;
   status: string;
   error?: string | null;
+  preparation?: { phase: string; completed: number; total: number; model_id: string; error?: string | null } | null;
   created_at: string;
 }
 

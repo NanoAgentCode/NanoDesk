@@ -153,6 +153,9 @@ export default function ChatComposer({
                 <FileText size={14} />
                 <span>{file.name}</span>
                 <small>{file.status === "fulltext" ? "全文" : file.chunk_count}</small>
+                {file.preparation && <small title={file.preparation.error || "预生成概要及带原文出处的待办、风险、决策；可继续提问"}>
+                  {file.preparation.phase === "ready" ? "概要/清单就绪" : file.preparation.phase === "failed" ? "预处理未完成" : file.preparation.phase === "queued" ? "预处理排队中" : file.preparation.phase === "reducing" ? "概要归并中" : `预处理 ${file.preparation.completed}/${file.preparation.total} 组`}
+                </small>}
                 <button
                   aria-label={`移除 ${file.name}`}
                   onClick={() => void handleDeleteRagFile(file.id)}

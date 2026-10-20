@@ -8,10 +8,28 @@ use crate::AppState;
 
 #[tauri::command]
 pub async fn list_rag_files(
+    app: AppHandle,
     state: State<'_, AppState>,
     conversation_id: String,
 ) -> AppResult<Vec<RagFile>> {
-    state.db.lock().await.list_rag_files(&conversation_id)
+    let mut files = state.db.lock().await.list_rag_files(&conversation_id)?;
+    // Resume only interrupted work. Failed jobs require an explicit reimport,
+    // so polling cannot silently retry a failing provider or reset its budget.
+    for file in &mut files {
+        if let Some(mut progress) = file.preparation.clone().filter(|progress| matches!(progress.phase.as_str(), "preparing" | "reducing" | "queued")) {
+            let model = state.db.lock().await.get_model_config(&progress.model_id);
+            match model {
+                Ok(model) => crate::document_insights::schedule(app.clone(), file.clone(), model),
+                Err(_) => {
+                    progress.phase = "failed".into();
+                    progress.error = Some("预处理使用的模型已移除，请选择模型后重新上传同一文档".into());
+                    state.db.lock().await.save_document_summary_node(&file.id, &file.content_hash, crate::document_insights::STATUS_KEY, 0, &serde_json::to_string(&progress)?)?;
+                    file.preparation = Some(progress);
+                }
+            }
+        }
+    }
+    Ok(files)
 }
 
 #[tauri::command]
@@ -21,7 +39,14 @@ pub async fn delete_rag_file(state: State<'_, AppState>, id: String) -> AppResul
 
 #[tauri::command]
 pub async fn index_rag_file(app: AppHandle, state: State<'_, AppState>, draft: RagFileDraft) -> AppResult<RagFile> {
-    index_with_state(&state, draft, |progress| { let _ = app.emit("document-index-progress", progress); }).await
+    let model = state.db.lock().await.get_model_config(&draft.model_config_id)?;
+    let mut file = index_with_state(&state, draft, |progress| { let _ = app.emit("document-index-progress", progress); }).await?;
+    if file.status == "fulltext" { return Ok(file); }
+    let progress = crate::document_insights::PreparationProgress { phase: "queued".into(), completed: 0, total: 0, model_id: model.id.clone(), error: None };
+    state.db.lock().await.save_document_summary_node(&file.id, &file.content_hash, crate::document_insights::STATUS_KEY, 0, &serde_json::to_string(&progress)?)?;
+    file.preparation = Some(progress);
+    crate::document_insights::schedule(app, file.clone(), model);
+    Ok(file)
 }
 
 #[derive(Clone, serde::Serialize)]

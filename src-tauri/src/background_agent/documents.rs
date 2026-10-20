@@ -29,7 +29,7 @@ fn publish_activity(state: &AppState, request: &BackgroundAgentRequest, detail: 
     }
 }
 
-fn reusable_overview(query: &str) -> bool {
+pub(crate) fn reusable_overview(query: &str) -> bool {
     let query = query.to_lowercase();
     needs_full_coverage(&query)
         && ["总结", "概括", "综述", "摘要", "关键结论", "核心内容", "summar", "overview"].iter().any(|term| query.contains(term))
@@ -47,14 +47,14 @@ fn publish_progress(state: &AppState, request: &BackgroundAgentRequest, progress
     }
 }
 
-pub(super) fn needs_full_coverage(query: &str) -> bool {
+pub(crate) fn needs_full_coverage(query: &str) -> bool {
     let query = query.to_lowercase();
     let global = ["全文", "全篇", "整份", "整个文档", "所有", "全部", "all ", "entire"].iter().any(|term| query.contains(term));
     let section = (query.contains('第') && ["章", "节", "页", "段"].iter().any(|term| query.contains(term))) || query.contains("chapter ");
-    global || (!section && ["总结", "概括", "综述", "摘要", "关键结论", "核心内容", "待办", "行动项", "summar", "overview", "action items"].iter().any(|term| query.contains(term)))
+    global || (!section && ["总结", "概括", "综述", "摘要", "关键结论", "核心内容", "待办", "行动项", "有哪些风险", "风险清单", "主要风险", "关键决策", "有哪些决策", "决策清单", "summar", "overview", "action items", "todo", "list risks", "list decisions"].iter().any(|term| query.contains(term)))
 }
 
-pub(super) fn pack(parts: &[String], limit: u32) -> Vec<String> {
+pub(crate) fn pack(parts: &[String], limit: u32) -> Vec<String> {
     let mut groups = Vec::new();
     let mut group = String::new();
     for part in parts {
@@ -257,6 +257,14 @@ pub(super) async fn prepare(
     let available = crate::context_budget::model_input_budget(model.context_window, model.max_tokens).saturating_sub(text_tokens(system) + text_tokens(query) + 128);
     let document_budget = (available / 3).min(6000);
     if document_budget < 256 { return Err("模型剩余上下文不足以读取文档，请缩短问题或选择更大上下文的模型。".into()); }
+    if needs_full_coverage(query) {
+        let history = state.db.lock().await.list_messages(&request.conversation_id)?;
+        let history_tokens = history.iter().map(|message| text_tokens(&message.content) as u64 + 8).sum::<u64>().min(u32::MAX as u64) as u32;
+        let prepared_budget = available.saturating_sub(history_tokens.saturating_add(1024));
+        if let Some(context) = crate::document_insights::prepared_context(state, &files, model, query, prepared_budget).await? {
+            return Ok(context);
+        }
+    }
     let parts = chunks.iter().map(|chunk| format!("【{} #{}】\n{}", chunk.file_name, chunk.chunk_index + 1, chunk.text)).collect::<Vec<_>>();
     let all_tokens: u64 = parts.iter().map(|part| text_tokens(part) as u64 + 2).sum();
     // Full-coverage questions need no preprocessing when the actual input
@@ -352,8 +360,8 @@ mod tests {
     }
     #[test]
     fn global_questions_cover_all_chunks_but_named_sections_use_retrieval() {
-        for query in ["总结这份文档", "列出所有待办", "提取关键结论", "summarize the document", "有哪些行动项"] { assert!(needs_full_coverage(query), "{query}"); }
-        for query in ["第十章总结", "第3页的负责人是谁", "What is the contract date?", "summarize chapter 2"] { assert!(!needs_full_coverage(query), "{query}"); }
+        for query in ["总结这份文档", "列出所有待办", "提取关键结论", "summarize the document", "有哪些行动项", "有哪些风险", "关键决策是什么"] { assert!(needs_full_coverage(query), "{query}"); }
+        for query in ["第十章总结", "第3页的负责人是谁", "What is the contract date?", "summarize chapter 2", "供应风险的原因是什么", "这个决策是谁提出的"] { assert!(!needs_full_coverage(query), "{query}"); }
     }
     #[test]
     fn batching_covers_every_character_and_stays_bounded() {

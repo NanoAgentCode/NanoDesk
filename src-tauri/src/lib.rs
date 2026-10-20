@@ -41,6 +41,7 @@ mod commands;
 mod services;
 mod desktop;
 mod document_chat;
+mod document_insights;
 
 pub(crate) use app_state::{AppState, ChatStreamInterrupts};
 pub(crate) use services::observation::{start_observation, finish_observation, ObservationStart};

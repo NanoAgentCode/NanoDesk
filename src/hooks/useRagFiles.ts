@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   deleteRagFile,
   indexRagFile,
@@ -26,6 +26,17 @@ export function useRagFiles(setNotice: (message: string) => void): UseRagFilesRe
   const [ragFiles, setRagFiles] = useState<RagFile[]>([]);
   const [isRagDragging, setIsRagDragging] = useState(false);
   const [indexingRagFileName, setIndexingRagFileName] = useState("");
+  const pendingConversation = ragFiles.find(file => ["queued", "preparing", "reducing"].includes(file.preparation?.phase || ""))?.conversation_id;
+  useEffect(() => {
+    if (!pendingConversation) return;
+    let disposed = false;
+    const timer = setInterval(() => {
+      void listRagFiles(pendingConversation).then(files => {
+        if (!disposed) setRagFiles(current => current.length > 0 && current.every(file => file.conversation_id === pendingConversation) ? files : current);
+      }).catch(console.error);
+    }, 2000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [pendingConversation]);
 
   async function refreshRagFiles(conversationId: string) {
     try {

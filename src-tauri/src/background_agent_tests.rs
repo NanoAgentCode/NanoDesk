@@ -126,6 +126,136 @@ struct Fixture {
 }
 
 #[tokio::test]
+async fn document_preparation_is_reused_after_reopen_and_preserves_item_sources() {
+    let leaf = serde_json::json!({"overview":"项目需在周五交付，存在供应风险。", "items":[
+        {"kind":"task","text":"提交报告","quote":"小林周五提交报告","chunk_index":1,"owner":"小林","deadline":"周五"},
+        {"kind":"risk","text":"供应延迟","quote":"供应可能延迟","chunk_index":2,"owner":null,"deadline":null}
+    ]}).to_string();
+    let server = MockModel::start(vec![(vec![leaf], 0)]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let file = fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "prepared.txt", mime: "text/plain", size: 20,
+        content_hash: "prepared-v1", chunks: &["小林周五提交报告".into(), "供应可能延迟".into()],
+        embeddings: &[Vec::new(), Vec::new()], embedding_model: "fulltext",
+    }).unwrap();
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    crate::document_insights::prepare_file(&fixture.state, &file, &model, |_| {}).await.unwrap();
+    *fixture.state.db.lock().await = crate::db::Database::open(fixture.root.join("data.sqlite3")).unwrap();
+    // A second import/resume must not call the model again.
+    crate::document_insights::prepare_file(&fixture.state, &file, &model, |_| {}).await.unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let context = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "列出全部待办", "system", true).await.unwrap();
+    assert!(context.contains("预提取") && context.contains("小林周五提交报告") && context.contains("prepared.txt #1"));
+    assert!(!context.contains("供应可能延迟"), "待办清单不应混入其他类别");
+    assert_eq!(budget.steps, 0);
+    let overview = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", true).await.unwrap();
+    assert!(overview.contains("预生成") && overview.contains("项目需在周五交付"));
+    let combined = crate::document_insights::prepared_context(&fixture.state, &[file.clone()], &model, "总结全文并列出全部待办", 6000).await.unwrap().unwrap();
+    assert!(combined.contains("预生成") && combined.contains("预提取清单") && combined.contains("小林周五提交报告"));
+    let mut changed = model.clone(); changed.model = "different-model".into();
+    assert!(crate::document_insights::prepared_context(&fixture.state, &[file.clone()], &changed, "列出全部待办", 6000).await.unwrap().is_none());
+    let mut changed_file = file.clone(); changed_file.content_hash = "prepared-v2".into();
+    assert!(crate::document_insights::prepared_context(&fixture.state, &[changed_file], &model, "总结全文", 6000).await.unwrap().is_none());
+    assert!(crate::document_insights::prepared_context(&fixture.state, &[file.clone()], &model, "列出全部待办", 32).await.unwrap().is_none(), "不能截断清单冒充完整覆盖");
+    assert!(crate::document_insights::prepared_context(&fixture.state, &[file.clone()], &model, "重新逐段核查全部待办", 6000).await.unwrap().is_none());
+    fixture.state.db.lock().await.delete_rag_file(&file.id).unwrap();
+    assert!(crate::document_insights::prepared_context(&fixture.state, &[file], &model, "总结全文", 6000).await.unwrap().is_none());
+    assert_eq!(server.worker.join().unwrap().len(), 1);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_preparation_rejects_unverifiable_quotes_and_never_marks_partial_ready() {
+    let server = MockModel::start(vec![(vec![serde_json::json!({"overview":"概要", "items":[
+        {"kind":"task","text":"虚构待办","quote":"原文不存在的摘录","chunk_index":1}
+    ]}).to_string()], 0)]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let file = fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "bad.txt", mime: "text/plain", size: 10,
+        content_hash: "bad-v1", chunks: &["实际原文".into()], embeddings: &[Vec::new()], embedding_model: "fulltext",
+    }).unwrap();
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    assert!(crate::document_insights::prepare_file(&fixture.state, &file, &model, |_| {}).await.is_err());
+    assert!(crate::document_insights::prepared_context(&fixture.state, &[file], &model, "列出全部待办", 6000).await.unwrap().is_none());
+    assert_eq!(server.worker.join().unwrap().len(), 1);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_preparation_resumes_successful_leaves_and_builds_hierarchy_before_ready() {
+    let leaf = serde_json::json!({"overview":"章节事实".repeat(450), "items":[]}).to_string();
+    let server = MockModel::start(vec![(vec![leaf.clone()], 80), (vec!["invalid JSON".into()], 20),
+        (vec![leaf.clone()], 20), (vec![leaf], 0), (vec!["合并后的全文结论【hierarchy.txt #3】".into()], 0)]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let chunks = (1..=3).map(|index| format!("{}TAIL-{index}", "文".repeat(7000))).collect::<Vec<_>>();
+    let file = fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "hierarchy.txt", mime: "text/plain", size: 12000,
+        content_hash: "hierarchy-v1", chunks: &chunks, embeddings: &[Vec::new(), Vec::new(), Vec::new()], embedding_model: "fulltext",
+    }).unwrap();
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    assert!(crate::document_insights::prepare_file(&fixture.state, &file, &model, |_| {}).await.is_err());
+    let status = fixture.state.db.lock().await.list_rag_files(&file.conversation_id).unwrap()[0].preparation.clone().unwrap();
+    assert_eq!((status.phase.as_str(), status.completed, status.total), ("failed", 2, 3));
+    assert!(crate::document_insights::prepared_context(&fixture.state, &[file.clone()], &model, "总结全文", 6000).await.unwrap().is_none());
+    *fixture.state.db.lock().await = crate::db::Database::open(fixture.root.join("data.sqlite3")).unwrap();
+    let mut phases = Vec::new();
+    crate::document_insights::prepare_file(&fixture.state, &file, &model, |status| phases.push(status.phase)).await.unwrap();
+    assert!(phases.contains(&"reducing".into()));
+    assert_eq!(phases.last().map(String::as_str), Some("ready"));
+    let context = crate::document_insights::prepared_context(&fixture.state, &[file], &model, "总结全文", 6000).await.unwrap().unwrap();
+    assert!(context.contains("合并后的全文结论") && context.contains("相关原文核对片段"));
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 5);
+    assert!((2..=3).contains(&server.peak_requests.load(Ordering::SeqCst)));
+    let successful_source = requests[0]["messages"][1]["content"].as_str().unwrap();
+    assert_eq!(requests.iter().filter(|request| request["messages"][1]["content"].as_str() == Some(successful_source)).count(), 1);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_preparation_truncated_output_is_never_published_as_complete() {
+    let server = MockModel::start(vec![(vec!["{}".into(), "FINISH_LENGTH".into()], 0)]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let file = fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "truncated.txt", mime: "text/plain", size: 10,
+        content_hash: "truncated-v1", chunks: &["原文".into()], embeddings: &[Vec::new()], embedding_model: "fulltext",
+    }).unwrap();
+    let mut model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    model.max_tokens = Some(512);
+    assert!(crate::document_insights::prepare_file(&fixture.state, &file, &model, |_| {}).await.is_err());
+    assert!(crate::document_insights::prepared_context(&fixture.state, &[file], &model, "总结全文", 6000).await.unwrap().is_none());
+    assert_eq!(server.worker.join().unwrap().len(), 1);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_preparation_respects_budget_and_reuses_work_after_allowance_is_raised() {
+    let leaf = serde_json::json!({"overview":"事实", "items":[]}).to_string();
+    let server = MockModel::start(vec![(vec![leaf.clone()], 20), (vec![leaf], 0)]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let chunks = vec![format!("{}FIRST", "文".repeat(7000)), format!("{}SECOND", "文".repeat(7000))];
+    let file = fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "budget.txt", mime: "text/plain", size: 14000,
+        content_hash: "budget-v1", chunks: &chunks, embeddings: &[Vec::new(), Vec::new()], embedding_model: "fulltext",
+    }).unwrap();
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut settings = fixture.state.runtime.lock().await.task_settings().unwrap();
+    settings.default_budget.max_steps = 1;
+    fixture.state.runtime.lock().await.save_task_settings(&settings).unwrap();
+    assert!(crate::document_insights::prepare_file(&fixture.state, &file, &model, |_| {}).await.is_err());
+    let status = fixture.state.db.lock().await.list_rag_files(&file.conversation_id).unwrap()[0].preparation.clone().unwrap();
+    assert_eq!(status.completed, 1);
+    settings.default_budget.max_steps = 2;
+    fixture.state.runtime.lock().await.save_task_settings(&settings).unwrap();
+    crate::document_insights::prepare_file(&fixture.state, &file, &model, |_| {}).await.unwrap();
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 2, "成功分组不应重复消耗预算");
+    let sources = requests.iter().map(|request| request["messages"][1]["content"].as_str().unwrap()).collect::<Vec<_>>();
+    assert!(sources.iter().any(|source| source.contains("FIRST")) && sources.iter().any(|source| source.contains("SECOND")));
+    fixture.cleanup();
+}
+
+#[tokio::test]
 async fn temporary_task_updates_remaining_mainline_without_replaying_completed_or_stale_tools() {
     let updated = |status: &str| format!(r#"<task_plan>{{"goal":"Main goal","steps":[{{"id":"inspect","title":"Inspect existing code","status":"completed"}},{{"id":"implement","title":"Implement changed requirement","status":"{status}"}}]}}</task_plan>"#);
     let model = MockModel::start(vec![

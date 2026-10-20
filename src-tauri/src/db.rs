@@ -572,6 +572,7 @@ fn row_to_rag_file(row: &rusqlite::Row<'_>) -> rusqlite::Result<RagFile> {
         chunk_count: row.get(6)?,
         status: row.get(7)?,
         error: row.get(8)?,
+        preparation: None,
         created_at: parse_time_for_row(&created_at)?,
     })
 }

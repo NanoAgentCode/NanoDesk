@@ -464,6 +464,8 @@ pub struct RagFile {
     pub chunk_count: i64,
     pub status: String,
     pub error: Option<String>,
+    #[serde(default)]
+    pub preparation: Option<crate::document_insights::PreparationProgress>,
     pub created_at: DateTime<Utc>,
 }
 

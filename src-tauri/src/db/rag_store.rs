@@ -112,6 +112,11 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()
             .map_err(AppError::from)?;
 
+        let mut rows = rows;
+        for file in &mut rows {
+            file.preparation = self.document_summary_node(&file.id, &file.content_hash, crate::document_insights::STATUS_KEY)?
+                .and_then(|text| serde_json::from_str(&text).ok());
+        }
         Ok(rows)
     }
 
@@ -190,6 +195,7 @@ impl Database {
             chunk_count: chunks.len() as i64,
             status: if embedding_model == "fulltext" { "fulltext" } else { "ready" }.to_string(),
             error: None,
+            preparation: None,
             created_at: now,
         };
 
