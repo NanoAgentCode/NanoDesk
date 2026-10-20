@@ -88,7 +88,7 @@ export default function Sidebar({
       </Button>
 
       <div className="sidebar-section projects">
-        <div className="sidebar-section-header">
+        {isCollapsed ? <div className="sidebar-section-divider" role="separator" aria-label="项目区" /> : <div className="sidebar-section-header">
           <button
             className="sidebar-section-toggle"
             onClick={() => projects.setProjectsSectionExpanded(!projects.projectsSectionExpanded)}
@@ -112,8 +112,8 @@ export default function Sidebar({
               </button>
             </Tooltip>
           </div>}
-        </div>
-        {projects.projectsSectionExpanded && (
+        </div>}
+        {(isCollapsed || projects.projectsSectionExpanded) && (
           <div className="sidebar-project-list">
             {projects.projects.map((project) => {
               const isActiveProject = project.id === projects.activeProjectId;
@@ -227,7 +227,7 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-section chats">
-        <div className="sidebar-section-header">
+        {isCollapsed ? <div className="sidebar-section-divider" role="separator" aria-label="对话区" /> : <div className="sidebar-section-header">
           <button
             className="sidebar-section-toggle"
             onClick={() => projects.setChatsSectionExpanded(!projects.chatsSectionExpanded)}
@@ -247,8 +247,8 @@ export default function Sidebar({
               <Plus size={16} />
             </button>
           </Tooltip>}
-        </div>
-        {projects.chatsSectionExpanded && (
+        </div>}
+        {(isCollapsed || projects.chatsSectionExpanded) && (
           <div className="sidebar-chat-list">
             {conversations.map((conversation) => (
               <UnstyledButton

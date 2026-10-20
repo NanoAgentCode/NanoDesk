@@ -1,0 +1,9 @@
+.chat-plan-approval { flex-shrink: 0; margin: 8px 20px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--chat-pane-bg); color: var(--text-primary); font-size: 13px; }
+.chat-plan-approval-heading { display: flex; flex-wrap: wrap; gap: 6px 12px; overflow-wrap: anywhere; }
+.chat-plan-approval-heading span, .chat-plan-approval small, .chat-plan-approval li p { color: var(--text-secondary); }
+.chat-plan-approval details { margin: 10px 0; }
+.chat-plan-approval summary { cursor: pointer; }
+.chat-plan-approval ol { max-height: 180px; overflow-y: auto; padding-left: 24px; overflow-wrap: anywhere; }
+.chat-plan-approval li { margin-bottom: 8px; }
+.chat-plan-approval li p { margin: 4px 0; }
+.chat-plan-approval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

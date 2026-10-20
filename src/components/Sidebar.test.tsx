@@ -7,7 +7,7 @@ import { CalendarClock, Server } from "lucide-react";
 
 function renderSidebar(isCollapsed: boolean, pluginMainViews: ComponentProps<typeof Sidebar>["pluginMainViews"] = []) {
   const props = {
-    projects: { projectsSectionExpanded: false, chatsSectionExpanded: false } as ComponentProps<typeof Sidebar>["projects"],
+    projects: { projectsSectionExpanded: false, chatsSectionExpanded: false, projects: [] } as unknown as ComponentProps<typeof Sidebar>["projects"],
     conversations: [], pluginMainViews, isCollapsed,
     activeMainView: "chat", activeConversationId: "",
     sidebarWidth: 292, sidebarMinWidth: 220, sidebarMaxWidth: 420,
@@ -21,6 +21,14 @@ function renderSidebar(isCollapsed: boolean, pluginMainViews: ComponentProps<typ
 }
 
 describe("sidebar branding", () => {
+  it("uses section separators instead of section toggles when collapsed", () => {
+    const collapsed = renderSidebar(true);
+    expect(collapsed.match(/class="sidebar-section-divider"/g)).toHaveLength(2);
+    expect(collapsed).not.toContain('class="sidebar-section-toggle"');
+    const expanded = renderSidebar(false);
+    expect(expanded).not.toContain('class="sidebar-section-divider"');
+    expect(expanded.match(/class="sidebar-section-toggle"/g)).toHaveLength(2);
+  });
   it("hides server management in both sidebar modes while retaining automation", () => {
     const views = [
       { id: "ops", label: "服务器管理", icon: Server, component: () => null },

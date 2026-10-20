@@ -4,6 +4,7 @@ import { Activity, ArrowDown, X } from "lucide-react";
 import ConversationTaskBudgetButton from "./ConversationTaskBudgetButton";
 import AgentRuntimePanel from "./AgentRuntimePanel";
 import ChatDecisionPanel from "./ChatDecisionPanel";
+import TaskPlanApproval from "./TaskPlanApproval";
 import ChatMessages from "./chat/ChatMessages";
 import ChatWelcome from "./chat/ChatWelcome";
 import ChatComposer from "./chat/ChatComposer";
@@ -235,6 +236,7 @@ export default function ChatPane({
         onSubmitClarification={handleClarificationAnswer}
       />
 
+      <TaskPlanApproval conversationId={activeConversationId} revision={messages[messages.length - 1]?.id || ""} busy={busy} />
       <ChatComposer
         inputPlaceholder={inputPlaceholder}
         activeConversationId={activeConversationId}

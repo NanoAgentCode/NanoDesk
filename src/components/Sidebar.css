@@ -547,6 +547,14 @@
   max-height: 42%;
 }
 
+.sidebar.collapsed .sidebar-section-divider {
+  width: 28px;
+  height: 1px;
+  flex-shrink: 0;
+  margin: 4px auto 12px;
+  background: rgba(125, 174, 215, 0.35);
+}
+
 .sidebar.collapsed .sidebar-section-header {
   justify-content: center;
   width: 100%;

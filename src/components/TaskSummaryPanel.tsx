@@ -6,7 +6,7 @@ import { useTaskSummary } from "../hooks/useTaskSummary";
 import { AlertTriangle, Check, ListTree, LoaderCircle, Minus, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { APP_STORAGE_PREFIX } from "../config/brand";
 import "./TaskSummaryPanel.css";
-import type { AgentRun, AgentTaskPlan, AgentAccessMode } from "../types";
+import type { AgentTaskPlan, AgentAccessMode } from "../types";
 import { parseTaskPlan } from "../lib/messageHelpers";
 import FriendlyError from "./FriendlyError";
 import { Button, Modal, Textarea } from "@mantine/core";
@@ -82,9 +82,6 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
   }
 
   const labels = { pending: "待执行", in_progress: "进行中", completed: "已完成", blocked: "已阻塞", skipped: "已跳过" };
-  async function decide(task: AgentRun, action: "approve_plan" | "reject_plan") {
-    await perform(() => respondBackgroundAgent({ run_id: task.id, action, answer: task.plan_json ?? undefined }));
-  }
   const toggle = () => setCollapsed(value => {
     localStorage.setItem(COLLAPSED_KEY, String(!value));
     return !value;
@@ -161,13 +158,6 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
                 <span className="task-plan-status">{labels[step.status]}</span><strong>{step.title}</strong>
                 {step.detail && <p>{step.detail}</p>}
               </li>)}</ol>
-              {isLatest && task.status === "awaiting_plan" && <div className="task-plan-review">
-                <div className="task-plan-actions">
-                  <button className="task-plan-approve" type="button" disabled={acting} onClick={() => void decide(task, "approve_plan")}>批准</button>
-                  <button type="button" disabled={acting} onClick={() => void decide(task, "reject_plan")}>拒绝</button>
-                </div>
-                <p className="task-plan-review-hint">需要调整时先拒绝，再在对话中说明修改要求。</p>
-              </div>}
               {task.error && <FriendlyError error={task.error} fallback="任务执行失败，请重试。" />}
             </div>
           </details>;
