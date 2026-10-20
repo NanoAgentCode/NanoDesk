@@ -1,3 +1,11 @@
+.document-analysis-progress { flex-shrink: 0; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--chat-input-bg); color: var(--text-secondary); font-size: 12px; }
+.document-analysis-progress > div { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.document-analysis-progress strong { color: var(--text-primary); font-weight: 500; }
+.document-analysis-progress small { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.document-analysis-progress progress { display: block; width: 100%; height: 4px; margin-top: 7px; appearance: none; border: 0; border-radius: 4px; overflow: hidden; background: var(--border-color); }
+.document-analysis-progress progress::-webkit-progress-bar { background: var(--border-color); }
+.document-analysis-progress progress::-webkit-progress-value { background: var(--accent-blue); }
+.document-analysis-progress progress::-moz-progress-bar { background: var(--accent-blue); }
 .chat-pane {
   grid-area: chat;
   position: relative;

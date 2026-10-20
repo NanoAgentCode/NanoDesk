@@ -49,6 +49,7 @@ pub(super) fn spawn(app: AppHandle, request: BackgroundAgentRequest, control: Ar
                     stream_message: None,
                     reasoning: String::new(),
                     executing_tool_message_id: None,
+                    document_progress: None,
                 },
             );
             if completed_child {

@@ -758,6 +758,7 @@ export function useChat({
     isRagDragging: rag.isRagDragging,
     setIsRagDragging: rag.setIsRagDragging,
     indexingRagFileName: rag.indexingRagFileName,
+    documentAnalysisProgress: background.busy ? background.current?.document_progress ?? null : null,
     setIndexingRagFileName: rag.setIndexingRagFileName,
 
     // Busy / tool state

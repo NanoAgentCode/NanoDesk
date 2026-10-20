@@ -156,6 +156,16 @@ impl Database {
                 FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS document_summary_nodes (
+                file_id TEXT NOT NULL REFERENCES rag_files(id) ON DELETE CASCADE,
+                content_hash TEXT NOT NULL,
+                cache_key TEXT NOT NULL,
+                level INTEGER NOT NULL,
+                summary TEXT NOT NULL CHECK(length(trim(summary)) > 0),
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (file_id, content_hash, cache_key)
+            );
+
             CREATE TABLE IF NOT EXISTS rag_chunks (
                 id TEXT PRIMARY KEY,
                 file_id TEXT NOT NULL,

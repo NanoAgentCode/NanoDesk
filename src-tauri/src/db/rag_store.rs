@@ -25,6 +25,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn document_summary_cache_is_initialized_with_document_storage() {
+        let db = Database::open(std::path::PathBuf::from(":memory:")).unwrap();
+        let exists: i64 = db.conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='document_summary_nodes'", [], |row| row.get(0)).unwrap();
+        assert_eq!(exists, 1, "文档概要必须持久化，不能只保存在某次任务中");
+    }
+
+    #[test]
+    fn document_summary_nodes_survive_reopen_and_are_versioned_and_cascade_deleted() {
+        let root = std::env::temp_dir().join(format!("document-summary-cache-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("data.sqlite3");
+        let db = Database::open(path.clone()).unwrap();
+        let conversation = db.create_conversation(crate::models::ConversationDraft { title: None, model_config_id: None, project_path: None }).unwrap();
+        let file = db.replace_rag_file(RagFileReplacement { conversation_id: &conversation.id, name: "test.txt", mime: "text/plain", size: 3, content_hash: "version-1", chunks: &["raw text".into()], embeddings: &[Vec::new()], embedding_model: "fulltext" }).unwrap();
+        db.save_document_summary_node(&file.id, "version-1", "model-A/leaf", 0, "叶节点事实").unwrap();
+        db.save_document_summary_node(&file.id, "version-1", "model-A/parent", 1, "父节点概要").unwrap();
+        db.save_document_summary_node(&file.id, "version-2", "model-A/leaf", 0, "错误版本").unwrap();
+        drop(db);
+        let db = Database::open(path).unwrap();
+        assert_eq!(db.document_summary_node(&file.id, "version-1", "model-A/leaf").unwrap().as_deref(), Some("叶节点事实"));
+        assert_eq!(db.document_summary_node(&file.id, "version-1", "model-A/parent").unwrap().as_deref(), Some("父节点概要"));
+        assert!(db.document_summary_node(&file.id, "version-2", "model-A/leaf").unwrap().is_none());
+        assert!(db.document_summary_node(&file.id, "version-1", "model-B/leaf").unwrap().is_none());
+        assert!(db.document_summary_node("other-file", "version-1", "model-A/leaf").unwrap().is_none());
+        db.delete_rag_file(&file.id).unwrap();
+        db.save_document_summary_node(&file.id, "version-1", "late", 0, "删除后才返回的结果").unwrap();
+        assert_eq!(db.conn.query_row("SELECT COUNT(*) FROM document_summary_nodes", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn failed_replacement_rolls_back_file_chunks_vectors_and_fts_together() {
         let db = Database::open(std::path::PathBuf::from(":memory:")).unwrap();
         let conversation = db.create_conversation(crate::models::ConversationDraft { title: None, model_config_id: None, project_path: None }).unwrap();
@@ -41,6 +73,17 @@ mod tests {
 }
 
 impl Database {
+    pub(crate) fn document_summary_node(&self, file_id: &str, content_hash: &str, key: &str) -> AppResult<Option<String>> {
+        Ok(self.conn.query_row("SELECT nodes.summary FROM document_summary_nodes nodes JOIN rag_files files ON files.id=nodes.file_id WHERE nodes.file_id=?1 AND nodes.content_hash=?2 AND files.content_hash=?2 AND nodes.cache_key=?3", params![file_id, content_hash, key], |row| row.get(0)).optional()?)
+    }
+
+    pub(crate) fn save_document_summary_node(&self, file_id: &str, content_hash: &str, key: &str, level: u32, summary: &str) -> AppResult<()> {
+        // If the document was removed/replaced during generation, discard the
+        // result rather than resurrecting it or attaching it to another version.
+        self.conn.execute("INSERT INTO document_summary_nodes(file_id,content_hash,cache_key,level,summary,created_at) SELECT id,content_hash,?3,?4,?5,?6 FROM rag_files WHERE id=?1 AND content_hash=?2 ON CONFLICT(file_id,content_hash,cache_key) DO UPDATE SET summary=excluded.summary", params![file_id,content_hash,key,level,summary,Utc::now().to_rfc3339()])?;
+        Ok(())
+    }
+
     pub fn rag_embedding_model(&self, file_id: &str) -> AppResult<Option<String>> {
         Ok(self.conn.query_row("SELECT embeddings.model FROM rag_embeddings embeddings JOIN rag_chunks chunks ON chunks.id = embeddings.chunk_id WHERE chunks.file_id = ?1 LIMIT 1", [file_id], |row| row.get(0)).optional()?)
     }

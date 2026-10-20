@@ -5,6 +5,7 @@ import type { UseAgentRuntimeReturn } from "../../hooks/useAgentRuntime";
 import type { UseModelReturn } from "../../hooks/useModel";
 
 export interface ChatPaneProps {
+  documentAnalysisProgress?: import("../../lib/backgroundAgent").DocumentAnalysisProgress | null;
   welcome?: React.ReactNode;
   inputPlaceholder?: string;
   sendingMessage?: boolean;

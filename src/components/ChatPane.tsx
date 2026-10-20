@@ -7,6 +7,7 @@ import ChatDecisionPanel from "./ChatDecisionPanel";
 import ChatMessages from "./chat/ChatMessages";
 import ChatWelcome from "./chat/ChatWelcome";
 import ChatComposer from "./chat/ChatComposer";
+import DocumentAnalysisProgress from "./chat/DocumentAnalysisProgress";
 import type { ChatPaneProps } from "./chat/types";
 import { findPendingClarification } from "../lib/messageHelpers";
 import { findPendingToolApproval, resolveChatDecisionState } from "../lib/chatDecisionState";
@@ -28,6 +29,7 @@ export default function ChatPane({
   chatInput,
   ragFiles,
   indexingRagFileName,
+  documentAnalysisProgress,
   promptSuggestions,
   selectedPromptIndex,
   busy,
@@ -222,6 +224,7 @@ export default function ChatPane({
       )}
       </div>
 
+      {busy && !activeStreamRequestId && <DocumentAnalysisProgress progress={documentAnalysisProgress} />}
       <ChatDecisionPanel
         tool={pendingToolApproval}
         clarification={pendingClarification}

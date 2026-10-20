@@ -1,4 +1,4 @@
-use super::protocol::BackgroundAgentSnapshot;
+use super::protocol::{BackgroundAgentSnapshot, DocumentAnalysisProgress};
 use crate::error::{AppError, AppResult};
 use std::collections::HashMap;
 use std::sync::{
@@ -11,6 +11,7 @@ pub(super) struct Control {
     pub(super) stopped: AtomicBool,
     pub(super) paused: AtomicBool,
     pub(super) wake: Notify,
+    pub(super) document_progress: tokio::sync::watch::Sender<Option<DocumentAnalysisProgress>>,
 }
 struct OwnedRun {
     control: Arc<Control>,
@@ -37,6 +38,7 @@ impl BackgroundAgentManager {
             stopped: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             wake: Notify::new(),
+            document_progress: tokio::sync::watch::channel(None).0,
         });
         runs.insert(
             run_id.into(),
@@ -50,6 +52,7 @@ impl BackgroundAgentManager {
                     reasoning: String::new(),
                     executing_tool_message_id: None,
                     error: None,
+                    document_progress: None,
                 },
             },
         );

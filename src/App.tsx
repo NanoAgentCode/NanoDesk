@@ -481,6 +481,7 @@ function App() {
           chatInput={chatInput}
           ragFiles={ragFiles}
           indexingRagFileName={indexingRagFileName}
+          documentAnalysisProgress={chat.documentAnalysisProgress}
           promptSuggestions={promptSuggestions}
           selectedPromptIndex={selectedPromptIndex}
           busy={busy}

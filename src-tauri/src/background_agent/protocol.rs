@@ -16,6 +16,16 @@ pub struct BackgroundAgentRequest {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct DocumentAnalysisProgress {
+    pub phase: String,
+    pub file_name: Option<String>,
+    pub level: u32,
+    pub completed: usize,
+    pub total: usize,
+    pub reused: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct BackgroundAgentSnapshot {
     pub run_id: String,
     pub conversation_id: String,
@@ -24,6 +34,7 @@ pub struct BackgroundAgentSnapshot {
     pub reasoning: String,
     pub executing_tool_message_id: Option<String>,
     pub error: Option<String>,
+    pub document_progress: Option<DocumentAnalysisProgress>,
 }
 #[derive(Debug, Deserialize)]
 pub struct BackgroundAgentDecision {

@@ -519,6 +519,23 @@ async fn document_whole_summary_reads_every_chunk_and_resume_reuses_completed_an
     assert!(summary.contains("全部 125 个分块"));
     let cached = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", true).await.unwrap();
     assert_eq!(summary, cached);
+    let mut followup = fixture.request.clone();
+    followup.run_id = fixture.state.runtime.lock().await.create_run(crate::runtime::AgentRunDraft {
+        conversation_id: followup.conversation_id.clone(), project_path: None,
+        model_config_id: Some(model.id.clone()), trigger_message_id: None,
+    }).unwrap().id;
+    // Reopen the actual document database to prove this is not a process/run cache.
+    *fixture.state.db.lock().await = crate::db::Database::open(fixture.root.join("data.sqlite3")).unwrap();
+    let control = fixture.state.background_agents.register(&followup.run_id, &followup.conversation_id).unwrap();
+    let mut followup_budget = fixture.state.runtime.lock().await.ensure_task_budget(&followup.run_id, Some(&model.id), None).unwrap();
+    let followup_summary = super::documents::prepare(&fixture.state, &followup, &model, &mut followup_budget, "提取关键结论", "system", true).await.unwrap();
+    assert_eq!(summary, followup_summary);
+    assert_eq!(followup_budget.steps, 0, "不同概要问题应复用文档级摘要，无需重新逐块分析");
+    let progress = control.document_progress.borrow().clone().unwrap();
+    assert_eq!(progress.completed, groups.len());
+    assert_eq!(progress.total, groups.len());
+    assert_eq!(progress.reused, groups.len());
+    fixture.state.background_agents.remove(&followup.run_id);
     assert_eq!(budget.steps as usize, groups.len());
     assert!(budget.steps <= 5, "125 个分块的全文分析不应产生 {} 次串行模型请求", budget.steps);
     let requests = server.worker.join().unwrap();
@@ -532,11 +549,24 @@ async fn document_whole_summary_reads_every_chunk_and_resume_reuses_completed_an
 async fn document_summary_overlaps_independent_groups_with_bounded_concurrency_and_order() {
     let server = MockModel::start((0..6).map(|index| (vec!["DOCUMENT_FACT".into()], if index % 3 == 0 { 200 } else { 20 })).collect());
     let fixture = Fixture::new(&server.url, "auto");
+    let control = fixture.state.background_agents.register(&fixture.request.run_id, &fixture.request.conversation_id).unwrap();
+    let mut progress_events = control.document_progress.subscribe();
+    let mut observed = Vec::new();
     let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
     let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
     let parts = (0..6).map(|index| format!("【large.txt #{}】\n{}TAIL-{index}", index + 1, "正文".repeat(3500))).collect::<Vec<_>>();
     let started = std::time::Instant::now();
-    let result = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts.clone(), 512, "全部六组").await.unwrap();
+    let result = {
+        let work = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts.clone(), 512, "全部六组");
+        tokio::pin!(work);
+        loop { tokio::select! {
+            result = &mut work => { observed.push(control.document_progress.borrow().clone().unwrap()); break result.unwrap(); },
+            Ok(()) = progress_events.changed() => if let Some(progress) = progress_events.borrow_and_update().clone() { observed.push(progress); }
+        } }
+    };
+    assert!(observed.iter().any(|progress| progress.completed > 0 && progress.completed < progress.total), "某组完成时应立即更新，不能等全部请求结束");
+    assert_eq!(observed.last().unwrap().completed, 6);
+    assert!(observed.windows(2).all(|pair| pair[0].completed <= pair[1].completed));
     eprintln!("Six delayed summary requests completed in {:?}", started.elapsed());
     let cached = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts, 512, "全部六组").await.unwrap();
     assert_eq!(cached, result);
@@ -549,6 +579,145 @@ async fn document_summary_overlaps_independent_groups_with_bounded_concurrency_a
         assert!(sources.contains(&format!("TAIL-{index}")));
         if index > 0 { assert!(result.find(&format!("事实{}", index - 1)) < result.find(&format!("事实{index}"))); }
     }
+    fixture.state.background_agents.remove(&fixture.request.run_id);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_hierarchy_is_reused_across_questions_without_reducing_raw_text_again() {
+    let chunks = (0..125).map(|index| format!("章节{index} {} TAIL-{index}", "资料正文".repeat(100))).collect::<Vec<_>>();
+    let parts = chunks.iter().enumerate().map(|(index, text)| format!("【large.txt #{}】\n{text}", index + 1)).collect::<Vec<_>>();
+    let count = super::documents::pack(&parts, 12000).len();
+    let mut turns = vec![(vec!["重要事实".repeat(250)], 0); count];
+    turns.push((vec!["文档层级概要【large.txt #1】".into()], 0));
+    let server = MockModel::start(turns);
+    let fixture = Fixture::new(&server.url, "auto");
+    fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "large.txt", mime: "text/plain", size: 100000, content_hash: "hierarchy-v1", chunks: &chunks,
+        embeddings: &vec![Vec::new(); chunks.len()], embedding_model: "fulltext",
+    }).unwrap();
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let system = "系统约束".repeat(4500);
+    let result = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", &system, true).await.unwrap();
+    assert!(result.contains("文档层级概要"));
+    assert_eq!(budget.steps as usize, count + 1);
+    let mut next = fixture.request.clone();
+    next.run_id = fixture.state.runtime.lock().await.create_run(crate::runtime::AgentRunDraft { conversation_id: next.conversation_id.clone(), project_path: None, model_config_id: Some(model.id.clone()), trigger_message_id: None }).unwrap().id;
+    let control = fixture.state.background_agents.register(&next.run_id, &next.conversation_id).unwrap();
+    let mut next_budget = fixture.state.runtime.lock().await.ensure_task_budget(&next.run_id, Some(&model.id), None).unwrap();
+    let reused = super::documents::prepare(&fixture.state, &next, &model, &mut next_budget, "提取关键结论", &system, true).await.unwrap();
+    assert_eq!(result, reused);
+    assert_eq!(next_budget.steps, 0);
+    assert_eq!(control.document_progress.borrow().as_ref().unwrap().level, 1);
+    assert_eq!(control.document_progress.borrow().as_ref().unwrap().reused, 1);
+    assert_eq!(server.worker.join().unwrap().len(), count + 1);
+    fixture.state.background_agents.remove(&next.run_id);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_overview_cache_is_bypassed_for_all_todos_and_changed_model() {
+    let chunks = (0..3).map(|index| format!("【原文】{}TAIL-{index}", "正文".repeat(3500))).collect::<Vec<_>>();
+    let server = MockModel::start(vec![(vec!["完整记录及来源".into()], 0); 9]);
+    let fixture = Fixture::new(&server.url, "auto");
+    fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "todos.txt", mime: "text/plain", size: 63000, content_hash: "todos-v1", chunks: &chunks,
+        embeddings: &vec![Vec::new(); chunks.len()], embedding_model: "fulltext",
+    }).unwrap();
+    let mut model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", true).await.unwrap();
+    assert_eq!(budget.steps, 3);
+    super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "列出全部待办", "system", true).await.unwrap();
+    assert_eq!(budget.steps, 6, "全部待办仍需核查原文");
+    model.model = "changed-model".into();
+    super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "提取关键结论", "system", true).await.unwrap();
+    assert_eq!(budget.steps, 9, "模型变化必须重新生成概要");
+    let requests = server.worker.join().unwrap();
+    let todo_sources = requests[3..6].iter().map(|request| request["messages"][1]["content"].as_str().unwrap()).collect::<Vec<_>>().join("\n");
+    for index in 0..3 { assert!(todo_sources.contains(&format!("TAIL-{index}"))); }
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_summary_progress_flows_through_background_snapshots_and_clears_for_answer() {
+    let mut turns = vec![(vec!["事实及来源".into()], 50); 3];
+    turns.push((vec![completed_report()], 0));
+    let server = MockModel::start(turns);
+    let mut fixture = Fixture::new(&server.url, "auto");
+    let user = fixture.state.db.lock().await.append_message(internal_message(&fixture.request.conversation_id, "总结全文".into())).unwrap();
+    fixture.request.run_id = fixture.state.runtime.lock().await.create_run(crate::runtime::AgentRunDraft { conversation_id: fixture.request.conversation_id.clone(), project_path: None, model_config_id: Some(fixture.request.model_config_id.clone()), trigger_message_id: Some(user.id) }).unwrap().id;
+    let chunks = (0..3).map(|index| format!("{}TAIL-{index}", "正文".repeat(3500))).collect::<Vec<_>>();
+    fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "progress.txt", mime: "text/plain", size: 63000, content_hash: "progress-v1", chunks: &chunks,
+        embeddings: &vec![Vec::new(); chunks.len()], embedding_model: "fulltext",
+    }).unwrap();
+    let control = fixture.state.background_agents.register(&fixture.request.run_id, &fixture.request.conversation_id).unwrap();
+    let mut snapshots = Vec::new();
+    drive(&fixture.state, fixture.request.clone(), control, None, |snapshot| {
+        fixture.state.background_agents.update(snapshot.clone());
+        snapshots.push(snapshot);
+    }).await.unwrap();
+    assert!(snapshots.iter().any(|snapshot| snapshot.document_progress.as_ref().is_some_and(|p| p.completed > 0 && p.total == 3)));
+    assert!(snapshots.iter().filter(|snapshot| snapshot.stream_message.is_some()).all(|snapshot| snapshot.document_progress.is_none()));
+    assert!(fixture.state.background_agents.list()[0].document_progress.is_none());
+    assert_eq!(server.worker.join().unwrap().len(), 4);
+    fixture.state.background_agents.remove(&fixture.request.run_id);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_overview_cache_never_stores_truncated_nodes_as_complete() {
+    let mut turns = vec![(vec!["不完整记录".into(), "FINISH_LENGTH".into()], 0)];
+    turns.extend(vec![(vec!["完整事实及来源".into()], 0); 4]);
+    let server = MockModel::start(turns);
+    let fixture = Fixture::new(&server.url, "auto");
+    let chunks = (0..3).map(|index| format!("{}TAIL-{index}", "正文".repeat(3500))).collect::<Vec<_>>();
+    let file = fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "truncate.txt", mime: "text/plain", size: 63000, content_hash: "truncate-v1", chunks: &chunks,
+        embeddings: &vec![Vec::new(); chunks.len()], embedding_model: "fulltext",
+    }).unwrap();
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let result = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", true).await.unwrap();
+    assert!(!result.contains("不完整记录"));
+    let steps = fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap();
+    let db = fixture.state.db.lock().await;
+    for step in steps.iter().filter(|step| matches!(step.kind.as_str(), "document_summary" | "document_summary_retry")) {
+        let cached = db.document_summary_node(&file.id, &file.content_hash, step.input_summary.as_deref().unwrap()).unwrap();
+        assert_eq!(cached.is_some(), step.kind == "document_summary");
+    }
+    drop(db);
+    assert_eq!(server.worker.join().unwrap().len(), 5);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_overview_does_not_cache_a_budget_clamped_summary_under_full_output_limit() {
+    let server = MockModel::start(vec![(vec!["事实".into()], 100); 4]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let chunks = (0..3).map(|index| format!("{}TAIL-{index}", "正文".repeat(3500))).collect::<Vec<_>>();
+    let file = fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "budget.txt", mime: "text/plain", size: 63000, content_hash: "budget-v1", chunks: &chunks,
+        embeddings: &vec![Vec::new(); chunks.len()], embedding_model: "fulltext",
+    }).unwrap();
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    budget.price = Some(crate::task_budget::ModelPrice { input_per_million: 0.0, output_per_million: 1.0 });
+    budget.estimated_cost = Some(0.0);
+    budget.limits.max_cost = Some(0.0001);
+    let error = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", true).await.unwrap_err();
+    assert!(error.to_string().contains("任务预算"));
+    assert_eq!(budget.steps, 1);
+    let step = fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap().into_iter().find(|step| step.kind == "document_summary").unwrap();
+    assert!(fixture.state.db.lock().await.document_summary_node(&file.id, &file.content_hash, step.input_summary.as_deref().unwrap()).unwrap().is_none());
+    budget.limits.max_cost = None;
+    super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", true).await.unwrap();
+    assert_eq!(budget.steps, 4);
+    let requests = server.worker.join().unwrap();
+    assert!(requests[0]["max_tokens"].as_u64().unwrap() <= 100);
+    assert!(requests[1..].iter().all(|request| request["max_tokens"].as_u64().unwrap() > 100));
     fixture.cleanup();
 }
 

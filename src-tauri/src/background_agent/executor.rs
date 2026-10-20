@@ -77,6 +77,7 @@ where
         reasoning: String::new(),
         executing_tool_message_id: None,
         error: None,
+        document_progress: None,
     };
     let mut budget = state.runtime.lock().await.ensure_task_budget(&request.run_id, Some(&request.model_config_id), request.budget.as_ref())?;
     loop {
@@ -280,6 +281,8 @@ where
         if run.status != "running" {
             return Ok(());
         }
+        snapshot.document_progress = None;
+        control.document_progress.send_replace(None);
         snapshot.status = "running".into();
         snapshot.stream_message = None;
         snapshot.reasoning.clear();
@@ -296,6 +299,7 @@ where
         let remaining = budget.remaining_seconds();
         let context_base_ms = budget.elapsed_ms;
         let prepared = {
+            let mut document_progress = control.document_progress.subscribe();
             let context_future = prepare_model_context(state, &request, &model, &mut budget);
             tokio::pin!(context_future);
             let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
@@ -304,6 +308,10 @@ where
             loop {
                 tokio::select! {
                     result=&mut context_future=>break Some(result),
+                    _=document_progress.changed()=>{
+                        snapshot.document_progress = document_progress.borrow_and_update().clone();
+                        emit(snapshot.clone());
+                    },
                     _=heartbeat.tick()=>if let Err(error)=checkpoint_progress(state, &request.run_id, context_base_ms + context_started.elapsed().as_millis() as u64, Some(&lease)){break Some(Err(error));},
                     _=&mut context_timeout=>break Some(Err(AppError::from(if remaining <= 300.0 { "任务预算已达到时间上限，请调整预算后继续。" } else { "后台上下文准备超过 300 秒" }))),
                     _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst) { break None; }
@@ -324,12 +332,15 @@ where
             continue;
         };
         let (messages, max_tokens) = prepared?;
+        snapshot.document_progress = control.document_progress.borrow().clone();
+        emit(snapshot.clone());
         let input_estimate = messages.iter().map(|m| m.content.len() as u64 + 8).sum();
         let max_tokens = budget.reserve_model(input_estimate, max_tokens)?;
         state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;
         let remaining = budget.remaining_seconds();
         let stream_started = Instant::now();
         let request_id = Uuid::new_v4().to_string();
+        snapshot.document_progress = None;
         snapshot.stream_message = Some(Message {
             id: request_id.clone(),
             conversation_id: request.conversation_id.clone(),

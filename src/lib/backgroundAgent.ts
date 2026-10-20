@@ -11,6 +11,14 @@ export interface BackgroundAgentRequest {
   replace_message_id: string | null;
   budget?: import("./taskBudget").TaskBudget;
 }
+export interface DocumentAnalysisProgress {
+  phase: "analysis" | "summary" | "reduce";
+  file_name: string | null;
+  level: number;
+  completed: number;
+  total: number;
+  reused: number;
+}
 export interface BackgroundAgentSnapshot {
   run_id: string;
   conversation_id: string;
@@ -19,6 +27,7 @@ export interface BackgroundAgentSnapshot {
   reasoning: string;
   executing_tool_message_id: string | null;
   error: string | null;
+  document_progress?: DocumentAnalysisProgress | null;
 }
 export interface BackgroundAgentDecision {
   run_id: string;
