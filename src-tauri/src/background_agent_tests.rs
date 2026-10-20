@@ -485,7 +485,7 @@ async fn document_missing_embedding_configuration_fails_without_partial_index() 
 async fn document_whole_summary_reads_every_chunk_and_resume_reuses_completed_analysis() {
     let chunks = (0..125).map(|index| format!("独立任务编号{index}：{} 尾部标记TASK-{index}", "资料正文".repeat(100))).collect::<Vec<_>>();
     let parts = chunks.iter().enumerate().map(|(index, text)| format!("【large.txt #{}】\n{text}", index + 1)).collect::<Vec<_>>();
-    let groups = super::documents::pack(&parts, 4000);
+    let groups = super::documents::pack(&parts, 12000);
     let server = MockModel::start(groups.iter().enumerate().map(|(i, _)| (vec![format!("分组{i}事实及来源【large.txt】")], 0)).collect());
     let fixture = Fixture::new(&server.url, "auto");
     fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
@@ -502,10 +502,38 @@ async fn document_whole_summary_reads_every_chunk_and_resume_reuses_completed_an
     let cached = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", true).await.unwrap();
     assert_eq!(summary, cached);
     assert_eq!(budget.steps as usize, groups.len());
+    assert!(budget.steps <= 5, "125 个分块的全文分析不应产生 {} 次串行模型请求", budget.steps);
     let requests = server.worker.join().unwrap();
     let all = requests.iter().map(|request| request["messages"][1]["content"].as_str().unwrap()).collect::<Vec<_>>().join("\n");
     for index in 0..125 { assert!(all.contains(&format!("TASK-{index}"))); }
-    assert!(requests.iter().all(|request| request["max_tokens"].as_u64().unwrap() <= 900));
+    assert!(requests.iter().all(|request| request["max_tokens"].as_u64().unwrap() <= model.max_tokens.unwrap_or(3000).min(3000) as u64));
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_summary_small_context_keeps_requests_bounded_and_covers_tail() {
+    let parts = (0..10).map(|index| format!("【small.txt #{}】\n{}TAIL-{index}", index + 1, "正文".repeat(150))).collect::<Vec<_>>();
+    let input_limit = (4096 - crate::rag::text_tokens("总结全文") - 2400) / 2;
+    let groups = super::documents::pack(&parts, input_limit);
+    let server = MockModel::start(groups.iter().map(|_| (vec!["完整事实【small.txt】".into()], 0)).collect());
+    let fixture = Fixture::new(&server.url, "auto");
+    let mut model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    model.context_window = 4096;
+    model.max_tokens = Some(128);
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let result = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts, 512, "全部十组").await.unwrap();
+    assert!(result.contains("全部十组"));
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), groups.len());
+    let mut sources = String::new();
+    for request in requests {
+        let messages = request["messages"].as_array().unwrap();
+        let input: u32 = messages.iter().map(|message| crate::rag::text_tokens(message["content"].as_str().unwrap()) + 4).sum();
+        let output = request["max_tokens"].as_u64().unwrap() as u32;
+        assert!(output <= 128 && input + output + 128 <= model.context_window);
+        sources.push_str(messages[1]["content"].as_str().unwrap());
+    }
+    for index in 0..10 { assert!(sources.contains(&format!("TAIL-{index}"))); }
     fixture.cleanup();
 }
 

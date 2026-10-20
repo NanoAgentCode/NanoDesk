@@ -155,11 +155,18 @@ pub(super) async fn prepare(
 
 pub(super) async fn reduce(state: &AppState, request: &BackgroundAgentRequest, model: &ModelConfig, budget: &mut TaskBudgetRecord, query: &str, parts: Vec<String>, target: u32, coverage: &str) -> AppResult<String> {
     let context_window = if model.context_window == 0 { 32768 } else { model.context_window };
-    let input_limit = context_window.saturating_sub(text_tokens(query) + 2400).saturating_div(2).clamp(128, 4000);
+    // Use larger batches when the model has room, while reserving half the
+    // context for output and protocol overhead. Small-context models keep
+    // their existing batch sizes.
+    let input_limit = context_window.saturating_sub(text_tokens(query) + 2400).saturating_div(2).clamp(128, 12000);
     let output_limit = model.max_tokens.unwrap_or(900).min(900).min(input_limit / 2).max(1);
     let mut notes = Vec::new();
     for group in pack(&parts, input_limit) {
-        notes.push(summarize(state, request, model, budget, query, &group, output_limit).await?);
+        // Larger input needs room for facts too; otherwise length retries
+        // would split it back into many small, serial model requests.
+        let group_output = (text_tokens(&group) / 4).max(output_limit).min(3000)
+            .min(model.max_tokens.unwrap_or(4096)).min(input_limit / 2).max(1);
+        notes.push(summarize(state, request, model, budget, query, &group, group_output).await?);
     }
     for _ in 0..12 {
         let size: u64 = notes.iter().map(|note| text_tokens(note) as u64 + 2).sum();
