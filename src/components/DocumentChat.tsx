@@ -68,7 +68,7 @@ export default function DocumentChat({ path }: { path: string }) {
       <header className="document-chat-source">
         <FileText size={22} aria-hidden="true" />
         <div title={path}><strong>{source?.name || path.split(/[\\/]/).pop()}</strong><small>{source ? `已读取 ${source.content.length.toLocaleString()} 字符 · ${preparationStatus}` : error ? "读取失败" : "正在读取文档…"}</small></div>
-        <Button variant="subtle" size="compact-sm" leftSection={<ExternalLink size={14} />} onClick={() => void openMain()}>主窗口继续</Button>
+        <Button variant="subtle" size="compact-sm" title="主窗口继续" aria-label="主窗口继续" onClick={() => void openMain()}><ExternalLink size={14} aria-hidden="true" /></Button>
       </header>
       {error ? <section className="document-chat-error" role="alert"><h3>无法读取文档</h3><p>{error}</p><Button leftSection={<RotateCcw size={14} />} onClick={() => setAttempt((n) => n + 1)}>重新读取</Button></section> : !source ? <div className="document-chat-loading" role="status">正在提取整份文档中的文字…</div> : <ChatPane {...chat}
         inputPlaceholder="针对这份文档提问…"
