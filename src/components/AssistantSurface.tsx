@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import brandIcon from "./assistant-icon.svg";
+import brandIcon from "../../src-tauri/icons/icon.svg";
 import { ASSISTANT_TRANSITION_MS, type AssistantPhase } from "../lib/assistantTransition";
 
 interface Props {

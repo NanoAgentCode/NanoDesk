@@ -40,6 +40,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - 窗口使用无系统标题栏布局，侧栏顶部显示应用图标与 NanoDesk 名称；可拖动品牌区或右侧顶部空白区域移动窗口，右上角提供最小化、最大化 / 还原和关闭按钮，关闭沿用已有关闭行为设置。
 
 - 桌面助手状态提示：点击展开与收起采用 220ms 缩放淡入淡出，失去焦点 5 秒后自动收起，后台聊天任务运行时图标旋转。
+- 应用品牌图标统一使用圆形渐变、高光和阴影的立体效果。
 
 ## 文档
 
@@ -128,6 +129,8 @@ cargo check
 ```
 
 品牌名称统一维护在根目录的 `brand.config.json`。修改后运行 `npm.cmd run brand:sync`，将名称同步到 npm、Cargo 和 Tauri 静态清单；`npm.cmd run brand:check` 用于检查清单是否一致。`bundleIdentifier`、`storagePrefix`、`projectDataDirectory` 和注册表字段属于兼容标识，修改时需要同步设计已有数据迁移。
+
+品牌图标统一维护在 `src-tauri/icons/icon.svg`。修改后运行 `npm.cmd run icons:build`，生成多尺寸 PNG、Windows ICO 和托盘 RGBA；侧栏与桌面助手直接复用同一 SVG。安装版的快捷方式、任务栏和托盘图标需重新打包更新后生效。
 
 Windows 打包：
 
