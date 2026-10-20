@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Button, Modal, Stack, Text } from "@mantine/core";
+import { ActionIcon, Button, Modal, Stack, Text, Tooltip } from "@mantine/core";
+import { Wallet } from "lucide-react";
 import { getTaskSettings } from "../api/taskBudget";
 import { DEFAULT_TASK_BUDGET, getConversationTaskBudget, setConversationTaskBudget, type TaskBudget } from "../lib/taskBudget";
 import TaskBudgetFields from "./TaskBudgetFields";
@@ -9,11 +10,13 @@ export default function ConversationTaskBudgetButton({ conversationId, disabled 
   const [budget, setBudget] = useState<TaskBudget>(DEFAULT_TASK_BUDGET);
   const [error, setError] = useState("");
   return <>
-    <Button size="xs" variant="subtle" disabled={disabled} onClick={() => {
-      setError("");
-      void getTaskSettings().then((settings) => { setBudget(getConversationTaskBudget(conversationId) ?? settings.default_budget); setOpened(true); })
-        .catch((e) => { setError(String(e)); setOpened(true); });
-    }}>任务预算</Button>
+    <Tooltip label="任务预算" openDelay={450}>
+      <ActionIcon className="icon chat-header-square" variant="subtle" color="gray" aria-label="任务预算" disabled={disabled} onClick={() => {
+        setError("");
+        void getTaskSettings().then((settings) => { setBudget(getConversationTaskBudget(conversationId) ?? settings.default_budget); setOpened(true); })
+          .catch((e) => { setError(String(e)); setOpened(true); });
+      }}><Wallet size={16} /></ActionIcon>
+    </Tooltip>
     <Modal opened={opened} onClose={() => setOpened(false)} title="此会话的新任务预算">
       <Stack>
         <TaskBudgetFields value={budget} onChange={setBudget} />
