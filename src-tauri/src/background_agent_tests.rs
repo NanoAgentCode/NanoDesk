@@ -536,7 +536,8 @@ async fn document_hierarchical_summary_resumes_after_budget_pause_without_replay
 async fn document_truncated_analysis_is_not_cached_or_presented_as_complete() {
     let server = MockModel::start(vec![(vec!["仅分析了开头".into(), "FINISH_LENGTH".into()], 0)]);
     let fixture = Fixture::new(&server.url, "auto");
-    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    model.max_tokens = Some(900);
     let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
     let error = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", vec!["全文资料".into()], 512, "所有分块").await.unwrap_err();
     assert!(error.to_string().contains("单次长度上限"));
@@ -544,6 +545,72 @@ async fn document_truncated_analysis_is_not_cached_or_presented_as_complete() {
     assert_eq!(server.worker.join().unwrap().len(), 1);
     fixture.cleanup();
 }
+#[tokio::test]
+async fn document_truncation_splits_batch_and_resumes_without_replaying_completed_parts() {
+    let server = MockModel::start(vec![
+        (vec!["不完整摘要".into(), "FINISH_LENGTH".into()], 0),
+        (vec!["左半完整事实".into()], 0),
+        (vec!["右半完整事实".into()], 0),
+    ]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    budget.limits.max_steps = 2;
+    let parts = vec![format!("【large.txt #7】\nSTART-{}-TAIL", "正文".repeat(900))];
+    let error = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts.clone(), 512, "全部分块").await.unwrap_err();
+    assert!(error.to_string().contains("任务预算"));
+    budget.limits.max_steps = 16;
+    let result = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts, 512, "全部分块").await.unwrap();
+    assert!(result.contains("左半完整事实") && result.contains("右半完整事实"));
+    assert!(!result.contains("不完整摘要"));
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 3);
+    let left = requests[1]["messages"][1]["content"].as_str().unwrap();
+    let right = requests[2]["messages"][1]["content"].as_str().unwrap();
+    assert!(left.contains("START-") && right.contains("-TAIL"));
+    assert!(left.contains("【large.txt #7】") && right.contains("【large.txt #7】"));
+    assert_eq!(left.matches("正文").count() + right.matches("正文").count(), 900);
+    assert!(left.len() < requests[0]["messages"][1]["content"].as_str().unwrap().len());
+    assert_eq!(budget.steps, 3);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_small_truncated_batch_increases_output_within_model_limit() {
+    let server = MockModel::start(vec![
+        (vec!["截断部分".into(), "FINISH_LENGTH".into()], 0),
+        (vec!["完整事实及来源".into()], 0),
+    ]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let mut model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    model.max_tokens = Some(1600);
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let result = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", vec!["【file #1】全文资料".into()], 512, "全部分块").await.unwrap();
+    assert!(result.contains("完整事实及来源") && !result.contains("截断部分"));
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests[0]["max_tokens"], 900);
+    assert_eq!(requests[1]["max_tokens"], 1600);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_repeated_truncation_stops_at_output_cap_and_does_not_publish_partial_text() {
+    let server = MockModel::start(vec![(vec!["不完整资料".into(), "FINISH_LENGTH".into()], 0); 4]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let mut model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    model.max_tokens = None;
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    for _ in 0..2 {
+        let error = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", vec!["全文资料".into()], 512, "全部分块").await.unwrap_err();
+        assert!(error.to_string().contains("单次长度上限"));
+    }
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.iter().map(|request| request["max_tokens"].as_u64().unwrap()).collect::<Vec<_>>(), vec![900, 1800, 3600, 4096]);
+    assert_eq!(budget.steps, 4);
+    assert!(fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap().iter().all(|step| step.output_summary.is_none()));
+    fixture.cleanup();
+}
+
 async fn wait_until<F, Fut>(mut check: F)
 where
     F: FnMut() -> Fut,
