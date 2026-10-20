@@ -69,10 +69,11 @@ export default function DocumentChat({ path }: { path: string }) {
       <header className="document-chat-source">
         <FileText size={22} aria-hidden="true" />
         <div title={path}><strong>{source?.name || path.split(/[\\/]/).pop()}</strong><small>{source ? `已读取 ${source.content.length.toLocaleString()} 字符 · ${preparationStatus}` : error ? "读取失败" : "正在读取文档…"}</small></div>
-        <Button variant="subtle" size="compact-sm" leftSection={<ExternalLink size={14} />} onClick={() => void openMain()}>在主窗口继续</Button>
+        <Button variant="subtle" size="compact-sm" leftSection={<ExternalLink size={14} />} onClick={() => void openMain()}>主窗口继续</Button>
       </header>
       {error ? <section className="document-chat-error" role="alert"><h3>无法读取文档</h3><p>{error}</p><Button leftSection={<RotateCcw size={14} />} onClick={() => setAttempt((n) => n + 1)}>重新读取</Button></section> : !source ? <div className="document-chat-loading" role="status">正在提取整份文档中的文字…</div> : <ChatPane {...chat}
-        welcome={<section className="document-chat-welcome"><span>DOCUMENT CHAT</span><h2>从这份文档开始聊</h2><p>短文档直接阅读；长文档自动分块建立索引。全文总结会逐块分析后汇总。</p><div>{["总结这份文档的核心内容", "提取文档中的关键结论", "这份文档有哪些待办事项？"].map((question) => <button key={question} onClick={() => chat.setChatInput(question)}>{question}<span aria-hidden="true">↗</span></button>)}</div></section>}
+        inputPlaceholder="针对这份文档提问…"
+        welcome={<section className="document-chat-welcome"><p>想了解这份文档的什么？</p><div>{[{label: "总结全文", question: "总结这份文档的核心内容"}, {label: "关键结论", question: "提取文档中的关键结论"}, {label: "待办事项", question: "这份文档有哪些待办事项？"}].map(({label, question}) => <button key={label} onClick={() => chat.setChatInput(question)}>{label}</button>)}</div></section>}
         project={null} obs={obs} model={model} accessMode={accessMode} onAccessModeChange={setAccessMode}
         handleAttachmentFiles={chat.handleRagFiles}
         handleNewConversation={async () => { setNotice("再次右键文档可开启新的独立对话。"); }}

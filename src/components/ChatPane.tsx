@@ -19,6 +19,7 @@ function getProjectName(projectPath: string) {
 
 export default function ChatPane({
   welcome,
+  inputPlaceholder,
   sendingMessage = false,
   activeConversationId,
   activeConversation,
@@ -232,6 +233,7 @@ export default function ChatPane({
       />
 
       <ChatComposer
+        inputPlaceholder={inputPlaceholder}
         activeConversationId={activeConversationId}
         sendingMessage={sendingMessage}
         chatInput={chatInput}

@@ -22,7 +22,7 @@ pub fn open_from_args(app: &AppHandle, args: Vec<String>, cwd: PathBuf) -> bool 
             let url = reqwest::Url::parse_with_params("https://local.invalid/index.html", &[("document-chat", path.to_string_lossy().as_ref())])
                 .map_err(|e| e.to_string())?;
             let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(format!("index.html?{}", url.query().unwrap_or("")).into()))
-                .title("NanoDesk 文档对话").inner_size(680.0, 740.0).min_inner_size(480.0, 520.0)
+                .title("NanoDesk 文档对话").inner_size(340.0, 370.0).min_inner_size(340.0, 370.0)
                 .always_on_top(true).resizable(true).center().build().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())
         }.await;

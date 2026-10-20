@@ -1,29 +1,44 @@
-body.document-chat-body { min-width: 0; overflow: hidden; }
-html.document-chat-document { min-width: 0; overflow: hidden; }
+body.document-chat-body, html.document-chat-document { min-width: 0; overflow: hidden; }
 html.document-chat-document #root { min-width: 0; }
 html.document-chat-document #nano-startup { display: none; }
 .document-chat { height: 100vh; display: flex; flex-direction: column; background: var(--chat-pane-bg); }
-.document-chat-source { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); }
-.document-chat-source > svg { flex-shrink: 0; color: var(--accent-primary); }
+.document-chat-source { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); }
+.document-chat-source > svg { flex-shrink: 0; }
 .document-chat-source > div { flex: 1; min-width: 0; }
-.document-chat-source strong { display: block; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
-.document-chat-source small { display: block; font-size: 11px; margin-top: 5px; }
-.document-chat > .chat-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 16px; }
-.document-chat .chat-header-title { min-width: 0; }
-.document-chat .chat-header-title strong { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.document-chat .chat-welcome { padding: 12px; }
-.document-chat .chat-starters { grid-template-columns: 1fr; }
-.document-chat .project-add-chat-btn { display: none; }
-.document-chat-error, .document-chat-loading { padding: 36px 24px; overflow-wrap: anywhere; }
+.document-chat-source strong { display: block; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.document-chat-source small { display: block; font-size: 10px; line-height: 1.5; margin-top: 3px; overflow-wrap: anywhere; }
+.document-chat-source > button { flex-shrink: 0; font-size: 11px; }
+.document-chat > .chat-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 14px 14px; }
+.document-chat .chat-header { min-height: 0; margin: 0; padding: 6px 0; border: 0; background: none; box-shadow: none; justify-content: flex-end; }
+.document-chat .chat-header > div:first-child { display: none; }
+.document-chat .chat-header::after { display: none; }
+.document-chat .chat-header:not(:has(.chat-header-actions)) { display: none; }
+.document-chat .chat-header-actions { gap: 4px; }
+.document-chat .chat-header-square { width: 28px; height: 28px; min-width: 28px; min-height: 28px; }
+.document-chat .chat-composer-toolbar, .document-chat .project-add-chat-btn { display: none; }
+.document-chat .chat-log { padding: 12px 0; }
+.document-chat .chat-log-content { min-height: 100%; }
+.document-chat-welcome { margin: auto; padding: 24px 4px; text-align: center; }
+.document-chat-welcome p { color: var(--text-muted); font-size: 13px; margin: 0 0 14px; }
+.document-chat-welcome > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.document-chat-welcome button { padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 16px; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.document-chat-welcome button:hover, .document-chat-welcome button:focus-visible { color: var(--accent-blue); border-color: var(--accent-blue); }
+.document-chat .chat-input { flex-shrink: 0; border-color: var(--border-color); border-radius: 10px; box-shadow: none; background: var(--chat-input-bg); }
+.document-chat .chat-input:focus-within { border-color: var(--accent-blue); }
+.document-chat .chat-input textarea { padding: 12px 12px 6px; font-size: 13px; border-radius: 9px; }
+.document-chat .chat-input-footer { padding: 6px 8px 8px; gap: 6px; }
+.document-chat .chat-input-left { min-width: 0; gap: 6px; }
+.document-chat .chat-model-select { width: min(180px, 32vw); min-width: 0; }
+.document-chat .chat-model-select input { min-height: 28px; height: 28px; font-size: 11px; border: 0; background: transparent; }
+.document-chat .access-mode-trigger { min-height: 28px; padding: 0 6px; border: 0; background: transparent; }
+.document-chat .chat-input-actions { gap: 4px; }
+.document-chat .chat-input .chat-input-actions .chat-header-square { width: 28px; height: 28px; min-width: 28px; min-height: 28px; border: 0; box-shadow: none; }
+.document-chat .chat-input .chat-header-square.ghost { background: transparent; }
+.document-chat .chat-input .chat-header-square.send { background: var(--accent-blue); border-radius: 7px; }
+.document-chat .chat-input-actions button svg { width: 17px; height: 17px; }
+.document-chat-error, .document-chat-loading { padding: 28px 20px; overflow-wrap: anywhere; }
 .document-chat-error p { color: var(--text-secondary); }
-.document-chat-notice { margin: 0 14px 12px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; display: flex; align-items: center; gap: 12px; background: var(--bg-app); }
+.document-chat-notice { margin: 0 14px 10px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 8px; display: flex; align-items: center; gap: 10px; background: var(--bg-app); }
 .document-chat-notice > :first-child { flex: 1; }
 .document-chat-notice button { background: transparent; }
-.document-chat-welcome { padding: 28px 8px; max-width: 500px; margin: auto; }
-.document-chat-welcome > span { font-size: 10px; letter-spacing: .18em; color: var(--text-muted); }
-.document-chat-welcome h2 { margin: 12px 0; font-size: 25px; letter-spacing: -.04em; }
-.document-chat-welcome p { color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
-.document-chat-welcome > div { display: grid; gap: 8px; margin-top: 24px; }
-.document-chat-welcome button { display: flex; justify-content: space-between; padding: 13px 14px; border: 1px solid var(--border-color); border-radius: 9px; background: var(--bg-app); font-size: 13px; text-align: left; }
-.document-chat-welcome button:hover { border-color: var(--accent-primary); }
-@media (max-width: 540px) { .document-chat-source { padding: 12px; gap: 8px; } .document-chat-source small { font-size: 10px; } .document-chat .chat-header-title strong { max-width: 160px; } }
+@media (max-width: 420px) { .document-chat-source { padding: 10px; gap: 8px; } .document-chat > .chat-pane { padding-inline: 10px; } }

@@ -9,6 +9,7 @@ import { getRoutingModeLabel } from "../../lib/modelRouting";
 import type { ChatPaneProps } from "./types";
 
 type ChatComposerProps = Pick<ChatPaneProps, 
+  | "inputPlaceholder"
   | "activeConversationId"
   | "sendingMessage"
   | "chatInput"
@@ -37,6 +38,7 @@ type ChatComposerProps = Pick<ChatPaneProps,
 > & { decisionPending: boolean; textareaRef: RefObject<HTMLTextAreaElement> };
 
 export default function ChatComposer({
+  inputPlaceholder,
   activeConversationId,
   sendingMessage = false,
   chatInput,
@@ -178,7 +180,7 @@ export default function ChatComposer({
           onPaste={handleChatInputPaste}
           aria-label="输入消息"
           disabled={sendingMessage || uploadingAttachment || uploadingImageAttachment}
-          placeholder={busy || decisionPending ? "可直接发送新要求插入临时任务；也可输入“暂停任务”或“继续任务”…" : activeModel ? "描述目标、补充任务要求，或输入“继续任务”恢复未完成工作…" : "可以先输入内容，发送前请在下方选择或配置模型…"}
+          placeholder={inputPlaceholder ?? (busy || decisionPending ? "可直接发送新要求插入临时任务；也可输入“暂停任务”或“继续任务”…" : activeModel ? "描述目标、补充任务要求，或输入“继续任务”恢复未完成工作…" : "可以先输入内容，发送前请在下方选择或配置模型…")}
         />
         <div className="chat-input-footer">
           <div className="chat-input-left">
