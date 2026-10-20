@@ -10,7 +10,20 @@ use tauri::tray::MouseButton;
 use tauri::tray::MouseButtonState;
 use tauri::tray::TrayIconBuilder;
 use tauri::tray::TrayIconEvent;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, LogicalSize, LogicalPosition};
+use tauri::{AppHandle, Manager, Emitter, WebviewUrl, WebviewWindowBuilder, LogicalSize, LogicalPosition};
+
+struct AssistantTrayMenu(MenuItem<tauri::Wry>);
+
+fn assistant_menu_label(visible: bool) -> &'static str {
+    if visible { "隐藏助手" } else { "开启助手" }
+}
+
+fn sync_assistant_visibility(app: &AppHandle, visible: bool) -> Result<(), String> {
+    if let Some(menu) = app.try_state::<AssistantTrayMenu>() {
+        menu.0.set_text(assistant_menu_label(visible)).map_err(|err| err.to_string())?;
+    }
+    app.emit("assistant:visibility", visible).map_err(|err| err.to_string())
+}
 
 static ASSISTANT_WINDOW_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -19,9 +32,10 @@ static ASSISTANT_WINDOW_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const
 pub(crate) async fn set_assistant_visible(app: AppHandle, visible: bool) -> Result<(), String> {
     let _guard = ASSISTANT_WINDOW_LOCK.lock().await;
     if let Some(window) = app.get_webview_window("assistant") {
-        return if visible { window.show() } else { window.hide() }.map_err(|err| err.to_string());
+        if visible { window.show() } else { window.hide() }.map_err(|err| err.to_string())?;
+        return sync_assistant_visibility(&app, visible);
     }
-    if !visible { return Ok(()); }
+    if !visible { return sync_assistant_visibility(&app, false); }
     let window = WebviewWindowBuilder::new(&app, "assistant", WebviewUrl::App("index.html?assistant".into()))
         .title("NanoDesk 桌面助手")
         .inner_size(ICON_SIZE, ICON_SIZE)
@@ -36,7 +50,8 @@ pub(crate) async fn set_assistant_visible(app: AppHandle, visible: bool) -> Resu
             (area.position.y as f64 + area.size.height as f64) / scale - 108.0,
         )).map_err(|err| err.to_string())?;
     }
-    window.show().map_err(|err| err.to_string())
+    window.show().map_err(|err| err.to_string())?;
+    sync_assistant_visibility(&app, true)
 }
 
 #[tauri::command]
@@ -154,10 +169,13 @@ pub(crate) fn quit_app(app: AppHandle) {
 pub(crate) fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
     let show_item = MenuItem::with_id(app, "tray_show", "显示应用", true, None::<&str>)
         .map_err(|err| err.to_string())?;
+    let assistant_item = MenuItem::with_id(app, "tray_assistant", assistant_menu_label(false), true, None::<&str>)
+        .map_err(|err| err.to_string())?;
+    app.manage(AssistantTrayMenu(assistant_item.clone()));
     let separator = PredefinedMenuItem::separator(app).map_err(|err| err.to_string())?;
     let quit_item = MenuItem::with_id(app, "tray_quit", "退出应用", true, None::<&str>)
         .map_err(|err| err.to_string())?;
-    let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])
+    let menu = Menu::with_items(app, &[&show_item, &assistant_item, &separator, &quit_item])
         .map_err(|err| err.to_string())?;
 
     let tray = TrayIconBuilder::with_id(brand::TRAY_ID)
@@ -178,6 +196,21 @@ pub(crate) fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
                         serde_json::json!({ "error": err.to_string() }),
                     );
                 }
+            }
+            "tray_assistant" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let result = async {
+                        let visible = match app.get_webview_window("assistant") {
+                            Some(window) => window.is_visible().map_err(|err| err.to_string())?,
+                            None => false,
+                        };
+                        set_assistant_visible(app.clone(), !visible).await
+                    }.await;
+                    if let Err(err) = result {
+                        logging::error("tray", "failed to toggle assistant", serde_json::json!({ "error": err }));
+                    }
+                });
             }
             "tray_quit" => app.exit(0),
             _ => {}
@@ -201,4 +234,13 @@ pub(crate) fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
 
     tray.build(app).map_err(|err| err.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod assistant_tray_tests {
+    #[test]
+    fn menu_offers_the_opposite_of_current_visibility() {
+        assert_eq!(super::assistant_menu_label(true), "隐藏助手");
+        assert_eq!(super::assistant_menu_label(false), "开启助手");
+    }
 }

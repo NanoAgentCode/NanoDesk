@@ -11,6 +11,7 @@ describe("assistant visibility and handoff", () => {
     const values = new Map<string, string>();
     vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) || null, setItem: (key: string, value: string) => values.set(key, value) });
     mocks.invoke.mockResolvedValue(undefined);
+    mocks.listen.mockResolvedValue(mocks.stop);
   });
   it("defaults off, saves only a successful toggle, and restores the saved choice", async () => {
     expect(getStoredAssistantVisible()).toBe(false);
@@ -49,6 +50,20 @@ describe("assistant visibility and handoff", () => {
     dispose();
     surface.dispatchEvent(changed);
     expect(listener).toHaveBeenCalledOnce();
+  });
+  it("persists native tray changes and updates the settings subscriber", async () => {
+    vi.stubGlobal("window", new EventTarget());
+    const update = vi.fn();
+    const dispose = subscribeAssistantVisibility(update);
+    const receive = mocks.listen.mock.calls[0][1];
+    receive({ payload: true });
+    expect(getStoredAssistantVisible()).toBe(true);
+    receive({ payload: false });
+    expect(getStoredAssistantVisible()).toBe(false);
+    expect(update).toHaveBeenLastCalledWith(false);
+    dispose();
+    receive({ payload: true });
+    expect(getStoredAssistantVisible()).toBe(false);
   });
   it("reports rejection without discarding the message and cleans up IPC failures", async () => {
     let receive: (event: { payload: { id: string; error?: string } }) => void;

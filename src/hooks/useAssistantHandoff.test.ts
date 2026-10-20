@@ -14,7 +14,7 @@ vi.mock("react", () => ({
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen, emitTo: mocks.emitTo }));
 vi.mock("../api/conversations", () => ({ listConversations: mocks.list }));
 vi.mock("../api/desktop", () => ({ showAppWindow: mocks.show }));
-vi.mock("../api/assistant", () => ({ restoreAssistantVisibility: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("../api/assistant", () => ({ restoreAssistantVisibility: vi.fn().mockResolvedValue(undefined), subscribeAssistantVisibility: vi.fn(() => () => {}) }));
 import { useAssistantHandoff } from "./useAssistantHandoff";
 
 describe("assistant background submission", () => {

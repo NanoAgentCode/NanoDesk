@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { listConversations } from "../api/conversations";
-import { restoreAssistantVisibility } from "../api/assistant";
+import { restoreAssistantVisibility, subscribeAssistantVisibility } from "../api/assistant";
 import { ASSISTANT_REPLY_EVENT, ASSISTANT_REQUEST_EVENT, validateAssistantHandoff, type AssistantRequest } from "../lib/assistantMode";
 import type { UseChatReturn } from "./useChat";
 import type { UseProjectsReturn } from "./useProjects";
@@ -20,6 +20,7 @@ export function useAssistantHandoff(chat: UseChatReturn, projects: UseProjectsRe
   const [pending, setPending] = useState<(AssistantRequest & { targetId: string; attachmentsReady?: boolean }) | null>(null);
 
   useEffect(() => {
+    const stopVisibility = subscribeAssistantVisibility(() => {});
     void restoreAssistantVisibility().catch((error) => current.current.notice(`恢复桌面助手失败：${String(error)}`));
     let disposed = false;
     let stop: (() => void) | undefined;
@@ -55,7 +56,7 @@ export function useAssistantHandoff(chat: UseChatReturn, projects: UseProjectsRe
         }
       })().catch((error) => { processing.current = false; current.current.notice(String(error)); });
     }).then((unlisten) => { if (disposed) unlisten(); else stop = unlisten; }).catch((error) => current.current.notice(String(error)));
-    return () => { disposed = true; stop?.(); };
+    return () => { disposed = true; stop?.(); stopVisibility(); };
   }, []);
 
   useEffect(() => {

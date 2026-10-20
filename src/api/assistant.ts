@@ -6,11 +6,21 @@ import { ASSISTANT_REPLY_EVENT, ASSISTANT_REQUEST_EVENT, type AssistantReply, ty
 const visibilityKey = `${APP_STORAGE_PREFIX}-assistant-visible`;
 export const getStoredAssistantVisible = () => localStorage.getItem(visibilityKey) === "true";
 export function subscribeAssistantVisibility(listener: (visible: boolean) => void) {
+  let disposed = false;
+  const subscription = listen<boolean>("assistant:visibility", ({ payload }) => {
+    if (disposed) return;
+    localStorage.setItem(visibilityKey, String(payload));
+    listener(payload);
+  });
   const onStorage = (event: StorageEvent) => {
     if (event.key === visibilityKey || event.key === null) listener(getStoredAssistantVisible());
   };
   window.addEventListener("storage", onStorage);
-  return () => window.removeEventListener("storage", onStorage);
+  return () => {
+    disposed = true;
+    window.removeEventListener("storage", onStorage);
+    void subscription.then((stop) => stop()).catch(console.error);
+  };
 }
 export async function setAssistantVisible(visible: boolean) {
   await invoke("set_assistant_visible", { visible });
