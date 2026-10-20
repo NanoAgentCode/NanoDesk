@@ -97,8 +97,12 @@ export function useConversations(
     setArchivedConversations(nextArchivedConversations);
     if (selectId) {
       setActiveConversationId(selectId);
-    } else if (!nextConversations.some((conversation) => conversation.id === activeConversationId)) {
-      setActiveConversationId(nextConversations[0]?.id || "");
+    } else {
+      setActiveConversationId((current) =>
+        nextConversations.some((conversation) => conversation.id === current)
+          ? current
+          : nextConversations[0]?.id || ""
+      );
     }
   }
 

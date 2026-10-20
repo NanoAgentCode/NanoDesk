@@ -18,6 +18,7 @@ import type { UseModelReturn } from "../useModel";
 import type { UseSkillsReturn } from "../useSkills";
 import type { UseMcpReturn } from "../useMcp";
 export interface UseChatReturn {
+  documentPreparationError: string;
   sendingMessage: boolean;
   conversations: Conversation[];
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;

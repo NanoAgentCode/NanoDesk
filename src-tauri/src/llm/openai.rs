@@ -50,15 +50,15 @@ pub(super) async fn send_openai_chat_completion(
 
     let parsed: OpenAiChatResponse = serde_json::from_str(&text)?;
     let usage = parsed.usage;
-    let content = parsed
+    let choice = parsed
         .choices
         .into_iter()
         .next()
-        .map(|choice| choice.message.content)
         .ok_or_else(|| AppError::Message("model returned no choices".to_string()))?;
 
     Ok(ChatResponse {
-        content,
+        content: choice.message.content,
+        finish_reason: choice.finish_reason,
         input_tokens: usage.as_ref().map(|usage| usage.prompt_tokens),
         output_tokens: usage.as_ref().map(|usage| usage.completion_tokens),
     })

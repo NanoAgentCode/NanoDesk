@@ -20,7 +20,39 @@ pub(crate) struct RagFileReplacement<'a> {
     pub embedding_model: &'a str,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_replacement_rolls_back_file_chunks_vectors_and_fts_together() {
+        let db = Database::open(std::path::PathBuf::from(":memory:")).unwrap();
+        let conversation = db.create_conversation(crate::models::ConversationDraft { title: None, model_config_id: None, project_path: None }).unwrap();
+        let old = db.replace_rag_file(RagFileReplacement { conversation_id: &conversation.id, name: "test.txt", mime: "text/plain", size: 3, content_hash: "same", chunks: &["old complete text".into()], embeddings: &[vec![1.0, 0.0]], embedding_model: "qa" }).unwrap();
+        db.conn.execute_batch("CREATE TRIGGER reject_second BEFORE INSERT ON rag_chunks WHEN NEW.chunk_index=1 BEGIN SELECT RAISE(ABORT, 'test insertion failure'); END;").unwrap();
+        let result = db.replace_rag_file(RagFileReplacement { conversation_id: &conversation.id, name: "test.txt", mime: "text/plain", size: 6, content_hash: "same", chunks: &["new first".into(), "new second".into()], embeddings: &[vec![1.0, 0.0], vec![0.0, 1.0]], embedding_model: "qa" });
+        assert!(result.is_err());
+        assert_eq!(db.list_rag_files(&conversation.id).unwrap()[0].id, old.id);
+        assert_eq!(db.load_document_chunks(&conversation.id).unwrap()[0].text, "old complete text");
+        assert_eq!(db.search_rag_chunks(&conversation.id, &[1.0, 0.0], 6).unwrap()[0].text, "old complete text");
+        let fts: i64 = db.conn.query_row("SELECT COUNT(*) FROM rag_chunks_fts WHERE text='old complete text'", [], |row| row.get(0)).unwrap();
+        assert_eq!(fts, 1);
+    }
+}
+
 impl Database {
+    pub fn rag_embedding_model(&self, file_id: &str) -> AppResult<Option<String>> {
+        Ok(self.conn.query_row("SELECT embeddings.model FROM rag_embeddings embeddings JOIN rag_chunks chunks ON chunks.id = embeddings.chunk_id WHERE chunks.file_id = ?1 LIMIT 1", [file_id], |row| row.get(0)).optional()?)
+    }
+
+    pub fn load_document_chunks(&self, conversation_id: &str) -> AppResult<Vec<RagChunkMatch>> {
+        let mut stmt = self.conn.prepare("SELECT chunks.id, chunks.file_id, files.name, chunks.chunk_index, chunks.text FROM rag_chunks chunks JOIN rag_files files ON files.id = chunks.file_id WHERE chunks.conversation_id = ?1 ORDER BY files.created_at, files.id, chunks.chunk_index")?;
+        let rows = stmt.query_map([conversation_id], |row| Ok(RagChunkMatch {
+            chunk_id: row.get(0)?, file_id: row.get(1)?, file_name: row.get(2)?, chunk_index: row.get(3)?, text: row.get(4)?, score: 0.0,
+        }))?.collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn list_rag_files(&self, conversation_id: &str) -> AppResult<Vec<RagFile>> {
         let mut stmt = self.conn.prepare(
             "
@@ -99,6 +131,7 @@ impl Database {
             )
             .optional()?;
 
+        let transaction = self.conn.unchecked_transaction()?;
         if let Some(existing_id) = existing_id {
             self.delete_rag_file(&existing_id)?;
         }
@@ -112,7 +145,7 @@ impl Database {
             size,
             content_hash: content_hash.to_string(),
             chunk_count: chunks.len() as i64,
-            status: "ready".to_string(),
+            status: if embedding_model == "fulltext" { "fulltext" } else { "ready" }.to_string(),
             error: None,
             created_at: now,
         };
@@ -158,7 +191,7 @@ impl Database {
                     now.to_rfc3339()
                 ],
             )?;
-            self.conn.execute(
+            if !embedding.is_empty() { self.conn.execute(
                 "
                 INSERT INTO rag_embeddings
                     (chunk_id, conversation_id, embedding, dim, model, created_at)
@@ -172,7 +205,7 @@ impl Database {
                     embedding_model,
                     now.to_rfc3339()
                 ],
-            )?;
+            )?; }
             self.conn.execute(
                 "
                 INSERT INTO rag_chunks_fts
@@ -183,6 +216,7 @@ impl Database {
             )?;
         }
 
+        transaction.commit()?;
         Ok(file)
     }
 
@@ -208,6 +242,7 @@ impl Database {
         while let Some(row) = rows.next()? {
             let embedding_blob: Vec<u8> = row.get(5)?;
             let embedding = decode_embedding(&embedding_blob)?;
+            if embedding.len() != query_embedding.len() { return Err("文档索引与查询向量维度不一致，请重新建立索引。".into()); }
             let score = cosine_similarity(query_embedding, &embedding);
             matches.push(RagChunkMatch {
                 chunk_id: row.get(0)?,

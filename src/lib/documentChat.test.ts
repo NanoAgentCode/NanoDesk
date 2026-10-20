@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildDocumentMessage, splitDocumentMessage } from "./documentChat";
+import { buildDocumentMessage, buildDocumentReference, splitDocumentMessage } from "./documentChat";
 
 describe("document conversation context", () => {
+  it("new conversations persist a document reference rather than injecting full text into every message", () => {
+    expect(buildDocumentReference("large.txt", "查找末尾的期限")).toBe("[会话文档：large.txt]\n查找末尾的期限");
+  });
   it("persists the entire document and separates the question for display", () => {
     const document = { name: "中文资料.txt", content: "首段\n" + "文档正文".repeat(20000) + "\n尾段" };
     const content = buildDocumentMessage(document, "最后一段说了什么？");

@@ -147,10 +147,10 @@ export default function ChatComposer({
               </span>
             )}
             {ragFiles.map((file) => (
-              <span key={file.id} className="rag-file-chip" title={`${file.name} · ${file.chunk_count} chunks`}>
+              <span key={file.id} className="rag-file-chip" title={`${file.name} · ${file.status === "fulltext" ? "全文上下文" : `${file.chunk_count} 个索引分块`}`}>
                 <FileText size={14} />
                 <span>{file.name}</span>
-                <small>{file.chunk_count}</small>
+                <small>{file.status === "fulltext" ? "全文" : file.chunk_count}</small>
                 <button
                   aria-label={`移除 ${file.name}`}
                   onClick={() => void handleDeleteRagFile(file.id)}

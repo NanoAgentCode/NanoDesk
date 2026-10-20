@@ -1,4 +1,7 @@
 export interface DocumentSource { name: string; content: string }
+export function buildDocumentReference(name: string, question: string) {
+  return `[会话文档：${name}]\n${question}`;
+}
 const prefix = "[NanoDesk 文档 ";
 const separator = "\n[/NanoDesk 文档]\n用户问题：";
 

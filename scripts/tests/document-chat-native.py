@@ -7,6 +7,7 @@ app database is used. The document verb registry entries are backed up/restored.
 import ctypes
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import threading
@@ -21,6 +22,8 @@ OUT = ROOT / ".build" / "document-chat-qa"
 EXE = ROOT / "src-tauri" / "target" / "debug" / "nano-desk.exe"
 EXTENSIONS = ["txt", "md", "markdown", "docx", "pdf", "rtf", "csv", "xlsx", "pptx"]
 requests = []
+embedding_requests = []
+fail_embedding_at = None
 
 
 class Model(BaseHTTPRequestHandler):
@@ -29,16 +32,29 @@ class Model(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path.endswith("/embeddings"):
+            embedding_requests.append(body)
+            if fail_embedding_at == len(embedding_requests):
+                self.send_response(503); self.end_headers(); self.wfile.write(b"QA embedding failure"); return
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+            inputs = body["input"]
+            vectors = [{"index": i, "embedding": [1.0 if "TAIL-LARGE-8972" in text or "验证码" in text else 0.0, 0.1, 0.1]} for i, text in enumerate(inputs)]
+            self.wfile.write(json.dumps({"data": vectors}).encode()); return
         requests.append(body)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream" if body.get("stream") else "application/json")
         self.end_headers()
         if not body.get("stream"):
-            self.wfile.write(json.dumps({"choices": [{"message": {"role": "assistant", "content": "{}"}}]}).encode())
+            text = "\n".join(message["content"] for message in body["messages"])
+            facts = sorted(set(re.findall(r"TODO-\d{4}|TAIL-LARGE-8972", text)))
+            response = "逐块事实：" + "、".join(facts) if facts else "本组未发现待办。"
+            self.wfile.write(json.dumps({"choices": [{"message": {"role": "assistant", "content": response}}]}).encode())
             return
         slow = "长回复" in body["messages"][-1]["content"]
+        all_context = "\n".join(message["content"] for message in body["messages"])
+        answer = "文档末尾是 TAIL-LARGE-8972。" if "TAIL-LARGE-8972" in all_context else "文档末尾是 TAIL-8972。"
         try:
-            for part in (["正在生成…"] * 100 if slow else ["QA 回答：", "文档末尾是 TAIL-8972。"]):
+            for part in (["正在生成…"] * 100 if slow else ["QA 回答：", answer]):
                 data = {"choices": [{"delta": {"content": part}, "finish_reason": None}]}
                 self.wfile.write(("data: " + json.dumps(data, ensure_ascii=False) + "\n\n").encode())
                 self.wfile.flush()
@@ -93,6 +109,7 @@ def wait_until(check, timeout=25):
 
 
 def main():
+    global fail_embedding_at
     OUT.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", 0), Model)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -114,7 +131,13 @@ def main():
             browser = p.chromium.connect_over_cdp("http://127.0.0.1:9223")
             def document_pages():
                 return [page for context in browser.contexts for page in context.pages if "document-chat=" in page.url]
-            doc = wait_until(lambda: next(iter(document_pages()), None))
+            def first_document():
+                for context in browser.contexts:
+                    if context.pages:
+                        context.pages[0].wait_for_timeout(100)
+                        break
+                return next(iter(document_pages()), None)
+            doc = wait_until(first_document)
             doc.wait_for_load_state("networkidle")
             identifier = doc.evaluate("async () => (await import('/node_modules/@tauri-apps/api/app.js')).getIdentifier()")
             assert identifier == "com.nanodesk.document-chat-qa", f"Refusing to mutate non-QA app: {identifier}"
@@ -137,6 +160,9 @@ def main():
             model = invoke(doc, "save_model_config", {"draft": {"id": "document-chat-qa", "name": "本地验收模型", "provider": "openai-compatible", "base_url": f"http://127.0.0.1:{server.server_port}/v1", "model": "qa", "api_key": "qa-local-only", "context_window": 32768, "max_tokens": 2048, "model_kind": "chat"}})
             prefix = json.loads((ROOT / "brand.config.json").read_text(encoding="utf-8"))["storagePrefix"]
             doc.evaluate("([prefix,id]) => {localStorage.setItem(prefix+'-access-mode','auto');localStorage.setItem(prefix+'-fixed-models',JSON.stringify([id]));localStorage.setItem(prefix+'-smart-routing-enabled','false');}", [prefix, model["id"]])
+            for configured in invoke(doc, "list_model_configs"):
+                if configured["id"] == "embedding-config": invoke(doc, "delete_model_config", {"id": configured["id"]})
+            main_page.reload(); main_page.wait_for_load_state("networkidle")
             doc.reload()
             doc.wait_for_load_state("networkidle")
             expect(doc.get_by_role("heading", name="从这份文档开始聊")).to_be_visible()
@@ -159,7 +185,10 @@ def main():
             session = sessions[0]
             assert session["title"] == "中文 资料.txt" and not session["project_path"]
             history = invoke(doc, "list_messages", {"conversationId": session["id"]})
-            assert "文档开头" in history[0]["content"] and "TAIL-8972" in history[0]["content"]
+            assert "TAIL-8972" not in history[0]["content"]
+            files = invoke(doc, "list_rag_files", {"conversationId": session["id"]})
+            assert len(files) == 1 and files[0]["status"] == "fulltext"
+            assert any("文档开头" in message["content"] and "TAIL-8972" in message["content"] for message in requests[-1]["messages"])
             assert requests[-1]["messages"][-1]["content"] == history[0]["content"]
             field.fill("继续解释刚才的验证码")
             field.press("Enter")
@@ -167,7 +196,7 @@ def main():
             wait_until(lambda: not invoke(doc, "list_background_agents"))
             assert len(invoke(doc, "list_conversations")) == baseline + 1
             assert any("TAIL-8972" in message["content"] for message in requests[-1]["messages"][:-1])
-            assert sum("[NanoDesk 文档 " in message["content"] for message in requests[-1]["messages"]) == 1
+            assert len(invoke(doc, "list_rag_files", {"conversationId": session["id"]})) == 1
             doc.screenshot(path=str(OUT / "document-chat-conversation.png"))
             print("PASS first-send session creation, full prompt, streaming and consecutive history", flush=True)
             field.fill("请生成长回复")
@@ -224,6 +253,82 @@ def main():
             expect(main_page.locator(".chat-message.user").first).to_contain_text("文档最后的验证码")
             assert len(invoke(main_page, "list_messages", {"conversationId": session["id"]})) >= 6
             print("PASS minimum-size layout, stop, main-window continuation, registry enable/disable, ShellExecute registered command, independent second session, background completion after window closes", flush=True)
+            assert not embedding_requests, "Short documents must not require embeddings"
+
+            # Exercise the long-document path, including the old 120-chunk boundary.
+            large_path = OUT / "large-rag.txt"
+            large_path.write_text("\n".join(f"SECTION-{i:04d} TODO-{i:04d}: " + "Background context for document verification. " * 44 for i in range(125)) + "\n最后的验证码是 TAIL-LARGE-8972", encoding="utf-8")
+            subprocess.Popen([str(EXE), "--document-chat", str(large_path)], creationflags=subprocess.CREATE_NO_WINDOW).wait(timeout=10)
+            def large_document():
+                main_page.wait_for_timeout(100)
+                return next((page for page in document_pages() if "large-rag.txt" in page.url), None)
+            large = wait_until(large_document)
+            large.wait_for_load_state("networkidle")
+            large.evaluate("async () => {window.indexEvents=[]; await (await import('/node_modules/@tauri-apps/api/event.js')).listen('document-index-progress', event => window.indexEvents.push(event.payload));}")
+            question = "文档最后的验证码是什么？"
+            large.get_by_role("textbox", name="输入消息").fill(question)
+            large.get_by_role("button", name="发送", exact=True).click()
+            expect(large.get_by_role("alert")).to_contain_text("配置嵌入模型", timeout=15000)
+            expect(large.get_by_role("textbox", name="输入消息")).to_have_value(question)
+            rag_session = invoke(large, "list_conversations")[0]
+            assert not invoke(large, "list_rag_files", {"conversationId": rag_session["id"]})
+            invoke(large, "save_model_config", {"draft": {"id": "embedding-config", "name": "QA embedding", "provider": "openai-compatible", "base_url": f"http://127.0.0.1:{server.server_port}/v1", "model": "qa-embedding", "api_key": "qa", "embedding_provider": "openai-compatible", "embedding_base_url": f"http://127.0.0.1:{server.server_port}/v1", "embedding_model": "qa-embedding", "embedding_api_key": "qa", "model_kind": "embedding"}})
+            fail_embedding_at = 2
+            large.get_by_role("button", name="重试文档准备").click()
+            expect(large.get_by_role("alert")).to_contain_text("503", timeout=20000)
+            assert not invoke(large, "list_rag_files", {"conversationId": rag_session["id"]}), "Failed batch left a partial index"
+            expect(large.get_by_role("textbox", name="输入消息")).to_have_value(question)
+            fail_embedding_at = None
+            large.get_by_role("button", name="重试文档准备").click()
+            expect(large.locator(".chat-message.assistant")).to_contain_text("TAIL-LARGE-8972", timeout=60000)
+            wait_until(lambda: not invoke(large, "list_background_agents"))
+            indexed = invoke(large, "list_rag_files", {"conversationId": rag_session["id"]})
+            assert len(indexed) == 1 and indexed[0]["chunk_count"] > 120 and indexed[0]["status"] == "ready"
+            assert large.evaluate("window.indexEvents.some(event => event.phase==='indexing' && event.completed>=16 && event.total>120)")
+            expect(large.locator(".document-chat-source")).to_contain_text("索引已就绪")
+            expect(large.locator(".document-chat-notice")).to_have_count(0)
+            index_calls = len([request for request in embedding_requests if len(request["input"]) > 1])
+            assert all(len(request["input"]) <= 16 for request in embedding_requests)
+            prompt = next(request for request in reversed(requests) if request.get("stream"))
+            assert any("TAIL-LARGE-8972" in message["content"] for message in prompt["messages"])
+            assert sum(len(message["content"]) for message in prompt["messages"]) < len(large_path.read_text(encoding="utf-8")) // 2
+            large.get_by_role("textbox", name="输入消息").fill("再次确认尾部验证码")
+            large.get_by_role("button", name="发送", exact=True).click()
+            expect(large.locator(".chat-message.assistant")).to_have_count(2, timeout=30000)
+            wait_until(lambda: not invoke(large, "list_background_agents"))
+            assert len([request for request in embedding_requests if len(request["input"]) > 1]) == index_calls
+            assert invoke(large, "list_rag_files", {"conversationId": rag_session["id"]})[0]["id"] == indexed[0]["id"]
+            before_summaries = len([request for request in requests if not request.get("stream")])
+            large.get_by_role("textbox", name="输入消息").fill("列出全文所有待办事项")
+            large.get_by_role("button", name="发送", exact=True).click()
+            expect(large.locator(".chat-message.assistant")).to_have_count(3, timeout=90000)
+            wait_until(lambda: not invoke(large, "list_background_agents"))
+            summaries = [request for request in requests if not request.get("stream")][before_summaries:]
+            assert len(summaries) > 1
+            analyzed = "\n".join(message["content"] for request in summaries for message in request["messages"])
+            for index in range(125): assert f"TODO-{index:04d}" in analyzed
+            final_prompt = next(request for request in reversed(requests) if request.get("stream"))
+            assert any("全部" in message["content"] and "分块" in message["content"] for message in final_prompt["messages"])
+            large.screenshot(path=str(OUT / "document-rag-ready.png"))
+            large.get_by_role("button", name="在主窗口继续", exact=True).click()
+            expect(main_page.locator(".chat-message.user").first).to_contain_text(question, timeout=10000)
+            main_page.get_by_role("textbox", name="输入消息").fill("尾部验证码再确认")
+            main_page.get_by_role("button", name="发送", exact=True).click()
+            expect(main_page.locator(".chat-message.assistant")).to_have_count(4, timeout=30000)
+            wait_until(lambda: not invoke(main_page, "list_background_agents"))
+            assert len([request for request in embedding_requests if len(request["input"]) > 1]) == index_calls
+            attachment = OUT / "extra-short.txt"
+            attachment.write_text("附件联系人是小林 SHORT-ATTACHMENT", encoding="utf-8")
+            main_page.locator('input[type="file"]').set_input_files(str(attachment))
+            wait_until(lambda: len(invoke(main_page, "list_rag_files", {"conversationId": rag_session["id"]})) == 2)
+            assert any(file["name"] == attachment.name and file["status"] == "fulltext" for file in invoke(main_page, "list_rag_files", {"conversationId": rag_session["id"]}))
+            main_page.wait_for_timeout(300)
+            main_page.locator('input[type="file"]').set_input_files(str(large_path))
+            expect(main_page.locator('.rag-file-chip')).to_have_count(2)
+            main_page.wait_for_timeout(500)
+            assert len([request for request in embedding_requests if len(request["input"]) > 1]) == index_calls
+            assert next(file for file in invoke(main_page, "list_rag_files", {"conversationId": rag_session["id"]}) if file["name"] == large_path.name)["id"] == indexed[0]["id"]
+            print("PASS long-document embedding batches, missing-config and mid-batch retry, tail retrieval beyond 120 chunks, index deduplication, full-coverage analysis and main-window reuse", flush=True)
             invoke(main_page, "quit_app")
     finally:
         if registry_touched:

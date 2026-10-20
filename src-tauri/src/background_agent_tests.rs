@@ -66,7 +66,7 @@ impl MockModel {
                     serde_json::from_slice(&request[offset..offset + size]).unwrap();
                 requests.push(payload.clone());
                 if payload["stream"] != true {
-                    let body=serde_json::json!({"choices":[{"message":{"role":"assistant","content":chunks.join("")}}]}).to_string();
+                    let body=serde_json::json!({"choices":[{"message":{"role":"assistant","content":chunks.join("")},"finish_reason":if chunks.iter().any(|chunk| chunk == "FINISH_LENGTH") { "length" } else { "stop" }}]}).to_string();
                     write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
                     continue;
                 }
@@ -445,6 +445,104 @@ impl Fixture {
         drop(self.state);
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+#[tokio::test]
+async fn document_short_text_is_persistent_deduplicated_and_needs_no_embedding_service() {
+    let fixture = Fixture::new("http://localhost:1/v1", "auto");
+    let source = "短文档开头，负责人小林。尾部验证码 TAIL-SHORT-8972";
+    let draft = crate::models::RagFileDraft { conversation_id: fixture.request.conversation_id.clone(), name: "short.txt".into(), mime: "text/plain".into(), size: source.len() as i64, content: source.into(), model_config_id: fixture.request.model_config_id.clone() };
+    let file = crate::rag::index_with_state(&fixture.state, draft.clone(), |_| {}).await.unwrap();
+    assert_eq!(file.status, "fulltext");
+    let reused = crate::rag::index_with_state(&fixture.state, draft, |_| {}).await.unwrap();
+    assert_eq!(file.id, reused.id);
+    let reopened = crate::db::Database::open(fixture.root.join("data.sqlite3")).unwrap();
+    assert_eq!(reopened.load_document_chunks(&fixture.request.conversation_id).unwrap()[0].text, source);
+    drop(reopened);
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let context = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "负责人是谁", "system", true).await.unwrap();
+    assert!(context.contains(source));
+    assert_eq!(budget.steps, 0);
+    let mut constrained = model.clone();
+    constrained.max_tokens = Some(constrained.context_window.saturating_sub(512));
+    let error = super::documents::prepare(&fixture.state, &fixture.request, &constrained, &mut budget, "负责人是谁", "system", true).await.unwrap_err();
+    assert!(error.to_string().contains("上下文不足"));
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_missing_embedding_configuration_fails_without_partial_index() {
+    let fixture = Fixture::new("http://localhost:1/v1", "auto");
+    let draft = crate::models::RagFileDraft { conversation_id: fixture.request.conversation_id.clone(), name: "long.txt".into(), mime: "text/plain".into(), size: 30000, content: "长文档".repeat(10000), model_config_id: fixture.request.model_config_id.clone() };
+    let error = crate::rag::index_with_state(&fixture.state, draft, |_| {}).await.unwrap_err();
+    assert!(error.to_string().contains("配置嵌入模型"));
+    assert!(fixture.state.db.lock().await.list_rag_files(&fixture.request.conversation_id).unwrap().is_empty());
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_whole_summary_reads_every_chunk_and_resume_reuses_completed_analysis() {
+    let chunks = (0..125).map(|index| format!("独立任务编号{index}：{} 尾部标记TASK-{index}", "资料正文".repeat(100))).collect::<Vec<_>>();
+    let parts = chunks.iter().enumerate().map(|(index, text)| format!("【large.txt #{}】\n{text}", index + 1)).collect::<Vec<_>>();
+    let groups = super::documents::pack(&parts, 4000);
+    let server = MockModel::start(groups.iter().enumerate().map(|(i, _)| (vec![format!("分组{i}事实及来源【large.txt】")], 0)).collect());
+    let fixture = Fixture::new(&server.url, "auto");
+    fixture.state.db.lock().await.replace_rag_file(crate::db::RagFileReplacement {
+        conversation_id: &fixture.request.conversation_id, name: "large.txt", mime: "text/plain", size: 100000, content_hash: "summary-fixture", chunks: &chunks,
+        embeddings: &vec![Vec::new(); chunks.len()], embedding_model: "fulltext",
+    }).unwrap();
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let waiting = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", false).await.unwrap();
+    assert!(waiting.contains("审核"));
+    assert_eq!(budget.steps, 0);
+    let summary = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", true).await.unwrap();
+    assert!(summary.contains("全部 125 个分块"));
+    let cached = super::documents::prepare(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", "system", true).await.unwrap();
+    assert_eq!(summary, cached);
+    assert_eq!(budget.steps as usize, groups.len());
+    let requests = server.worker.join().unwrap();
+    let all = requests.iter().map(|request| request["messages"][1]["content"].as_str().unwrap()).collect::<Vec<_>>().join("\n");
+    for index in 0..125 { assert!(all.contains(&format!("TASK-{index}"))); }
+    assert!(requests.iter().all(|request| request["max_tokens"].as_u64().unwrap() <= 900));
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_hierarchical_summary_resumes_after_budget_pause_without_replaying_completed_batches() {
+    let mut turns = (0..8).map(|index| (vec![format!("分组{index}：{}", "事实".repeat(400))], 0)).collect::<Vec<_>>();
+    turns.extend(vec![(vec!["已合并并保留来源的全部事项".into()], 0); 3]);
+    let server = MockModel::start(turns);
+    let fixture = Fixture::new(&server.url, "auto");
+    let mut model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    model.context_window = 8192;
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    budget.limits.max_steps = 3;
+    let parts = (0..8).map(|index| format!("原文组{index}：{}", "正文".repeat(1000))).collect::<Vec<_>>();
+    let error = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts.clone(), 512, "全部八组").await.unwrap_err();
+    assert!(error.to_string().contains("任务预算"));
+    assert_eq!(budget.steps, 3);
+    budget.limits.max_steps = 64;
+    let result = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts, 512, "全部八组").await.unwrap();
+    assert!(result.contains("全部八组"));
+    assert!(crate::rag::text_tokens(&result) < 512);
+    assert_eq!(budget.steps, 11);
+    assert_eq!(server.worker.join().unwrap().len(), 11);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_truncated_analysis_is_not_cached_or_presented_as_complete() {
+    let server = MockModel::start(vec![(vec!["仅分析了开头".into(), "FINISH_LENGTH".into()], 0)]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let error = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", vec!["全文资料".into()], 512, "所有分块").await.unwrap_err();
+    assert!(error.to_string().contains("单次长度上限"));
+    assert!(fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap().iter().all(|step| step.kind != "document_summary"));
+    assert_eq!(server.worker.join().unwrap().len(), 1);
+    fixture.cleanup();
 }
 async fn wait_until<F, Fut>(mut check: F)
 where

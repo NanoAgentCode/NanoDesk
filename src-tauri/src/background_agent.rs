@@ -7,6 +7,7 @@ pub(crate) mod commands;
 mod lifecycle;
 mod executor;
 mod context;
+mod documents;
 mod prompt_context;
 pub(crate) mod planning;
 mod continuation;

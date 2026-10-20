@@ -1,6 +1,6 @@
 import { useBackgroundAgents } from "./chat/useBackgroundAgents";
 import { useChatHistory } from "./chat/useChatHistory";
-import { buildDocumentMessage } from "../lib/documentChat";
+import { buildDocumentReference } from "../lib/documentChat";
 import {
   mergeBackgroundMessages,
   type BackgroundAgentDecision,
@@ -110,6 +110,14 @@ export function useChat({
 
   // ── State owned by useChat ──
   const [localBusy, setBusy] = useState(false);
+  const [documentPreparationError, setDocumentPreparationError] = useState("");
+  useEffect(() => {
+    let disposed = false;
+    const subscription = listen<{conversation_id: string; name: string; completed: number; total: number; phase: string}>("document-index-progress", ({payload}) => {
+      if (!disposed && payload.conversation_id === activeConversationIdRef.current) rag.setIndexingRagFileName(`${payload.name} · ${payload.completed}/${payload.total} 块`);
+    });
+    return () => { disposed = true; void subscription.then(stop => stop()).catch(console.error); };
+  }, []);
   const sendingRef = useRef(new Set<string>());
   const [sendingConversationIds, setSendingConversationIds] = useState<string[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
@@ -356,6 +364,8 @@ export function useChat({
 
     input.setChatInput("");
     setBusy(true);
+    setDocumentPreparationError("");
+    if (documentSource) setNotice("");
     let agentRun: AgentRun | null = null;
 
     try {
@@ -369,11 +379,19 @@ export function useChat({
       const projectForRequest = projects.resolveConversationProject(conversationId, projectHint);
       const persistedMessages = await listMessages(conversationId);
       const firstDocumentMessage = documentSource && persistedMessages.length === 0;
-      if (firstDocumentMessage) await renameConversation(conversationId, documentSource.name);
+      if (documentSource) {
+        if (firstDocumentMessage) await renameConversation(conversationId, documentSource.name);
+        rag.setIndexingRagFileName(documentSource.name);
+        try {
+          await indexRagFile({ conversation_id: conversationId, name: documentSource.name, mime: "text/plain", size: new TextEncoder().encode(documentSource.content).length, content: documentSource.content, model_config_id: activeModelId });
+          const files = await listRagFiles(conversationId);
+          if (activeConversationIdRef.current === conversationId) rag.setRagFiles(files);
+        } finally { rag.setIndexingRagFileName(""); }
+      }
       const userMessage = await appendMessage({
         conversation_id: conversationId,
         role: "user",
-        content: firstDocumentMessage ? buildDocumentMessage(documentSource, content) : content,
+        content: firstDocumentMessage ? buildDocumentReference(documentSource.name, content) : content,
         metadata: {
           ...(memoryRoute.kind === "memory" || firstDocumentMessage ? { exclude_from_profile: true } : {}),
           ...(routingDecision ? { model_routing: routingDecision } : {})
@@ -440,6 +458,10 @@ export function useChat({
           output_summary: String(error)
         });
         void safeFinishAgentRun(agentRun.id, "failed", String(error));
+      }
+      if (documentSource && !agentRun) {
+        input.setChatInput(textContent);
+        setDocumentPreparationError(String(error).replace(/^Error: /, ""));
       }
       setNotice(formatUserFacingError(error));
       if (typeof assistantText === "string") throw error;
@@ -699,6 +721,7 @@ export function useChat({
 
   // ── Compose return value ──
   return {
+    documentPreparationError,
     // Conversations
     conversations: conv.conversations,
     setConversations: conv.setConversations,

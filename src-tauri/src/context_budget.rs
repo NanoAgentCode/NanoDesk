@@ -8,6 +8,10 @@ const MAX_OUTPUT_RESERVE: u32 = 8_192;
 const MIN_RECENT_MESSAGES: usize = 6;
 pub(crate) const SUMMARY_OUTPUT_TOKENS: u32 = 1_200;
 
+pub(crate) fn model_input_budget(context_window: u32, max_tokens: Option<u32>) -> u32 {
+    resolve_token_budget(context_window, max_tokens, "", "").input_budget
+}
+
 struct TokenBudget {
     context_window: u32,
     output_reserve: u32,

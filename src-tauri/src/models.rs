@@ -407,6 +407,8 @@ fn default_routing_score() -> u8 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
     pub content: String,
+    #[serde(skip)]
+    pub finish_reason: Option<String>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
 }

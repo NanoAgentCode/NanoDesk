@@ -70,6 +70,7 @@ pub(super) struct ModelListItem {
 #[derive(Debug, Deserialize)]
 pub(super) struct OpenAiChoice {
     pub(super) message: ChatMessage,
+    pub(super) finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,6 +112,7 @@ pub(super) struct AnthropicMessage {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct AnthropicChatResponse {
+    pub(super) stop_reason: Option<String>,
     pub(super) content: Vec<AnthropicContentBlock>,
     pub(super) usage: Option<AnthropicUsage>,
 }

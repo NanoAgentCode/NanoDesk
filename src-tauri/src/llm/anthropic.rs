@@ -58,6 +58,7 @@ pub(super) async fn send_anthropic_chat_completion(
 
     Ok(ChatResponse {
         content,
+        finish_reason: parsed.stop_reason,
         input_tokens: usage.as_ref().map(|usage| usage.input_tokens),
         output_tokens: usage.as_ref().map(|usage| usage.output_tokens),
     })
