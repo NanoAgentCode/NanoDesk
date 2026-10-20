@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   deleteRagFile,
   indexRagFile,
@@ -22,26 +22,34 @@ export interface UseRagFilesReturn {
   handleDeleteRagFile: (id: string, conversationId: string) => Promise<void>;
 }
 
-export function useRagFiles(setNotice: (message: string) => void): UseRagFilesReturn {
+export function useRagFiles(setNotice: (message: string) => void, conversationId: string): UseRagFilesReturn {
+  const scope = useRef({ id: conversationId, revision: 0 });
+  if (scope.current.id !== conversationId) scope.current = { id: conversationId, revision: scope.current.revision + 1 };
   const [ragFiles, setRagFiles] = useState<RagFile[]>([]);
   const [isRagDragging, setIsRagDragging] = useState(false);
   const [indexingRagFileName, setIndexingRagFileName] = useState("");
+  useEffect(() => () => { scope.current.revision++; }, []);
   const pendingConversation = ragFiles.find(file => ["queued", "preparing", "reducing"].includes(file.preparation?.phase || ""))?.conversation_id;
   useEffect(() => {
     if (!pendingConversation) return;
     let disposed = false;
     const timer = setInterval(() => {
+      const revision = scope.current.revision;
       void listRagFiles(pendingConversation).then(files => {
-        if (!disposed) setRagFiles(current => current.length > 0 && current.every(file => file.conversation_id === pendingConversation) ? files : current);
+        if (!disposed && scope.current.id === pendingConversation && scope.current.revision === revision) setRagFiles(current => current.length > 0 && current.every(file => file.conversation_id === pendingConversation) ? files : current);
       }).catch(console.error);
     }, 2000);
     return () => { disposed = true; clearInterval(timer); };
   }, [pendingConversation]);
 
   async function refreshRagFiles(conversationId: string) {
+    if (scope.current.id !== conversationId) return;
+    const revision = ++scope.current.revision;
     try {
-      setRagFiles(await listRagFiles(conversationId));
+      const files = await listRagFiles(conversationId);
+      if (scope.current.revision === revision) setRagFiles(files);
     } catch (error) {
+      if (scope.current.revision !== revision) return;
       console.error("Failed to list RAG files:", error);
       setRagFiles([]);
     }
@@ -81,7 +89,7 @@ export function useRagFiles(setNotice: (message: string) => void): UseRagFilesRe
   }
 
   return {
-    ragFiles,
+    ragFiles: ragFiles.filter(file => file.conversation_id === conversationId),
     setRagFiles,
     isRagDragging,
     setIsRagDragging,

@@ -368,6 +368,7 @@ where
             .start_profile_foreground_lease(&lease, 30)?;
         let mut content = String::new();
         let mut reasoning = String::new();
+        let mut publish_gate = super::stream_publish::StreamPublishGate::default();
         let stream_base_ms = budget.elapsed_ms;
         let stream_result = {
             let future = super::continuation::stream(
@@ -393,11 +394,13 @@ where
                         }
                         _ => (),
                     }
-                    if let Some(message) = snapshot.stream_message.as_mut() {
-                        message.content = crate::task_summary::visible_content(&content);
+                    if publish_gate.ready(stream_started.elapsed()) {
+                        if let Some(message) = snapshot.stream_message.as_mut() {
+                            message.content = crate::task_summary::visible_content(&content);
+                        }
+                        snapshot.reasoning = reasoning.clone();
+                        emit(snapshot.clone());
                     }
-                    snapshot.reasoning = reasoning.clone();
-                    emit(snapshot.clone());
                     Ok(())
                 },
             );
@@ -414,6 +417,13 @@ where
                 }
             }
         };
+        // Flush even on cancellation, timeout or error: the last deltas may have
+        // arrived inside the observer interval and must remain visible.
+        if let Some(message) = snapshot.stream_message.as_mut() {
+            message.content = crate::task_summary::visible_content(&content);
+        }
+        snapshot.reasoning = reasoning.clone();
+        emit(snapshot.clone());
         budget.elapsed_ms += stream_started.elapsed().as_millis() as u64;
         if stream_result.as_ref().err().is_some_and(|e| e.to_string().contains("任务预算已达到时间")) { budget.elapsed_ms = budget.elapsed_ms.max(budget.limits.max_seconds * 1000); }
         state.runtime.lock().await.put_task_budget(&request.run_id, &budget)?;

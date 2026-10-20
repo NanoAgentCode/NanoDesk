@@ -79,10 +79,8 @@ export function useAssistantHandoff(chat: UseChatReturn, projects: UseProjectsRe
           return;
         }
         const text = [request.text.trim(), request.attachmentsReady ? chat.chatInput.trim() : ""].filter(Boolean).join("\n\n") || "请分析上传的文件。";
-        await Promise.all([
-          chat.handleAssistantMessage(text),
-          emitTo("assistant", ASSISTANT_REPLY_EVENT, { id: request.id })
-        ]);
+        await chat.handleAssistantMessage(text);
+        await emitTo("assistant", ASSISTANT_REPLY_EVENT, { id: request.id });
       } catch (error) {
         processing.current = false;
         notice(String(error));

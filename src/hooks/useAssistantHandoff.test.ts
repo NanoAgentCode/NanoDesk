@@ -24,6 +24,26 @@ describe("assistant background submission", () => {
     mocks.emitTo.mockResolvedValue(undefined);
     mocks.show.mockResolvedValue(undefined);
   });
+  it.each([false, true])("waits for submission before replying, failure=%s", async (fails) => {
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const submission = new Promise<void>((ok, fail) => { resolve = ok; reject = fail; });
+    mocks.pending = { id: "deferred", text: "hello", targetId: "target" };
+    const chat = {
+      activeConversationId: "target", activeConversation: { id: "target" },
+      busy: false, chatInput: "", pendingImageAttachments: [], speech: { isBusy: () => false },
+      resolveConversationModelId: () => "model", handleAssistantMessage: vi.fn(() => submission)
+    } as unknown as UseChatReturn;
+    const model = { models: [{ id: "model" }], routing: { enabled: false, fixedModelIds: ["model"] } } as unknown as UseModelReturn;
+    useAssistantHandoff(chat, {} as UseProjectsReturn, model, vi.fn(), vi.fn());
+    mocks.effects[1]();
+    expect(chat.handleAssistantMessage).toHaveBeenCalledWith("hello");
+    expect(mocks.emitTo).not.toHaveBeenCalled();
+    if (fails) reject(new Error("提交失败")); else resolve();
+    await vi.waitFor(() => expect(mocks.emitTo).toHaveBeenCalledWith("assistant", "assistant:reply",
+      fails ? { id: "deferred", error: "提交失败" } : { id: "deferred" }));
+    expect(mocks.emitTo).toHaveBeenCalledTimes(1);
+  });
   it.each([null, "existing", "project"].flatMap((id) => [[id, false, false], [id, true, false], [id, true, true]] as const))("sends to %s with files=%s failure=%s without showing the main window", async (conversationId, withFiles, uploadFailed) => {
     const target = { id: conversationId || "new", title: "测试", archived: false, model_config_id: "model" };
     mocks.list.mockResolvedValue([target]);

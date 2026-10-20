@@ -1,5 +1,8 @@
 import { useBackgroundAgents } from "./chat/useBackgroundAgents";
 import { useChatHistory } from "./chat/useChatHistory";
+import { createCoalescedRefresh } from "../lib/coalescedRefresh";
+import { createDocumentPreparer } from "../lib/documentPreparation";
+import { submitConversationTask } from "../lib/taskSubmission";
 import { buildDocumentReference } from "../lib/documentChat";
 import {
   mergeBackgroundMessages,
@@ -52,7 +55,9 @@ import { useConversations } from "./useConversations";
 import { useRagFiles } from "./useRagFiles";
 import { useChatInput } from "./useChatInput";
 import { buildMessageContentWithImageAttachments, useChatAttachments } from "./useChatAttachments";
-import type { AgentClarificationAnswer, AgentClarificationRequest, AgentRun, ProjectEntry } from "../types";
+import type { AgentClarificationAnswer, AgentClarificationRequest, AgentRun, ProjectEntry, ProjectFileEntry } from "../types";
+
+const EMPTY_PROJECT_FILES: ProjectFileEntry[] = [];
 
 
 
@@ -75,6 +80,9 @@ export function useChat({
   chatVisible = true
 }: UseChatArgs): UseChatReturn {
   const activeConversationIdRef = useRef("");
+  const refreshListsRef = useRef(createCoalescedRefresh());
+  const snapshotStateRef = useRef(new Map<string, string>());
+  const prepareDocumentRef = useRef(createDocumentPreparer(indexRagFile));
   const temporaryReturnsRef = useRef(new Map<string, {parent:string;expires:number}>());
   useEffect(() => {
     let active = true;
@@ -99,7 +107,7 @@ export function useChat({
 
   // ── Sub-hooks ──
   const conv = useConversations(setNotice, model, projects, showModelConfig, activeSettingsTab);
-  const rag = useRagFiles(setNotice);
+  const rag = useRagFiles(setNotice, conv.activeConversationId);
   const input = useChatInput();
   const attachments = useChatAttachments({
     getProjectPath: getAttachmentProjectPath,
@@ -241,13 +249,21 @@ export function useChat({
   }
 
   async function refreshConversationLists() {
-    const [next, archived] = await Promise.all([listConversations(), listArchivedConversations()]);
-    conv.setConversations(next);
-    conv.setArchivedConversations(archived);
-    await projects.refreshProjectConversationMap();
+    await refreshListsRef.current(async () => {
+      const [next, archived] = await Promise.all([listConversations(), listArchivedConversations(), projects.refreshProjectConversationMap()]);
+      conv.setConversations(next);
+      conv.setArchivedConversations(archived);
+    });
   }
 
   function receiveBackgroundSnapshot(snapshot: BackgroundAgentSnapshot) {
+    const key = `${snapshot.status}:${snapshot.executing_tool_message_id || ""}:${snapshot.stream_message?.id || ""}`;
+    const changed = snapshotStateRef.current.get(snapshot.run_id) !== key;
+    snapshotStateRef.current.set(snapshot.run_id, key);
+    if (snapshotStateRef.current.size > 128) {
+      const oldest = snapshotStateRef.current.keys().next().value;
+      if (oldest) snapshotStateRef.current.delete(oldest);
+    }
     if (snapshot.conversation_id === activeConversationIdRef.current) {
       if (snapshot.stream_message) {
         setMessages((current) => mergeBackgroundMessages(current, activeConversationIdRef.current, snapshot));
@@ -256,13 +272,13 @@ export function useChat({
             ...current,
             [snapshot.stream_message!.id]: snapshot.reasoning
           }));
-      } else {
+      } else if (changed) {
         void loadMessages(snapshot.conversation_id);
         setInterruptingGeneration(false);
       }
       if (snapshot.error) setNotice(formatUserFacingError(snapshot.error, "任务执行失败，请重试。"));
     }
-    if (!snapshot.stream_message) void refreshConversationLists().catch(console.error);
+    if (!snapshot.stream_message && changed) void refreshConversationLists().catch(console.error);
   }
   async function launchBackground(
     run: AgentRun,
@@ -270,8 +286,17 @@ export function useChat({
     modelId: string,
     replaceMessageId: string | null = null
   ) {
-    await background.launch(buildExecutionRequest(run, project, modelId, replaceMessageId));
-    if (activeConversationIdRef.current === run.conversation_id) await loadMessages(run.conversation_id);
+    await submitConversationTask({
+      request: buildExecutionRequest(run, project, modelId, replaceMessageId),
+      start: background.launch,
+      refresh: async () => {
+        await Promise.all([
+          activeConversationIdRef.current === run.conversation_id ? loadMessages(run.conversation_id) : Promise.resolve(),
+          refreshConversationLists()
+        ]);
+      },
+      onRefreshError: (error) => { console.error("Task accepted but refresh failed", error); setNotice("任务已提交，界面刷新失败，请重新打开会话查看。"); }
+    });
   }
 
   async function decide(
@@ -294,7 +319,10 @@ export function useChat({
   // ── Send message ──
   async function handleSendMessage(assistantText?: string) {
     const conversationKey = conv.activeConversationId;
-    if (sendingRef.current.has(conversationKey)) return;
+    if (sendingRef.current.has(conversationKey)) {
+      if (typeof assistantText === "string") throw new Error("当前会话正在提交消息，请稍后重试。");
+      return;
+    }
     sendingRef.current.add(conversationKey);
     setSendingConversationIds([...sendingRef.current]);
     try { await sendMessageInner(assistantText); }
@@ -304,13 +332,18 @@ export function useChat({
   async function sendMessageInner(assistantText?: string) {
     if (documentSource === null) {
       setNotice("请先等待文档读取成功。");
+      if (typeof assistantText === "string") throw new Error("请先等待文档读取成功。");
       return;
     }
     if (attachmentBusyRef.current || speech.isBusy()) {
       setNotice("请先等待附件或语音处理完成，或取消语音输入。");
+      if (typeof assistantText === "string") throw new Error("请先等待附件或语音处理完成，或取消语音输入。");
       return;
     }
-    if (localBusy) return;
+    if (localBusy) {
+      if (typeof assistantText === "string") throw new Error("正在提交消息，请稍后重试。");
+      return;
+    }
     const textContent = (typeof assistantText === "string" ? assistantText : input.chatInput).trim();
     const content = buildMessageContentWithImageAttachments(textContent, attachments.pendingImageAttachments);
     const originConversationId = conv.activeConversationId;
@@ -359,6 +392,7 @@ export function useChat({
       (!activeModelId && !memoryDraft)
     ) {
       setNotice(activeModelId ? "" : "请先保存并选择一个模型");
+      if (typeof assistantText === "string") throw new Error(!textContent && !attachments.pendingImageAttachments.length ? "消息不能为空。" : "请先保存并选择一个模型");
       return;
     }
 
@@ -383,7 +417,9 @@ export function useChat({
         if (firstDocumentMessage) await renameConversation(conversationId, documentSource.name);
         rag.setIndexingRagFileName(documentSource.name);
         try {
-          await indexRagFile({ conversation_id: conversationId, name: documentSource.name, mime: "text/plain", size: new TextEncoder().encode(documentSource.content).length, content: documentSource.content, model_config_id: activeModelId });
+          await prepareDocumentRef.current({ conversationId, modelConfigId: activeModelId,
+            modelRevision: JSON.stringify(model.models.map(item => [item.id, item.updated_at])),
+            source: documentSource, existingFiles: rag.ragFiles });
           const files = await listRagFiles(conversationId);
           if (activeConversationIdRef.current === conversationId) rag.setRagFiles(files);
         } finally { rag.setIndexingRagFileName(""); }
@@ -447,7 +483,6 @@ export function useChat({
 
       if (!agentRun) throw new Error("无法创建后台任务。");
       await launchBackground(agentRun, projectForRequest, activeModelId);
-      await refreshConversationLists();
     } catch (error) {
       if (agentRun) {
         void safeRecordAgentStep({
@@ -587,7 +622,8 @@ export function useChat({
   function getConversationProjectFiles() {
     const projectHint = conv.getConversationProjectHint();
     const resolvedProject = projects.resolveConversationProject(conv.activeConversationId, projectHint);
-    return projects.getProjectFilesForPath(resolvedProject?.path || projectHint?.path);
+    const files = projects.getProjectFilesForPath(resolvedProject?.path || projectHint?.path);
+    return files.length ? files : EMPTY_PROJECT_FILES;
   }
 
   // ── Unified attachment handlers ──
@@ -658,10 +694,10 @@ export function useChat({
                 ? await extractUploadedFile({ name, content_base64: await fileToDataUrl(source.file) })
                 : await readAbsoluteFile(source.path);
               if (!active()) return;
-              await indexRagFile({
-                conversation_id: conversationId, name,
+              await prepareDocumentRef.current({
+                conversationId, source: { name, content: extracted.content }, modelConfigId,
                 mime: source.kind === "file" ? source.file.type || "text/plain" : "text/plain",
-                size: extracted.size, content: extracted.content, model_config_id: modelConfigId
+                size: extracted.size, existingFiles: rag.ragFiles
               });
               result.document++;
             } catch (error) { result.errors.push(`${name}：${String(error)}`); }

@@ -6,6 +6,7 @@ mod actions;
 pub(crate) mod commands;
 mod lifecycle;
 mod executor;
+mod stream_publish;
 mod context;
 pub(crate) mod documents;
 mod prompt_context;

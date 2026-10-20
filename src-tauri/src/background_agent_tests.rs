@@ -119,6 +119,27 @@ impl MockModel {
         Self { url, worker, peak_requests }
     }
 }
+#[tokio::test]
+async fn coalesced_stream_flushes_complete_text_and_reasoning() {
+    let report = completed_report();
+    let mut chunks = vec!["REASONING:完整思考".to_string()];
+    chunks.extend(report.chars().map(|character| character.to_string()));
+    let server = MockModel::start(vec![(chunks, 0)]);
+    let fixture = Fixture::new(&server.url, "full");
+    let control = fixture.state.background_agents.register(&fixture.request.run_id, &fixture.request.conversation_id).unwrap();
+    let mut snapshots = Vec::new();
+    drive(&fixture.state, fixture.request.clone(), control, None, |snapshot| snapshots.push(snapshot)).await.unwrap();
+    let final_stream = snapshots.iter().rev().find(|snapshot| snapshot.stream_message.is_some()).unwrap();
+    assert_eq!(final_stream.stream_message.as_ref().unwrap().content, crate::task_summary::visible_content(&report));
+    assert_eq!(final_stream.reasoning, "完整思考");
+    let messages = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    let reply = messages.iter().rev().find(|message| message.role == "assistant").unwrap();
+    assert_eq!(reply.content, final_stream.stream_message.as_ref().unwrap().content);
+    assert_eq!(reply.metadata.as_ref().unwrap().assistant_reasoning.as_deref(), Some("完整思考"));
+    assert_eq!(server.worker.join().unwrap().len(), 1);
+    fixture.cleanup();
+}
+
 struct Fixture {
     root: PathBuf,
     state: Arc<AppState>,
