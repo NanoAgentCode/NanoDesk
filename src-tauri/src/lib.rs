@@ -27,6 +27,7 @@ mod project_files;
 mod project_index;
 mod project_retrieval;
 mod rag;
+mod rag_retrieval;
 mod runtime;
 mod runtime_events;
 mod settings;

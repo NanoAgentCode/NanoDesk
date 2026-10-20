@@ -197,7 +197,7 @@ pub(crate) async fn search_rag_with_state(
         }
         config
     };
-    let embeddings = create_embeddings(&config, vec![query]).await?;
+    let embeddings = create_embeddings(&config, vec![query.clone()]).await?;
     validate_vectors(&embeddings, 1, &mut None)?;
     let query_embedding = &embeddings[0];
 
@@ -205,7 +205,7 @@ pub(crate) async fn search_rag_with_state(
         .db
         .lock()
         .await
-        .search_rag_chunks(&conversation_id, query_embedding, limit.unwrap_or(6))
+        .search_rag_hybrid(&conversation_id, &query, query_embedding, limit.unwrap_or(6))
 }
 
 pub(crate) fn rag_content_hash(name: &str, content: &str) -> String {

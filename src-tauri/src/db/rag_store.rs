@@ -25,6 +25,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hybrid_search_recalls_exact_identifiers_and_chinese_terms_without_scope_leaks() {
+        let db = Database::open(std::path::PathBuf::from(":memory:")).unwrap();
+        let conversation = db.create_conversation(crate::models::ConversationDraft { title: None, model_config_id: None, project_path: None }).unwrap();
+        let other = db.create_conversation(crate::models::ConversationDraft { title: None, model_config_id: None, project_path: None }).unwrap();
+        for (scope, name, text, vector) in [
+            (&conversation.id, "semantic.txt", "项目上线的总体安排", vec![1.0, 0.0]),
+            (&conversation.id, "exact.txt", "ZX-8972 专项：供应链风险整改", vec![0.0, 1.0]),
+            (&other.id, "private.txt", "ZX-8972 供应链风险", vec![1.0, 0.0]),
+        ] {
+            db.replace_rag_file(RagFileReplacement { conversation_id: scope, name, mime: "text/plain", size: 10, content_hash: name, chunks: &[text.into()], embeddings: &[vector], embedding_model: "test" }).unwrap();
+        }
+        for query in ["ZX-8972", "供应链风险"] {
+            let hits = db.search_rag_hybrid(&conversation.id, query, &[1.0, 0.0], 6).unwrap();
+            assert_eq!(hits[0].file_name, "exact.txt");
+            assert_eq!(hits.len(), 2);
+            assert!(hits.iter().all(|hit| hit.file_name != "private.txt"));
+            assert_eq!(hits.iter().map(|hit| &hit.chunk_id).collect::<std::collections::HashSet<_>>().len(), hits.len());
+            assert!(hits.iter().all(|hit| hit.score.is_finite()));
+        }
+        let semantic = db.search_rag_hybrid(&conversation.id, "不存在的词语", &[1.0, 0.0], 1).unwrap();
+        assert_eq!(semantic[0].file_name, "semantic.txt");
+        assert!(db.search_rag_hybrid(&conversation.id, "ZX-8972", &[1.0], 6).is_err());
+        db.replace_rag_file(RagFileReplacement {
+            conversation_id: &conversation.id, name: "distractors.txt", mime: "text/plain", size: 200,
+            content_hash: "distractors", chunks: &(0..24).map(|index| format!("无关语义候选 {index}")).collect::<Vec<_>>(),
+            embeddings: &vec![vec![1.0, 0.0]; 24], embedding_model: "test",
+        }).unwrap();
+        let exact = db.search_rag_hybrid(&conversation.id, "ZX-8972", &[1.0, 0.0], 1).unwrap();
+        assert_eq!(exact[0].file_name, "exact.txt", "关键词必须能补回未进入向量候选集的分块");
+    }
+
+    #[test]
     fn document_summary_cache_is_initialized_with_document_storage() {
         let db = Database::open(std::path::PathBuf::from(":memory:")).unwrap();
         let exists: i64 = db.conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='document_summary_nodes'", [], |row| row.get(0)).unwrap();
@@ -269,6 +301,14 @@ impl Database {
         Ok(file)
     }
 
+    pub fn search_rag_hybrid(&self, conversation_id: &str, query: &str, query_embedding: &[f32], limit: i64) -> AppResult<Vec<RagChunkMatch>> {
+        let vector = self.search_rag_chunks(conversation_id, query_embedding, 20)?;
+        let ready = self.list_rag_files(conversation_id)?.into_iter().filter(|file| file.status == "ready").map(|file| file.id).collect::<std::collections::HashSet<_>>();
+        let chunks = self.load_document_chunks(conversation_id)?.into_iter().filter(|chunk| ready.contains(&chunk.file_id)).collect::<Vec<_>>();
+        let lexical = crate::rag_retrieval::lexical_ranks(&chunks, query);
+        Ok(crate::rag_retrieval::fuse(vector, &chunks, lexical, limit.clamp(1, 20) as usize))
+    }
+
     pub fn search_rag_chunks(
         &self,
         conversation_id: &str,
@@ -308,6 +348,7 @@ impl Database {
                 .score
                 .partial_cmp(&left.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| left.chunk_id.cmp(&right.chunk_id))
         });
         matches.truncate(limit.clamp(1, 20) as usize);
         Ok(matches)
