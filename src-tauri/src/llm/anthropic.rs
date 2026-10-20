@@ -22,7 +22,8 @@ pub(super) async fn send_anthropic_chat_completion(
         request.top_p,
         request.reasoning_effort,
     );
-    let payload = build_anthropic_payload(
+    let glm_effort = config.model.to_ascii_lowercase().starts_with("glm-5.3").then_some(generation.reasoning_effort).flatten();
+    let mut payload = build_anthropic_payload(
         config.model,
         request.messages,
         generation.temperature,
@@ -30,6 +31,7 @@ pub(super) async fn send_anthropic_chat_completion(
         generation.max_tokens.unwrap_or(4096),
         generation.top_p,
     );
+    payload.reasoning_effort = glm_effort;
 
     let response = reqwest::Client::new()
         .post(endpoint)
@@ -84,7 +86,8 @@ where
         request.top_p,
         request.reasoning_effort,
     );
-    let payload = build_anthropic_payload(
+    let glm_effort = config.model.to_ascii_lowercase().starts_with("glm-5.3").then_some(generation.reasoning_effort).flatten();
+    let mut payload = build_anthropic_payload(
         config.model,
         request.messages,
         generation.temperature,
@@ -92,6 +95,7 @@ where
         generation.max_tokens.unwrap_or(4096),
         generation.top_p,
     );
+    payload.reasoning_effort = glm_effort;
     let builder = reqwest::Client::new()
         .post(endpoint)
         .header("content-type", "application/json")

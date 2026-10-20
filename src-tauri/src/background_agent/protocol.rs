@@ -23,6 +23,8 @@ pub struct DocumentAnalysisProgress {
     pub completed: usize,
     pub total: usize,
     pub reused: usize,
+    pub requests: usize,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

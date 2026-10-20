@@ -7,6 +7,7 @@ export default function DocumentAnalysisProgress({ progress }: { progress?: Anal
   return <section className="document-analysis-progress" role="status" aria-live="polite">
     <div><strong>{label}</strong><span>已完成 {completed}/{progress.total} 组{progress.reused > 0 ? ` · 复用 ${progress.reused} 组` : ""}</span></div>
     {progress.file_name && <small title={progress.file_name}>{progress.file_name}</small>}
+    {progress.detail && <small>{progress.detail}{progress.requests ? ` · 已请求 ${progress.requests} 次` : ""}</small>}
     <progress aria-label={`${label}分组进度`} max={progress.total} value={completed} />
   </section>;
 }

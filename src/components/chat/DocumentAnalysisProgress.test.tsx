@@ -18,4 +18,9 @@ describe("document analysis progress", () => {
     expect(renderToStaticMarkup(<DocumentAnalysisProgress />)).toBe("");
     expect(renderToStaticMarkup(<DocumentAnalysisProgress progress={{ ...progress, total: 0 }} />)).toBe("");
   });
+  it("shows internal requests while the outer group is still incomplete", () => {
+    const html = renderToStaticMarkup(<DocumentAnalysisProgress progress={{...progress, completed: 0, total: 1, reused: 0, requests: 2, detail: "摘要达到输出上限，增加额度后重试"}} />);
+    expect(html).toContain("已完成 0/1 组");
+    expect(html).toContain("摘要达到输出上限，增加额度后重试 · 已请求 2 次");
+  });
 });

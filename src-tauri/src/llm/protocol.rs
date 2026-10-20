@@ -102,6 +102,8 @@ pub(super) struct AnthropicChatRequest {
     pub(super) top_p: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

@@ -41,6 +41,7 @@ pub(super) fn build_anthropic_payload(
         temperature,
         top_p,
         stream,
+        reasoning_effort: None,
     }
 }
 

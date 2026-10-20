@@ -18,6 +18,8 @@ export interface DocumentAnalysisProgress {
   completed: number;
   total: number;
   reused: number;
+  requests?: number;
+  detail?: string | null;
 }
 export interface BackgroundAgentSnapshot {
   run_id: string;
