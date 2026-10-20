@@ -10,6 +10,7 @@ use std::path::PathBuf;
 struct MockModel {
     url: String,
     worker: std::thread::JoinHandle<Vec<serde_json::Value>>,
+    peak_requests: Arc<std::sync::atomic::AtomicUsize>,
 }
 impl MockModel {
     fn start(turns: Vec<(Vec<String>, u64)>) -> Self {
@@ -19,8 +20,12 @@ impl MockModel {
             listener.local_addr().unwrap().port()
         );
         listener.set_nonblocking(true).unwrap();
+        let peak_requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let peak = peak_requests.clone();
         let worker = std::thread::spawn(move || {
             let mut requests = Vec::new();
+            let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let mut replies = Vec::new();
             for (chunks, delay) in turns {
                 let deadline = std::time::Instant::now() + Duration::from_secs(10);
                 let mut socket = loop {
@@ -66,8 +71,20 @@ impl MockModel {
                     serde_json::from_slice(&request[offset..offset + size]).unwrap();
                 requests.push(payload.clone());
                 if payload["stream"] != true {
-                    let body=serde_json::json!({"choices":[{"message":{"role":"assistant","content":chunks.join("")},"finish_reason":if chunks.iter().any(|chunk| chunk == "FINISH_LENGTH") { "length" } else { "stop" }}]}).to_string();
-                    write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+                    let content = if chunks.first().map(String::as_str) == Some("DOCUMENT_FACT") {
+                        let source = payload["messages"][1]["content"].as_str().unwrap();
+                        format!("事实{}", source.split("TAIL-").nth(1).unwrap().chars().take_while(char::is_ascii_digit).collect::<String>())
+                    } else { chunks.join("") };
+                    let body=serde_json::json!({"choices":[{"message":{"role":"assistant","content":content},"finish_reason":if chunks.iter().any(|chunk| chunk == "FINISH_LENGTH") { "length" } else { "stop" }}]}).to_string();
+                    let active = active.clone();
+                    let peak = peak.clone();
+                    let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(count, Ordering::SeqCst);
+                    replies.push(std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(delay));
+                        active.fetch_sub(1, Ordering::SeqCst);
+                        write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+                    }));
                     continue;
                 }
                 let _=write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n");
@@ -90,9 +107,10 @@ impl MockModel {
                 }
                 let _ = write!(socket, "data: [DONE]\n\n");
             }
+            for reply in replies { reply.join().unwrap(); }
             requests
         });
-        Self { url, worker }
+        Self { url, worker, peak_requests }
     }
 }
 struct Fixture {
@@ -507,6 +525,89 @@ async fn document_whole_summary_reads_every_chunk_and_resume_reuses_completed_an
     let all = requests.iter().map(|request| request["messages"][1]["content"].as_str().unwrap()).collect::<Vec<_>>().join("\n");
     for index in 0..125 { assert!(all.contains(&format!("TASK-{index}"))); }
     assert!(requests.iter().all(|request| request["max_tokens"].as_u64().unwrap() <= model.max_tokens.unwrap_or(3000).min(3000) as u64));
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_summary_overlaps_independent_groups_with_bounded_concurrency_and_order() {
+    let server = MockModel::start((0..6).map(|index| (vec!["DOCUMENT_FACT".into()], if index % 3 == 0 { 200 } else { 20 })).collect());
+    let fixture = Fixture::new(&server.url, "auto");
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let parts = (0..6).map(|index| format!("【large.txt #{}】\n{}TAIL-{index}", index + 1, "正文".repeat(3500))).collect::<Vec<_>>();
+    let started = std::time::Instant::now();
+    let result = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts.clone(), 512, "全部六组").await.unwrap();
+    eprintln!("Six delayed summary requests completed in {:?}", started.elapsed());
+    let cached = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts, 512, "全部六组").await.unwrap();
+    assert_eq!(cached, result);
+    assert_eq!(budget.steps, 6);
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 6);
+    assert_eq!(server.peak_requests.load(Ordering::SeqCst), 3, "独立文档分组应并发执行且不超过三组");
+    let sources = requests.iter().map(|request| request["messages"][1]["content"].as_str().unwrap()).collect::<Vec<_>>().join("\n");
+    for index in 0..6 {
+        assert!(sources.contains(&format!("TAIL-{index}")));
+        if index > 0 { assert!(result.find(&format!("事实{}", index - 1)) < result.find(&format!("事实{index}"))); }
+    }
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_parallel_summary_keeps_completed_siblings_after_model_error() {
+    let server = MockModel::start(vec![
+        (vec!["已完成甲".into()], 150), (vec![], 0),
+        (vec!["已完成乙".into()], 30), (vec!["重试成功".into()], 0),
+    ]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    let parts = (0..3).map(|index| format!("【file #{index}】{}", "正文".repeat(3500))).collect::<Vec<_>>();
+    let error = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts.clone(), 512, "全部三组").await.unwrap_err();
+    assert!(error.to_string().contains("空内容"));
+    assert_eq!(budget.steps, 3);
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        let completed = runtime.list_steps(&fixture.request.run_id).unwrap().into_iter().filter(|step| step.kind == "document_summary" && step.status == "completed").count();
+        assert_eq!(completed, 2);
+        let saved = runtime.task_budget(&fixture.request.run_id).unwrap().unwrap();
+        assert_eq!(saved.output_tokens, budget.output_tokens);
+    }
+    let result = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts, 512, "全部三组").await.unwrap();
+    assert!(result.contains("已完成甲") && result.contains("已完成乙") && result.contains("重试成功"));
+    assert_eq!(budget.steps, 4);
+    assert_eq!(server.worker.join().unwrap().len(), 4);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn document_parallel_summary_respects_partial_wave_budget_and_reuses_duplicates() {
+    let server = MockModel::start(vec![(vec!["完整事实".into()], 30); 3]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    budget.limits.max_steps = 2;
+    let parts = (0..3).map(|index| format!("【file #{index}】{}", "正文".repeat(3500))).collect::<Vec<_>>();
+    let error = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts.clone(), 512, "全部三组").await.unwrap_err();
+    assert!(error.to_string().contains("任务预算"));
+    assert_eq!(budget.steps, 2);
+    assert_eq!(fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap().iter().filter(|step| step.kind == "document_summary").count(), 2);
+    budget.limits.max_steps = 3;
+    let result = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", parts, 512, "全部三组").await.unwrap();
+    assert!(result.contains("全部三组"));
+    assert_eq!(budget.steps, 3);
+    assert_eq!(server.worker.join().unwrap().len(), 3);
+    fixture.cleanup();
+
+    let server = MockModel::start(vec![(vec!["完整事实".into()], 0)]);
+    let fixture = Fixture::new(&server.url, "auto");
+    let model = fixture.state.db.lock().await.get_model_config(&fixture.request.model_config_id).unwrap();
+    let mut budget = fixture.state.runtime.lock().await.ensure_task_budget(&fixture.request.run_id, Some(&model.id), None).unwrap();
+    budget.limits.max_steps = 1;
+    let part = format!("【file #1】{}", "正文".repeat(3500));
+    let result = super::documents::reduce(&fixture.state, &fixture.request, &model, &mut budget, "总结全文", vec![part; 3], 512, "重复资料").await.unwrap();
+    assert_eq!(result.matches("完整事实").count(), 3);
+    assert_eq!(budget.steps, 1);
+    assert_eq!(server.worker.join().unwrap().len(), 1);
     fixture.cleanup();
 }
 
