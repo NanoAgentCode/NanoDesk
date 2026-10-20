@@ -1,10 +1,9 @@
-[source.crates-io]
-replace-with = "sjtu"
+[registries.crates-io]
+protocol = "sparse"
 
-[source.sjtu]
-registry = "sparse+https://mirrors.sjtug.sjtu.edu.cn/crates.io-index/"
+[http]
+# 降低 HTTP/2 帧错误的影响
+multiplexing = false
 
 [net]
-# 降低 HTTP/2 帧错误的影响
-http-version = "http1"
 retry = 5
