@@ -63,7 +63,13 @@ pub(crate) fn show_main_window(app: &AppHandle) -> Result<(), String> {
         .ok_or_else(|| "main window not found".to_string())?;
     window.show().map_err(|err| err.to_string())?;
     window.unminimize().map_err(|err| err.to_string())?;
-    window.set_focus().map_err(|err| err.to_string())
+    window.set_focus().map_err(|err| err.to_string())?;
+    for (label, document) in app.webview_windows() {
+        if label.starts_with("document-") {
+            document.hide().map_err(|err| err.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]

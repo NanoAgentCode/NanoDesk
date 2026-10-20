@@ -60,7 +60,6 @@ export default function DocumentChat({ path }: { path: string }) {
     try {
       if (chat.activeConversationId) await openDocumentConversation(chat.activeConversationId);
       else await showAppWindow();
-      await getCurrentWindow().minimize();
     } catch (error) { setNotice(String(error)); }
   }
 

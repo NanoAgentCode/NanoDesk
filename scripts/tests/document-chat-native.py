@@ -166,6 +166,9 @@ def main():
             doc.reload()
             doc.wait_for_load_state("networkidle")
             expect(doc.get_by_text("想了解这份文档的什么？", exact=True)).to_be_visible()
+            initial_size = invoke(doc, "plugin:window|inner_size")
+            assert initial_size == {"width": 764, "height": 1100}, initial_size
+            doc.screenshot(path=str(OUT / "document-chat-default-size.png"))
             doc.get_by_role("button", name="总结全文", exact=True).click()
             expect(doc.get_by_role("textbox", name="输入消息")).to_have_value("总结这份文档的核心内容")
             expect(doc.get_by_role("textbox", name="输入消息")).to_have_attribute("placeholder", "针对这份文档提问…")
@@ -211,6 +214,7 @@ def main():
             wait_until(lambda: not invoke(doc, "list_background_agents"))
             assert invoke(doc, "list_messages", {"conversationId": session["id"]})[-1]["content"]
             doc.get_by_role("button", name="主窗口继续", exact=True).click()
+            assert not invoke(doc, "plugin:window|is_visible"), "Document window must hide when main opens"
             expect(main_page.locator(".chat-message.user").first).to_contain_text("文档最后的验证码", timeout=15000)
             invoke(doc, "set_document_context_menu", {"enabled": True})
             registry_touched = True
@@ -314,6 +318,7 @@ def main():
             assert any("全部" in message["content"] and "分块" in message["content"] for message in final_prompt["messages"])
             large.screenshot(path=str(OUT / "document-rag-ready.png"))
             large.get_by_role("button", name="主窗口继续", exact=True).click()
+            assert not invoke(large, "plugin:window|is_visible"), "Document window must hide when main opens"
             expect(main_page.locator(".chat-message.user").first).to_contain_text(question, timeout=10000)
             main_page.get_by_role("textbox", name="输入消息").fill("尾部验证码再确认")
             main_page.get_by_role("button", name="发送", exact=True).click()

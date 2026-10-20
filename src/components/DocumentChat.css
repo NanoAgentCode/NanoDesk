@@ -2,10 +2,10 @@ body.document-chat-body, html.document-chat-document { min-width: 0; overflow: h
 html.document-chat-document #root { min-width: 0; }
 html.document-chat-document #nano-startup { display: none; }
 .document-chat { height: 100vh; display: flex; flex-direction: column; background: var(--chat-pane-bg); }
-.document-chat-source { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); }
+.document-chat-source { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); }
 .document-chat-source > svg { flex-shrink: 0; }
 .document-chat-source > div { flex: 1; min-width: 0; }
-.document-chat-source strong { display: block; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.document-chat-source strong { display: block; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
 .document-chat-source small { display: block; font-size: 10px; line-height: 1.5; margin-top: 3px; overflow-wrap: anywhere; }
 .document-chat-source > button { flex-shrink: 0; font-size: 11px; }
 .document-chat > .chat-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 14px 14px; }
@@ -17,15 +17,23 @@ html.document-chat-document #nano-startup { display: none; }
 .document-chat .chat-header-square { width: 28px; height: 28px; min-width: 28px; min-height: 28px; }
 .document-chat .chat-composer-toolbar, .document-chat .project-add-chat-btn { display: none; }
 .document-chat .chat-log { padding: 12px 0; }
+.document-chat .chat-message { font-size: 12px; line-height: 1.55; padding: 10px 12px; box-shadow: none; }
+.document-chat .chat-message h1 { font-size: 18px; }
+.document-chat .chat-message h2 { font-size: 16px; }
+.document-chat .chat-message h3 { font-size: 14px; }
+.document-chat .chat-message h1, .document-chat .chat-message h2, .document-chat .chat-message h3 { margin: 12px 0 6px; line-height: 1.4; }
+.document-chat .chat-message p { margin-bottom: 6px; }
+.document-chat .chat-message ul, .document-chat .chat-message ol { margin: 6px 0; padding-left: 18px; }
+.document-chat .chat-message li + li { margin-top: 2px; }
 .document-chat .chat-log-content { min-height: 100%; }
 .document-chat-welcome { margin: auto; padding: 24px 4px; text-align: center; }
-.document-chat-welcome p { color: var(--text-muted); font-size: 13px; margin: 0 0 14px; }
+.document-chat-welcome p { color: var(--text-muted); font-size: 12px; margin: 0 0 10px; }
 .document-chat-welcome > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-.document-chat-welcome button { padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 16px; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.document-chat-welcome button { padding: 5px 10px; border: 1px solid var(--border-color); border-radius: 16px; background: transparent; color: var(--text-secondary); font-size: 11px; cursor: pointer; }
 .document-chat-welcome button:hover, .document-chat-welcome button:focus-visible { color: var(--accent-blue); border-color: var(--accent-blue); }
 .document-chat .chat-input { flex-shrink: 0; border-color: var(--border-color); border-radius: 10px; box-shadow: none; background: var(--chat-input-bg); }
 .document-chat .chat-input:focus-within { border-color: var(--accent-blue); }
-.document-chat .chat-input textarea { padding: 12px 12px 6px; font-size: 13px; border-radius: 9px; }
+.document-chat .chat-input textarea { padding: 10px 10px 4px; font-size: 12px; border-radius: 9px; }
 .document-chat .chat-input-footer { padding: 6px 8px 8px; gap: 6px; }
 .document-chat .chat-input-left { min-width: 0; gap: 6px; }
 .document-chat .chat-model-select { width: min(180px, 32vw); min-width: 0; }
@@ -41,4 +49,4 @@ html.document-chat-document #nano-startup { display: none; }
 .document-chat-notice { margin: 0 14px 10px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 8px; display: flex; align-items: center; gap: 10px; background: var(--bg-app); }
 .document-chat-notice > :first-child { flex: 1; }
 .document-chat-notice button { background: transparent; }
-@media (max-width: 420px) { .document-chat-source { padding: 10px; gap: 8px; } .document-chat > .chat-pane { padding-inline: 10px; } }
+@media (max-width: 420px) { .document-chat-source { padding: 8px 10px; } .document-chat > .chat-pane { padding-inline: 10px; } }
