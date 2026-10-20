@@ -59,6 +59,7 @@ use std::collections::HashMap;
 use tokio::sync::Mutex;
 
 pub fn run() {
+    document_chat::capture_launch_origin();
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {

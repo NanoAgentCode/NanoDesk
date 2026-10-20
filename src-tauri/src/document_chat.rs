@@ -1,5 +1,13 @@
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+mod placement;
+static LAUNCH_ORIGIN: std::sync::Mutex<Option<usize>> = std::sync::Mutex::new(None);
+
+pub(crate) fn capture_launch_origin() {
+    if std::env::args().any(|arg| arg == "--document-chat") {
+        if let Ok(mut origin) = LAUNCH_ORIGIN.lock() { *origin = placement::origin(); }
+    }
+}
 
 pub const EXTENSIONS: &[&str] = &["txt", "md", "markdown", "docx", "pdf", "rtf", "csv", "xlsx", "pptx"];
 
@@ -14,17 +22,46 @@ pub fn launch_path(args: &[String], cwd: &Path) -> Result<Option<PathBuf>, Strin
 
 pub fn open_from_args(app: &AppHandle, args: Vec<String>, cwd: PathBuf) -> bool {
     if !args.iter().any(|arg| arg == "--document-chat") { return false; }
+    let launch_origin = LAUNCH_ORIGIN.lock().ok().and_then(|mut value| value.take());
+    let origin = placement::origin().or(launch_origin);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = async {
             let path = launch_path(&args, &cwd)?.ok_or("未指定文档")?;
+            let item = if let Some(origin) = origin {
+                let selected_path = path.clone();
+                Some(tauri::async_runtime::spawn_blocking(move || placement::selected(&selected_path, origin))
+                    .await.map_err(|e| e.to_string())??)
+            } else { None };
             let label = format!("document-{}", uuid::Uuid::new_v4());
             let url = reqwest::Url::parse_with_params("https://local.invalid/index.html", &[("document-chat", path.to_string_lossy().as_ref())])
                 .map_err(|e| e.to_string())?;
-            let scale = app.primary_monitor().map_err(|e| e.to_string())?.map(|monitor| monitor.scale_factor()).unwrap_or(1.0);
+            let monitor = if let Some(item) = item {
+                app.monitor_from_point((item.x + item.width / 2) as f64, (item.y + item.height / 2) as f64).map_err(|e| e.to_string())?
+            } else { app.primary_monitor().map_err(|e| e.to_string())? };
+            let scale = monitor.as_ref().map(|monitor| monitor.scale_factor()).unwrap_or(1.0);
             let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(format!("index.html?{}", url.query().unwrap_or("")).into()))
                 .title("NanoDesk 文档对话").inner_size(764.0 / scale, 1100.0 / scale).min_inner_size(340.0, 370.0)
-                .always_on_top(true).resizable(true).center().build().map_err(|e| e.to_string())?;
+                .always_on_top(true).resizable(true).visible(false).center().build().map_err(|e| e.to_string())?;
+            let position_result = (|| -> Result<(), String> {
+                if let Some(item) = item {
+                    let monitor = monitor.ok_or("无法获取文件所在显示器")?;
+                    let area = monitor.work_area();
+                    let inner = window.inner_size().map_err(|e| e.to_string())?;
+                    let outer = window.outer_size().map_err(|e| e.to_string())?;
+                    let frame = (outer.width.saturating_sub(inner.width), outer.height.saturating_sub(inner.height));
+                    let bounds = placement::beside(item, placement::Rect { x: area.position.x, y: area.position.y, width: area.size.width as i32, height: area.size.height as i32 },
+                        (outer.width as i32, outer.height as i32), (8.0 * scale).round() as i32)
+                        .ok_or("文件周围空间不足，请移动文件或文件夹窗口后重试。")?;
+                    let size = tauri::PhysicalSize::new((bounds.width as u32).saturating_sub(frame.0), (bounds.height as u32).saturating_sub(frame.1));
+                    window.set_min_size(Some(tauri::PhysicalSize::new(size.width.min((340.0 * scale) as u32), size.height.min((370.0 * scale) as u32)))).map_err(|e| e.to_string())?;
+                    window.set_size(size).map_err(|e| e.to_string())?;
+                    window.set_position(tauri::PhysicalPosition::new(bounds.x, bounds.y)).map_err(|e| e.to_string())?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = position_result { let _ = window.close(); return Err(error); }
+            window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())
         }.await;
         if let Err(error) = result {
