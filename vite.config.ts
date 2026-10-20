@@ -1,8 +1,13 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import brandConfig from "./brand.config.json";
 
 export default defineConfig({
+  test: {
+    // .build holds release staging copies of the source tree; never test those.
+    exclude: ["**/node_modules/**", "**/dist/**", ".build/**"],
+  },
   plugins: [
     react(),
     {
