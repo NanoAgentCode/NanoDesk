@@ -12,7 +12,7 @@ function renderSidebar(isCollapsed: boolean, pluginMainViews: ComponentProps<typ
     activeMainView: "chat", activeConversationId: "",
     sidebarWidth: 292, sidebarMinWidth: 220, sidebarMaxWidth: 420,
     setActiveConversationId: () => {}, handleNewConversation: async () => {},
-    handleNewProjectConversation: async () => {}, handleContextMenu: () => {},
+    handleContextMenu: () => {},
     handleProjectContextMenu: () => {}, onOpenSettings: () => {},
     onMainViewChange: () => {}, onToggleCollapsed: () => {},
     onResizeStart: () => {}, onResize: () => {}, onResizeReset: () => {},
@@ -35,6 +35,7 @@ describe("sidebar branding", () => {
     expect(collapsed).not.toContain('title="暂无项目会话"');
     expect(collapsed).not.toContain('title="D:/example"');
     const expanded = renderSidebar(false, [], projects);
+    expect(expanded).not.toContain('aria-label="新建项目会话"');
     expect(expanded).toContain(`title="${hasChats ? "D:/example" : "暂无项目会话"}"`);
   });
   it("uses section separators instead of section toggles when collapsed", () => {

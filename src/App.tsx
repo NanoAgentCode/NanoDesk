@@ -7,7 +7,7 @@ import CloseAppDialog from "./components/app/CloseAppDialog";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Alert, Badge, Button, Group, MantineProvider, Modal, Stack, Text, TextInput, ThemeIcon } from "@mantine/core";
-import { Archive, Cpu, Edit, FolderOpen, Trash2, Upload } from "lucide-react";
+import { Archive, Cpu, Edit, FolderOpen, Plus, Trash2, Upload } from "lucide-react";
 import {
   archiveConversation,
   deleteConversation,
@@ -413,7 +413,6 @@ function App() {
         activeConversationId={activeConversationId}
         setActiveConversationId={setActiveConversationId}
         handleNewConversation={handleNewConversation}
-        handleNewProjectConversation={handleNewProjectConversation}
         handleContextMenu={handleContextMenu}
         handleProjectContextMenu={handleProjectContextMenu}
         onOpenSettings={() => model.handleOpenModelConfig(setShowModelConfig)}
@@ -671,6 +670,23 @@ function App() {
 
           {projects.contextMenu.project && (
             <>
+              <button
+                className="custom-context-menu-item"
+                onClick={() => {
+                  const project = projects.contextMenu.project;
+                  projects.setContextMenu((prev) => ({ ...prev, visible: false }));
+                  if (project) {
+                    setActiveMainView("chat");
+                    void handleNewProjectConversation(project).catch((error) => {
+                      setNotice(`新建项目会话失败：${String(error)}`);
+                    });
+                  }
+                }}
+                type="button"
+              >
+                <Plus size={14} />
+                <span>新建项目会话</span>
+              </button>
               <button
                 className="custom-context-menu-item"
                 onClick={() => {

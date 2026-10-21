@@ -14,7 +14,6 @@ interface SidebarProps {
   activeConversationId: string;
   setActiveConversationId: (id: string) => void;
   handleNewConversation: () => Promise<void>;
-  handleNewProjectConversation: (project: ProjectEntry) => Promise<void>;
   handleContextMenu: (e: React.MouseEvent, conversation: Conversation) => void;
   handleProjectContextMenu: (e: React.MouseEvent, project: ProjectEntry) => void;
   onOpenSettings: () => void;
@@ -38,7 +37,6 @@ export default function Sidebar({
   activeConversationId,
   setActiveConversationId,
   handleNewConversation,
-  handleNewProjectConversation,
   handleContextMenu,
   handleProjectContextMenu,
   onOpenSettings,
@@ -179,19 +177,6 @@ export default function Sidebar({
                         <Database size={16} />
                       </button>
                     </Tooltip>}
-                    {!isCollapsed && <button
-                      className="project-add-chat-btn"
-                      type="button"
-                      aria-label="新建项目会话"
-                      title="新建项目会话"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleNewProjectConversation(project);
-                        onMainViewChange("chat");
-                      }}
-                    >
-                      <Plus size={16} />
-                    </button>}
                   </div>
 
                   {!isCollapsed && isExpanded && !hasNoChats && (
