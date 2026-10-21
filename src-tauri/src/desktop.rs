@@ -28,7 +28,7 @@ pub(crate) fn sync_document_chat_menu(app: &AppHandle, enabled: bool) -> Result<
 }
 
 fn assistant_menu_label(visible: bool) -> &'static str {
-    if visible { "隐藏助手" } else { "开启助手" }
+    if visible { "隐藏桌面助手" } else { "开启桌面助手" }
 }
 
 fn sync_assistant_visibility(app: &AppHandle, visible: bool) -> Result<(), String> {
@@ -268,7 +268,7 @@ mod assistant_tray_tests {
     }
     #[test]
     fn menu_offers_the_opposite_of_current_visibility() {
-        assert_eq!(super::assistant_menu_label(true), "隐藏助手");
-        assert_eq!(super::assistant_menu_label(false), "开启助手");
+        assert_eq!(super::assistant_menu_label(true), "隐藏桌面助手");
+        assert_eq!(super::assistant_menu_label(false), "开启桌面助手");
     }
 }
