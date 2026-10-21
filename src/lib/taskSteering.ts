@@ -19,6 +19,13 @@ export async function steerConversationTask(options: {
   const recordUserMessage = () => invoke("append_message", {draft:{conversation_id:conversationId,role:"user",content:text,metadata:{exclude_from_profile:true}}});
   if (!conversationId || !text.trim()) return { handled: false };
   const runs = await invoke("list_agent_runs", { conversationId, limit: 200 }) as AgentRun[];
+  const pendingPlan = runs[0];
+  if (pendingPlan?.status === "awaiting_plan") {
+    await invoke("respond_background_agent", { decision: {
+      run_id: pendingPlan.id, action: "reject_plan", answer: pendingPlan.plan_json ?? undefined
+    } });
+    return { handled: false };
+  }
   let run = runs.find(run => ["running", "paused", "awaiting_plan", "awaiting_tool", "awaiting_clarification", "awaiting_recovery", "failed"].includes(run.status));
   if (!run) return { handled: false };
   let links = await invoke("get_task_interruption", { runId: run.id }) as Links;

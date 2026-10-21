@@ -22,7 +22,7 @@ export default function TaskPlanApproval({ conversationId, revision, busy }: {
     <div className="chat-plan-approval-actions">
       <Button size="xs" disabled={acting || busy} onClick={() => void decide("approve_plan")}>批准</Button>
       <Button size="xs" variant="default" disabled={acting || busy} onClick={() => void decide("reject_plan")}>拒绝</Button>
-      <small>需要调整时先拒绝，再在对话中说明修改要求。</small>
+      <small>直接发送新要求，将拒绝当前规划。</small>
     </div>
     {actionError && <FriendlyError error={actionError} />}
   </section>;

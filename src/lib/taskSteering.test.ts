@@ -52,10 +52,21 @@ describe("ordinary conversation task steering",()=>{
     expect(await send("恢复主任务")).toEqual({handled:true,conversationId:"main"});
     expect(invoke).toHaveBeenCalledWith("return_to_parent_task",{runId:"child-run"});
   });
-  it("does not infer approval from an ambiguous continue request",async()=>{
+  it.each(["补充要求：只分析前端", "继续任务", "暂停任务"])("rejects an unapproved plan before passing the new message to normal sending: %s",async text=>{
+    const plan = '{"goal":"原规划"}';
+    const {invoke,send}=fixture({...main,status:"awaiting_plan",plan_json:plan});
+    expect(await send(text)).toEqual({handled:false});
+    expect(invoke).toHaveBeenCalledWith("respond_background_agent",{decision:{run_id:"main-run",action:"reject_plan",answer:plan}});
+    expect(invoke.mock.calls.map(([command])=>command)).toEqual(["list_agent_runs","respond_background_agent"]);
+  });
+  it("does not send the new request when rejecting the old plan fails",async()=>{
     const {invoke,send}=fixture({...main,status:"awaiting_plan"});
-    expect((await send("继续任务")).notice).toContain("确认");
-    expect(invoke.mock.calls.some(([command])=>["respond_background_agent","start_temporary_task"].includes(command))).toBe(false);
+    invoke.mockImplementation(async command=>{
+      if(command==="list_agent_runs")return [{...main,status:"awaiting_plan"}];
+      throw new Error("reject failed");
+    });
+    await expect(send("修改规划")).rejects.toThrow("reject failed");
+    expect(invoke.mock.calls.some(([command])=>command==="start_temporary_task"||command==="append_message")).toBe(false);
   });
   it("leaves a completed conversation available for an ordinary new task",async()=>{
     const {invoke,send}=fixture({...main,status:"completed"});
