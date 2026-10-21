@@ -1,3 +1,4 @@
+import { applyBackgroundSnapshot } from "./chat/snapshotProjection";
 import { useBackgroundAgents } from "./chat/useBackgroundAgents";
 import { useChatHistory } from "./chat/useChatHistory";
 import { createCoalescedRefresh } from "../lib/coalescedRefresh";
@@ -5,12 +6,10 @@ import { createDocumentPreparer } from "../lib/documentPreparation";
 import { submitConversationTask } from "../lib/taskSubmission";
 import { buildDocumentReference } from "../lib/documentChat";
 import {
-  mergeBackgroundMessages,
   type BackgroundAgentDecision,
-  type BackgroundAgentRequest,
   type BackgroundAgentSnapshot
 } from "../lib/backgroundAgent";
-import { getConversationTaskBudget } from "../lib/taskBudget";
+import { buildExecutionRequest as buildChatExecutionRequest } from "./chat/executionRequest";
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
@@ -28,7 +27,6 @@ import {
   listArchivedConversations,
   respondBackgroundAgent
 } from "../api";
-import { buildSystemMessage } from "../lib/chatSystemMessage";
 import { formatUserFacingError } from "../lib/notices";
 import { steerConversationTask } from "../lib/taskSteering";
 import { appendTranscript } from "../lib/speech";
@@ -205,40 +203,9 @@ export function useChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conv.activeConversationId, model.activeModelId]);
 
-  function buildExecutionRequest(
-    run: AgentRun,
-    project: ProjectEntry | null,
-    modelId: string,
-    replaceMessageId: string | null = null
-  ): BackgroundAgentRequest {
-    const boundProject: ProjectEntry | null = run.project_path
-      ? project?.path === run.project_path
-        ? project
-        : { id: run.project_path, name: run.project_path, path: run.project_path, opened_at: "" }
-      : null;
-    return {
-      run_id: run.id,
-      conversation_id: run.conversation_id,
-      model_config_id: run.model_config_id || modelId,
-      project_path: run.project_path || skills.tempDir,
-      system_message: buildSystemMessage(
-        [],
-        null,
-        boundProject,
-        [],
-        skills.skills,
-        mcp.mcpServers,
-        [],
-        [],
-        [],
-        skills.tempDir,
-        true
-      ),
-      access_mode: accessMode,
-      allow_command: skills.skills.some((skill) => skill.id === "bash_tool" && skill.enabled),
-      budget: getConversationTaskBudget(run.conversation_id),
-      replace_message_id: replaceMessageId
-    };
+  function buildExecutionRequest(run: AgentRun, project: ProjectEntry | null, modelId: string, replaceMessageId: string | null = null) {
+    return buildChatExecutionRequest({ skills: skills.skills, mcpServers: mcp.mcpServers,
+      tempDir: skills.tempDir, accessMode }, run, project, modelId, replaceMessageId);
   }
 
   async function refreshConversationLists() {
@@ -250,28 +217,8 @@ export function useChat({
   }
 
   function receiveBackgroundSnapshot(snapshot: BackgroundAgentSnapshot) {
-    const key = `${snapshot.status}:${snapshot.executing_tool_message_id || ""}:${snapshot.stream_message?.id || ""}`;
-    const changed = snapshotStateRef.current.get(snapshot.run_id) !== key;
-    snapshotStateRef.current.set(snapshot.run_id, key);
-    if (snapshotStateRef.current.size > 128) {
-      const oldest = snapshotStateRef.current.keys().next().value;
-      if (oldest) snapshotStateRef.current.delete(oldest);
-    }
-    if (snapshot.conversation_id === activeConversationIdRef.current) {
-      if (snapshot.stream_message) {
-        setMessages((current) => mergeBackgroundMessages(current, activeConversationIdRef.current, snapshot));
-        if (snapshot.reasoning)
-          setMessageReasoning((current) => ({
-            ...current,
-            [snapshot.stream_message!.id]: snapshot.reasoning
-          }));
-      } else if (changed) {
-        void loadMessages(snapshot.conversation_id);
-        setInterruptingGeneration(false);
-      }
-      if (snapshot.error) setNotice(formatUserFacingError(snapshot.error, "任务执行失败，请重试。"));
-    }
-    if (!snapshot.stream_message && changed) void refreshConversationLists().catch(console.error);
+    applyBackgroundSnapshot({ snapshotStateRef, activeConversationIdRef, setMessages, setMessageReasoning,
+      loadMessages, setInterruptingGeneration, setNotice, refreshConversationLists }, snapshot);
   }
   async function launchBackground(
     run: AgentRun,
