@@ -36,6 +36,7 @@ mod skills;
 mod tool_policy;
 
 mod app_state;
+mod bootstrap;
 mod task_budget;
 mod task_notifications;
 mod commands;
@@ -48,17 +49,10 @@ pub(crate) use app_state::{AppState, ChatStreamInterrupts};
 pub(crate) use services::observation::{start_observation, finish_observation, ObservationStart};
 pub(crate) use services::agent_tools::execute_agent_tool_with_state;
 
-use crate::db::Database;
 use crate::desktop::setup_system_tray;
 use crate::desktop::show_main_window;
 pub(crate) use llm::send_chat_completion;
 use tauri::Manager;
-use crate::mcp::McpClientManager;
-use crate::observability::ObservabilityPipeline;
-use crate::observability::SqliteObservabilitySink;
-use crate::runtime::RuntimeStore;
-use std::collections::HashMap;
-use tokio::sync::Mutex;
 
 pub fn run() {
     document_chat::capture_launch_origin();
@@ -98,44 +92,7 @@ pub fn run() {
                 "app data directory resolved",
                 serde_json::json!({ "path": data_dir.display().to_string() }),
             );
-            let temp_dir = data_dir.join("temp");
-            std::fs::create_dir_all(&temp_dir)
-                .map_err(|err| format!("failed to create temp directory: {err}"))?;
-            let db_path = data_dir.join(brand::MAIN_DATABASE_NAME);
-            let db = Database::open(db_path).map_err(|err| err.to_string())?;
-            let runtime_path = data_dir.join(brand::RUNTIME_DATABASE_NAME);
-            let runtime = RuntimeStore::open(runtime_path).map_err(|err| err.to_string())?;
-            let automation = automation::AutomationStore::open(
-                &data_dir.join(brand::AUTOMATION_DATABASE_NAME),
-            )
-            .map_err(|err| err.to_string())?;
-            let observability_path = data_dir.join(brand::OBSERVABILITY_DATABASE_NAME);
-            let observability = match SqliteObservabilitySink::open(observability_path) {
-                Ok(sink) => ObservabilityPipeline::new(vec![Box::new(sink)]),
-                Err(err) => {
-                    logging::warn(
-                        "observability",
-                        "observability disabled",
-                        serde_json::json!({ "error": err.to_string() }),
-                    );
-                    ObservabilityPipeline::disabled()
-                }
-            };
-
-            let plugins = plugins::built_in_registry().map_err(|err| err.to_string())?;
-
-            app.manage(AppState {
-                settings_path: data_dir.join("settings.json"),
-                db: Mutex::new(db),
-                observability: Mutex::new(observability),
-                runtime: Mutex::new(runtime),
-                automation: Mutex::new(automation),
-                background_agents: background_agent::BackgroundAgentManager::default(),
-                mcp: Mutex::new(McpClientManager::default()),
-                plugins,
-                ops_ssh_sessions: Mutex::new(HashMap::new()),
-                chat_stream_interrupts: Mutex::new(ChatStreamInterrupts::default()),
-            });
+            app.manage(bootstrap::open_app_state(&data_dir)?);
             profile::start_worker(app.handle().clone());
             automation::start_worker(app.handle().clone());
             background_agent::restore_waiting_runs(app.handle().clone());

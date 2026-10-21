@@ -44,20 +44,17 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
-  parseSidebarWidth
 } from "./lib/sidebarSizing";
-import { APP_STORAGE_PREFIX } from "./config/brand";
+import { useAppLayout } from "./hooks/useAppLayout";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import WindowControls from "./components/WindowControls";
 import { registerWindowShortcuts } from "./lib/windowShortcuts";
 
 const SettingsModal = lazy(() => import("./components/settings/SettingsModal"));
 
-const SIDEBAR_COLLAPSED_KEY = `${APP_STORAGE_PREFIX}-sidebar-collapsed`;
-const SIDEBAR_WIDTH_KEY = `${APP_STORAGE_PREFIX}-sidebar-width`;
-
 function App() {
-  const workspaceRef = useRef<HTMLElement | null>(null);
+  const { workspaceRef, sidebarCollapsed, setSidebarCollapsed, sidebarWidth, setSidebarWidth,
+    workspaceListRatio, beginWorkspaceSplitResize, beginSidebarResize } = useAppLayout();
   const runtimePanelRef = useRef<HTMLElement | null>(null);
   const runtimeToggleBtnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -71,12 +68,6 @@ function App() {
   const [showModelConfig, setShowModelConfig] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("theme");
   const [activeMainView, setActiveMainView] = useState("chat");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
-  });
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    return parseSidebarWidth(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-  });
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
 
@@ -168,7 +159,6 @@ function App() {
 
   const obs = useAgentRuntime(setNotice, activeConversationId);
   const workspace = useWorkspace(setNotice, memory);
-  const [workspaceListRatio, setWorkspaceListRatio] = useState(38);
   const { themeMode, resolvedTheme, setThemeMode } = useThemeMode();
   const { closePromptOpen, closeAction, setCloseAction, closeDontAsk, setCloseDontAsk,
     handleCancelClosePrompt, handleConfirmClosePrompt } = useAppCloseBehavior(setNotice);
@@ -203,14 +193,6 @@ function App() {
   }, [notice]);
 
   useEffect(() => {
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
-  }, [sidebarCollapsed]);
-
-  useEffect(() => {
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
-  }, [sidebarWidth]);
-
-  useEffect(() => {
     void loadAll();
   }, []);
 
@@ -233,44 +215,6 @@ function App() {
     } catch (error) {
       setNotice(String(error));
     }
-  }
-
-  function beginWorkspaceSplitResize() {
-    const rect = workspaceRef.current?.getBoundingClientRect();
-    if (!rect) {
-      return;
-    }
-
-    beginResize((event) => {
-      const nextRatio = ((event.clientY - rect.top) / rect.height) * 100;
-      setWorkspaceListRatio(Math.min(70, Math.max(24, nextRatio)));
-    }, "row-resize");
-  }
-
-  function beginSidebarResize() {
-    beginResize((event) => {
-      setSidebarWidth(clampSidebarWidth(event.clientX));
-    });
-  }
-
-  function beginResize(onMove: (event: MouseEvent) => void, cursor = "col-resize") {
-    const previousCursor = document.body.style.cursor;
-    document.body.style.cursor = cursor;
-    document.body.classList.add("is-resizing");
-
-    const handleMove = (event: MouseEvent) => {
-      event.preventDefault();
-      onMove(event);
-    };
-    const handleUp = () => {
-      document.body.style.cursor = previousCursor;
-      document.body.classList.remove("is-resizing");
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-    };
-
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseup", handleUp);
   }
 
   function handleContextMenu(e: React.MouseEvent, conversation: Conversation) {

@@ -1,3 +1,10 @@
+mod batch_selection;
+
+use batch_selection::{
+    select_profile_batch_members, unique_candidate_characters, ReadyObservation,
+    PROFILE_BATCH_CHARACTER_LIMIT, PROFILE_BATCH_OBSERVATION_LIMIT,
+};
+
 use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Duration, Utc};
@@ -14,22 +21,9 @@ use crate::models::{
 
 const PROFILE_SETTINGS_ID: i64 = 1;
 const PROFILE_LEASE_SECONDS: i64 = 90;
-const PROFILE_BATCH_CHARACTER_LIMIT: i64 = 12_000;
-const PROFILE_BATCH_OBSERVATION_LIMIT: usize = 12;
 const PROFILE_IDLE_MINIMUM_CHARACTERS: i64 = 500;
 const PROFILE_CONFIDENCE_THRESHOLD: f64 = 0.75;
 const PROFILE_MAX_OPERATIONS: usize = 20;
-
-#[derive(Debug, Clone)]
-struct ReadyObservation {
-    id: String,
-    status: String,
-    candidate_character_count: i64,
-    candidate_hash: String,
-    candidate_kind: String,
-    observation_revision: i64,
-    observed_at: DateTime<Utc>,
-}
 
 struct ProfileFactAssertion<'a> {
     work: &'a ProfileBatchWork,
@@ -1388,83 +1382,6 @@ fn sanitize_profile_error(error: &str) -> String {
         .filter(|character| !character.is_control())
         .take(500)
         .collect()
-}
-
-fn select_profile_batch_members(
-    ready: &[ReadyObservation],
-    trigger: &str,
-) -> Vec<ReadyObservation> {
-    if trigger == "manual" {
-        if let Some(item) = ready
-            .iter()
-            .find(|item| item.candidate_kind == "manual" && item.status == "ready_long")
-        {
-            return vec![item.clone()];
-        }
-    }
-    if trigger == "long_input" || trigger == "manual" {
-        if let Some(item) = ready.iter().find(|item| item.status == "ready_long") {
-            return vec![item.clone()];
-        }
-    }
-    if trigger == "long_input" {
-        return ready
-            .iter()
-            .find(|item| item.status == "ready_long")
-            .cloned()
-            .into_iter()
-            .collect();
-    }
-    if trigger == "explicit" {
-        if let Some(item) = ready
-            .iter()
-            .find(|item| item.candidate_kind == "explicit" && item.status == "ready_long")
-        {
-            return vec![item.clone()];
-        }
-    }
-    let mut ordered = ready
-        .iter()
-        .filter(|item| item.status == "ready_normal")
-        .cloned()
-        .collect::<Vec<_>>();
-    if trigger == "explicit" || trigger == "manual" {
-        ordered.sort_by_key(|item| {
-            (
-                if item.candidate_kind == trigger { 0 } else { 1 },
-                item.observation_revision,
-            )
-        });
-    }
-    let mut selected = Vec::new();
-    let mut unique_chars = 0_i64;
-    let mut hashes = HashMap::<String, i64>::new();
-    for item in &ordered {
-        let added = if hashes.contains_key(&item.candidate_hash) {
-            0
-        } else {
-            item.candidate_character_count
-        };
-        if selected.len() >= PROFILE_BATCH_OBSERVATION_LIMIT
-            || (!selected.is_empty() && unique_chars + added > PROFILE_BATCH_CHARACTER_LIMIT)
-        {
-            break;
-        }
-        hashes.insert(item.candidate_hash.clone(), item.candidate_character_count);
-        unique_chars += added;
-        selected.push(item.clone());
-    }
-    selected
-}
-
-fn unique_candidate_characters(selected: &[ReadyObservation]) -> i64 {
-    let mut values = HashMap::<&str, i64>::new();
-    for item in selected {
-        values
-            .entry(item.candidate_hash.as_str())
-            .or_insert(item.candidate_character_count);
-    }
-    values.values().sum()
 }
 
 fn group_batch_sources(

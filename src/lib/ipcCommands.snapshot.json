@@ -90,6 +90,7 @@
   "plan_context_preparation",
   "quit_app",
   "read_absolute_file",
+  "read_assistant_clipboard_paths",
   "read_chat_image_attachment",
   "read_document_chat_file",
   "read_local_file",

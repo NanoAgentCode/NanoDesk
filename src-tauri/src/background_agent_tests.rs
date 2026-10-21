@@ -406,12 +406,17 @@ async fn preexecution_syntax_failure_repairs_once_but_not_ambiguous_side_effects
 }
 
 #[tokio::test]
-async fn repeated_unsafe_root_scans_stop_after_three_repairs() {
-    let bad=r#"<tool_call name="execute_command"><command>rg service .</command></tool_call>"#;
+async fn repeated_parent_directory_scans_stop_after_three_repairs() {
+    let bad=r#"<tool_call name="execute_command"><command>rg service ..</command></tool_call>"#;
     let server=MockModel::start((0..4).map(|_|(vec![bad.into()],0)).collect());
     let fixture=Fixture::new(&server.url,"full");
     assert!(fixture.start().await.unwrap().is_err());
     assert_eq!(fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap().iter().filter(|s|s.kind=="tool_repair").count(),3);
+    let tools = fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap();
+    assert_eq!(tools.len(), 4);
+    assert!(tools.iter().all(|tool| tool.attempt_count == 0), "policy-denied commands must never execute");
+    assert_eq!(tools.iter().filter(|tool| tool.status == "skipped").count(), 3);
+    assert_eq!(tools.iter().filter(|tool| tool.status == "rejected").count(), 1);
     assert_eq!(server.worker.join().unwrap().len(),4);
     fixture.cleanup();
 }
