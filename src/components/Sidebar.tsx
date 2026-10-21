@@ -57,10 +57,10 @@ export default function Sidebar({
   return (
     <aside className={isCollapsed ? "sidebar collapsed" : "sidebar"}>
       <div className="sidebar-topbar">
-        <div className="sidebar-brand" aria-label={APP_NAME} data-tauri-drag-region>
+        {!isCollapsed && <div className="sidebar-brand" aria-label={APP_NAME} data-tauri-drag-region>
           <img className="sidebar-brand-icon" src={brandIcon} alt="" draggable={false} data-tauri-drag-region />
           {!isCollapsed && <p className="sidebar-brand-name" data-tauri-drag-region>{APP_NAME}</p>}
-        </div>
+        </div>}
         <Tooltip label={isCollapsed ? "展开侧边栏" : "收起侧边栏"} position="right">
           <ActionIcon
             className="sidebar-collapse-btn"
@@ -120,7 +120,7 @@ export default function Sidebar({
               const isExpanded = projects.expandedProjectIds.includes(project.id);
               const projectChats = projects.projectConversations[project.id] || [];
               const hasNoChats = projectChats.length === 0;
-              const tooltipText = hasNoChats ? "暂无项目会话" : project.path;
+              const tooltipText = isCollapsed ? project.name : hasNoChats ? "暂无项目会话" : project.path;
               const codeStats = projects.getCodeIndexStatsForPath(project.path);
               const latestCodeRun = codeStats?.latest_run;
               const projectIndexStats = projects.getProjectIndexStatsForPath(project.path);

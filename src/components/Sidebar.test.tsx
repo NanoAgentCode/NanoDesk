@@ -5,9 +5,9 @@ import Sidebar from "./Sidebar";
 import type { ComponentProps } from "react";
 import { CalendarClock, Server } from "lucide-react";
 
-function renderSidebar(isCollapsed: boolean, pluginMainViews: ComponentProps<typeof Sidebar>["pluginMainViews"] = []) {
+function renderSidebar(isCollapsed: boolean, pluginMainViews: ComponentProps<typeof Sidebar>["pluginMainViews"] = [], projectOverrides = {}) {
   const props = {
-    projects: { projectsSectionExpanded: false, chatsSectionExpanded: false, projects: [] } as unknown as ComponentProps<typeof Sidebar>["projects"],
+    projects: { projectsSectionExpanded: false, chatsSectionExpanded: false, projects: [], ...projectOverrides } as unknown as ComponentProps<typeof Sidebar>["projects"],
     conversations: [], pluginMainViews, isCollapsed,
     activeMainView: "chat", activeConversationId: "",
     sidebarWidth: 292, sidebarMinWidth: 220, sidebarMaxWidth: 420,
@@ -21,6 +21,22 @@ function renderSidebar(isCollapsed: boolean, pluginMainViews: ComponentProps<typ
 }
 
 describe("sidebar branding", () => {
+  it.each([false, true])("shows project names in collapsed tooltips (has conversations: %s)", hasChats => {
+    const projects = {
+      projectsSectionExpanded: true,
+      projects: [{ id: "project-1", name: "示例项目", path: "D:/example" }],
+      expandedProjectIds: [],
+      projectConversations: { "project-1": hasChats ? [{ id: "chat-1" }] : [] },
+      getCodeIndexStatsForPath: () => null,
+      getProjectIndexStatsForPath: () => null,
+    };
+    const collapsed = renderSidebar(true, [], projects);
+    expect(collapsed).toContain('title="示例项目"');
+    expect(collapsed).not.toContain('title="暂无项目会话"');
+    expect(collapsed).not.toContain('title="D:/example"');
+    const expanded = renderSidebar(false, [], projects);
+    expect(expanded).toContain(`title="${hasChats ? "D:/example" : "暂无项目会话"}"`);
+  });
   it("uses section separators instead of section toggles when collapsed", () => {
     const collapsed = renderSidebar(true);
     expect(collapsed.match(/class="sidebar-section-divider"/g)).toHaveLength(2);
@@ -47,9 +63,10 @@ describe("sidebar branding", () => {
     expect(html).toContain('>NanoDesk</p>');
     expect(html).not.toContain("本地优先，智能协作");
   });
-  it("keeps the icon and hides the name when collapsed", () => {
+  it("hides the brand and retains the expand button when collapsed", () => {
     const html = renderSidebar(true);
-    expect(html).toContain('class="sidebar-brand-icon"');
+    expect(html).not.toContain('class="sidebar-brand-icon"');
     expect(html).not.toContain('class="sidebar-brand-name"');
+    expect(html).toContain('aria-label="展开侧边栏"');
   });
 });

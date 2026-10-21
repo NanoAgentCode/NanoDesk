@@ -126,7 +126,6 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
         {collapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
       </button>
     </header>
-    {collapsed && <button type="button" className="task-summary-rail" onClick={toggle} aria-label="展开任务规划">任务规划</button>}
     <div id="task-summary-content" className="task-summary-content" hidden={collapsed}>
       {actionError && !temporaryOpened && <FriendlyError error={actionError} />}
       {run && <div className="task-plan-actions">
