@@ -75,7 +75,14 @@ export function buildSystemMessage(
           ? `- 当前项目文件列表（最多 300 项，已跳过 node_modules、.git、target、dist 等大目录）：\n${formatProjectFileTree(projectFiles)}`
           : deferRetrieval ? "" : "- 当前项目文件列表为空，或暂时无法读取。"
       ].join("\n")
-    : "";
+    : tempDir
+      ? [
+          `对话工作目录：${tempDir}`,
+          "- 当前未绑定项目，支持在此目录内读取和写入文件，无需用户先创建项目。",
+          "- read_file、write_file 的 path 必须相对此目录，例如 <path>output/report.md</path>；不要拼接工作目录、使用盘符或 ..。命令也在此目录执行。",
+          "- 生成文件后使用 Markdown 相对链接提供入口，例如 [查看报告](output/report.md)，只有工具返回成功后才声称已写入。"
+        ].join("\n")
+      : "";
 
   const enabledSkills = skills.filter((s) => s.enabled);
   const commandGenerationInstruction = enabledSkills.some((s) => s.id === "bash_tool")

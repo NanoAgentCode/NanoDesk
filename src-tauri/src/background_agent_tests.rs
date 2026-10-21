@@ -147,6 +147,26 @@ struct Fixture {
 }
 
 #[tokio::test]
+async fn chat_file_tool_writes_absolute_workspace_path_and_reads_relative_path() {
+    let fixture = Fixture::new("http://localhost:1/v1", "full");
+    let workspace = &fixture.request.project_path;
+    let target = PathBuf::from(workspace).join("output/对话报告.md");
+    for (name, path) in [
+        ("write_file", target.to_string_lossy().to_string()),
+        ("read_file", "output/对话报告.md".to_string()),
+    ] {
+        let tool = fixture.state.runtime.lock().await.create_tool_call(crate::runtime::AgentToolCallDraft {
+            run_id: fixture.request.run_id.clone(), message_id: "chat-file".into(), name: name.into(),
+            args_json: serde_json::json!({"path":path,"content":"对话区生成的报告"}).to_string(),
+        }).unwrap();
+        let result = crate::services::execution::execute_registered_tool(&fixture.state, &tool, workspace, false, None).await.unwrap();
+        if name == "read_file" { assert!(result.contains("对话区生成的报告")); }
+    }
+    assert_eq!(std::fs::read_to_string(target).unwrap(), "对话区生成的报告");
+    fixture.cleanup();
+}
+
+#[tokio::test]
 async fn document_preparation_is_reused_after_reopen_and_preserves_item_sources() {
     let leaf = serde_json::json!({"overview":"项目需在周五交付，存在供应风险。", "items":[
         {"kind":"task","text":"提交报告","quote":"小林周五提交报告","chunk_index":1,"owner":"小林","deadline":"周五"},

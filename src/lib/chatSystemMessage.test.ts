@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { buildSystemMessage } from "./chatSystemMessage";
 
 describe("buildSystemMessage structured agent protocols", () => {
+  it("provides a writable directory and relative file paths for projectless chat", () => {
+    const message = buildSystemMessage([], null, null, [], [], [], [], [], [], "C:/NanoDesk/temp", true);
+    expect(message.content).toContain("对话工作目录：C:/NanoDesk/temp");
+    expect(message.content).toContain("支持在此目录内读取和写入文件");
+    expect(message.content).toContain("<path>output/report.md</path>");
+    const project = { id: "p", name: "P", path: "C:/project" } as Parameters<typeof buildSystemMessage>[2];
+    expect(buildSystemMessage([], null, project, [], [], [], [], [], [], "C:/NanoDesk/temp").content).not.toContain("对话工作目录：");
+  });
   it.each([false, true])("grounds CLI arguments in local help (deferred=%s)", (deferred) => {
     const message = buildSystemMessage([], null, null, [], [
       { id: "bash_tool", enabled: true, parameters: {} },

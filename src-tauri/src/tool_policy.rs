@@ -251,9 +251,20 @@ fn required_policy_arg<'a>(args: &'a BTreeMap<String, String>, name: &str) -> Ap
 }
 
 fn validate_project_relative_path(project_path: &str, path: &str) -> AppResult<String> {
-    let normalized = normalize_relative_path(path)?;
-    reject_internal_path(&normalized)?;
     let root = project_root(project_path)?;
+    // Model-generated paths may include the workspace directory. Convert only
+    // paths inside that directory, then apply the same relative-path checks.
+    let supplied = std::path::PathBuf::from(path.trim().replace('\\', "/"));
+    let relative = if supplied.is_absolute() {
+        supplied.strip_prefix(std::path::Path::new(project_path))
+            .or_else(|_| supplied.strip_prefix(&root))
+            .map_err(|_| AppError::from("文件路径必须位于当前工作目录内，请使用相对路径"))?
+            .to_string_lossy().to_string()
+    } else {
+        path.to_string()
+    };
+    let normalized = normalize_relative_path(&relative)?;
+    reject_internal_path(&normalized)?;
     let target_path = resolve_project_relative_path(&root, &normalized)?;
     reject_symlink_escape(&root, &target_path)?;
     Ok(normalized)
@@ -620,6 +631,26 @@ mod tests {
             Some("README.md")
         );
         assert_eq!(decision.authorized_tool, AuthorizedTool::ReadFile);
+    }
+
+    #[test]
+    fn normalizes_absolute_file_paths_only_inside_workspace() {
+        let root = test_project();
+        let ctx = context(&root, true);
+        for tool in ["read_file", "write_file"] {
+            let target = root.join("output/report.md").to_string_lossy().to_string();
+            let decision = evaluate_tool_call(tool, &args(&[("path", &target), ("content", "report")]), &ctx).unwrap();
+            assert_eq!(decision.normalized_args["path"], "output/report.md");
+            for target in [
+                root.with_extension("outside").join("report.md"),
+                root.join("../outside.md"),
+                root.join(".git/config"),
+                root.join(crate::brand::PROJECT_DATA_DIRECTORY).join("config.json"),
+            ] {
+                assert!(evaluate_tool_call(tool, &args(&[("path", &target.to_string_lossy()), ("content", "x")]), &ctx).is_err());
+            }
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
