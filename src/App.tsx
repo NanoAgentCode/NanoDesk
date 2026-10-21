@@ -701,7 +701,7 @@ function App() {
                 type="button"
               >
                 <FolderOpen size={14} />
-                <span>在资源管理器中打开</span>
+                <span>打开项目文件夹</span>
               </button>
               <button
                 className="custom-context-menu-item danger-action"
