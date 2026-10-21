@@ -690,6 +690,7 @@ export interface AgentTaskPlanStep {
 }
 
 export interface AgentTaskPlan {
+  outcome?: { status: "completed"; detail: string } | null;
   goal: string;
   steps: AgentTaskPlanStep[];
 }

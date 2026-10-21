@@ -2261,3 +2261,23 @@ async fn goal_based_deliveries_survive_multiple_runs_and_database_reopen() {
     assert!(history.iter().all(|message| !message.content.contains("<deliverables>")));
     fixture.cleanup();
 }
+
+#[tokio::test]
+async fn blocked_substep_does_not_fail_a_completed_alternative_or_stop_remaining_work() {
+    for (tail, outcome, expected) in [
+        ("completed", r#", "outcome":{"status":"completed","detail":"备用方案生成 PDF，已确认文件存在且内容完成"}"#, "completed"),
+        ("pending", "", "running"),
+        ("completed", "", "awaiting_recovery"),
+    ] {
+        let fixture = Fixture::new("http://localhost:1/v1", "full");
+        let content = format!(r#"<task_plan>{{"goal":"生成 PDF","steps":[{{"id":"word","title":"Word 导出","status":"blocked","detail":"超时，采用备用方案"}},{{"id":"fallback","title":"备用生成并验证","status":"{tail}"}}]{outcome}}}</task_plan>"#);
+        let result = crate::agent_commands::resolve_model_output(&fixture.state, fixture.request.run_id.clone(), "model-response".into(), content, None, None).await.unwrap();
+        assert_eq!(result.status, expected);
+        let run = fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap();
+        assert_eq!(run.status, expected);
+        if expected != "awaiting_recovery" { assert!(run.error.is_none()); }
+        let plan = crate::agent_runner::parse_task_plan_json(run.plan_json.as_ref().unwrap()).unwrap();
+        assert_eq!(plan.steps[0].status, "blocked");
+        fixture.cleanup();
+    }
+}

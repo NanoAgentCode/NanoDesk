@@ -235,6 +235,12 @@ export function parseTaskPlan(content: string): AgentTaskPlan | null {
       };
     });
     if (activeCount > 1) return null;
+    if (value.outcome != null) {
+      if (value.outcome.status !== "completed" || typeof value.outcome.detail !== "string" || !value.outcome.detail.trim()
+        || steps.some(step => step.status === "pending" || step.status === "in_progress")
+        || !steps.some(step => step.status === "completed")) return null;
+      return { goal: value.goal.trim(), steps, outcome: { status: "completed", detail: value.outcome.detail.trim() } };
+    }
     return { goal: value.goal.trim(), steps };
   } catch {
     return null;

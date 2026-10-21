@@ -25,7 +25,15 @@ pub struct AgentTaskPlanStep {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentTaskOutcome {
+    pub status: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentTaskPlan {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<AgentTaskOutcome>,
     pub goal: String,
     pub steps: Vec<AgentTaskPlanStep>,
 }
@@ -165,6 +173,13 @@ fn validate_task_plan(plan: &AgentTaskPlan) -> AppResult<()> {
         return Err(AppError::Message(
             "task_plan must contain between 2 and 12 steps".to_string(),
         ));
+    }
+    if let Some(outcome) = &plan.outcome {
+        if outcome.status != "completed" || outcome.detail.trim().is_empty()
+            || plan.steps.iter().any(|step| matches!(step.status.as_str(), "pending" | "in_progress"))
+            || !plan.steps.iter().any(|step| step.status == "completed") {
+            return Err("整体完成声明必须包含结果依据，且不能有待执行步骤，至少有一个完成步骤。".into());
+        }
     }
     let allowed = ["pending", "in_progress", "completed", "blocked", "skipped"];
     let mut ids = std::collections::BTreeSet::new();

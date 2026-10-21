@@ -162,13 +162,14 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
               <small>{isLatest ? "当前任务" : "历史任务"} · {completed}/{plan.steps.length}</small>
             </summary>
             <div className="task-plan-entry-body">
-              <p className="task-summary-hint" role="status">{task.status === "paused" ? "任务已暂停，可插入临时任务或恢复" : task.status === "awaiting_plan" ? "等待用户审核，尚未执行" : task.status === "cancelled" ? "任务已取消" : task.status === "completed" ? "任务已结束" : task.status === "awaiting_tool" ? "等待工具批准" : task.status === "awaiting_recovery" || task.status === "failed" ? "任务已暂停或失败" : "执行进度"} · 已完成 {completed}/{plan.steps.length}{skipped ? ` · 已跳过 ${skipped}` : ""}</p>
+              <p className="task-summary-hint" role="status">{task.status === "paused" ? "任务已暂停，可插入临时任务或恢复" : task.status === "awaiting_plan" ? "等待用户审核，尚未执行" : task.status === "cancelled" ? "任务已取消" : task.status === "completed" ? "任务已结束" : task.status === "awaiting_tool" ? "等待工具批准" : task.status === "awaiting_recovery" ? "任务等待处理，可恢复执行" : task.status === "failed" ? "任务执行失败" : "执行进度"} · 已完成 {completed}/{plan.steps.length}{skipped ? ` · 已跳过 ${skipped}` : ""}</p>
+              {task.status === "completed" && plan.outcome && <p className="task-summary-hint" role="status">整体目标已完成：{plan.outcome.detail}</p>}
               <ol className="task-plan-steps" aria-label="任务步骤时间轴">{plan.steps.map((step, stepIndex) => <li key={step.id} data-status={step.status} aria-current={step.status === "in_progress" ? "step" : undefined}>
                 <span className="task-plan-node" aria-hidden="true">{step.status === "completed" ? <Check size={13} /> : step.status === "in_progress" ? <LoaderCircle size={13} /> : step.status === "blocked" ? <AlertTriangle size={12} /> : step.status === "skipped" ? <Minus size={13} /> : stepIndex + 1}</span>
                 <span className="task-plan-status">{labels[step.status]}</span><strong>{step.title}</strong>
                 {step.detail && <p>{step.detail}</p>}
               </li>)}</ol>
-              {task.error && <FriendlyError error={task.error} fallback="任务执行失败，请重试。" />}
+              {task.error && (task.status === "awaiting_recovery" ? <p className="task-summary-hint" role="status">{task.error}</p> : <FriendlyError error={task.error} fallback="任务执行失败，请重试。" />)}
             </div>
           </details>;
         })}

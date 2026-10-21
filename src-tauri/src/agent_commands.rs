@@ -351,7 +351,9 @@ pub(crate) async fn resolve_model_output(
     let effective_plan = task_plan.clone().or_else(|| runtime.get_run(&run_id).ok()
         .and_then(|run|run.plan_json).and_then(|json|serde_json::from_str::<agent_runner::AgentTaskPlan>(&json).ok()));
     let unfinished_plan = effective_plan.as_ref().is_some_and(|plan|plan.steps.iter().any(|step|matches!(step.status.as_str(),"pending"|"in_progress")));
-    let blocked_plan = effective_plan.as_ref().is_some_and(|plan|plan.steps.iter().any(|step|step.status=="blocked"));
+    let blocked_plan = !unfinished_plan && effective_plan.as_ref().is_some_and(|plan|
+        plan.outcome.as_ref().is_none_or(|outcome| outcome.status != "completed")
+        && plan.steps.iter().any(|step|step.status=="blocked"));
     let tool_call = if let Some(parsed) = parsed_tool_call {
         let tool_call = runtime.create_tool_call(AgentToolCallDraft {
             run_id: run_id.clone(),

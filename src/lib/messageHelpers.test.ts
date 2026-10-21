@@ -127,3 +127,16 @@ describe("response regeneration", () => {
     expect(getLastResponseRegenerationContext([...messages, { ...messages[0], id: "u2" }], "a1")).toBeNull();
   });
 });
+
+describe("overall plan completion", () => {
+  const plan = { goal: "生成 PDF", steps: [{ id: "word", title: "Word 导出", status: "blocked" }, { id: "fallback", title: "备用生成验证", status: "completed" }], outcome: { status: "completed", detail: "PDF 已验证" } };
+  it("retains historical block and overall completion evidence together", () => {
+    const parsed = parseTaskPlan(`<task_plan>${JSON.stringify(plan)}</task_plan>`);
+    expect(parsed?.steps[0].status).toBe("blocked");
+    expect(parsed?.outcome).toEqual(plan.outcome);
+  });
+  it("rejects completion with outstanding steps or no evidence", () => {
+    expect(parseTaskPlan(`<task_plan>${JSON.stringify({ ...plan, steps: [plan.steps[0], { ...plan.steps[1], status: "pending" }] })}</task_plan>`)).toBeNull();
+    expect(parseTaskPlan(`<task_plan>${JSON.stringify({ ...plan, outcome: { status: "completed", detail: "" } })}</task_plan>`)).toBeNull();
+  });
+});
