@@ -48,6 +48,15 @@ pub(super) async fn prepare_model_context(
     let mut system = request.system_message.clone();
     system.content.push_str("\n\n");
     system.content.push_str(crate::tool_policy::CODE_SEARCH_INSTRUCTION);
+    system.content.push_str(super::deliverables::INSTRUCTION);
+    let previous_deliveries = history.iter().flat_map(|message| message.metadata.as_ref()
+        .and_then(|metadata| metadata.deliverables.as_ref()).into_iter().flatten())
+        .filter(|file| file.kind == crate::models::DeliverableKind::Final)
+        .map(|file| file.path.as_str()).collect::<std::collections::BTreeSet<_>>();
+    if !previous_deliveries.is_empty() {
+        system.content.push_str("\n历史已交付文件（后续作为输入使用不取消其历史交付身份；再次使用前确认文件仍存在）：\n");
+        for path in previous_deliveries { system.content.push_str(&format!("- {path}\n")); }
+    }
     if let Some(message) = history.iter().rev().find(|message| message.role == "assistant") {
         if message.metadata.as_ref().and_then(|metadata| metadata.generation_status.as_deref()) == Some("interrupted") {
             system.content.insert_str(0, "上一条助手消息因输出截断、超时或停止而中断，不代表任务已完成。结合历史中已保留的内容，从中断位置继续完成当前任务，避免重述已输出的正文或重复已完成的操作；若用户提出了新要求，以新要求为准。若上一条包含未闭合的工具调用，该调用尚未执行：请重新输出该工具调用的完整结构，不能只输出剩余标签。\n\n");
@@ -171,6 +180,7 @@ pub(super) async fn prepare_model_context(
                     summary_plan.version, rolling.content
                 ),
                 metadata: Some(MessageMetadata {
+                deliverables: None,
                     task_control: None,
                     web_search: None,
                     exclude_from_profile: Some(true),

@@ -396,7 +396,7 @@ where
                     }
                     if publish_gate.ready(stream_started.elapsed()) {
                         if let Some(message) = snapshot.stream_message.as_mut() {
-                            message.content = crate::task_summary::visible_content(&content);
+                            message.content = super::deliverables::visible_content(&content);
                         }
                         snapshot.reasoning = reasoning.clone();
                         emit(snapshot.clone());
@@ -420,7 +420,7 @@ where
         // Flush even on cancellation, timeout or error: the last deltas may have
         // arrived inside the observer interval and must remain visible.
         if let Some(message) = snapshot.stream_message.as_mut() {
-            message.content = crate::task_summary::visible_content(&content);
+            message.content = super::deliverables::visible_content(&content);
         }
         snapshot.reasoning = reasoning.clone();
         emit(snapshot.clone());
@@ -440,13 +440,17 @@ where
             .await
             .finish_profile_foreground_lease(&lease)?;
         let stopped = control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst);
-        content = crate::task_summary::visible_content(&content);
+        let file_roles = if stream_result.is_ok() && !stopped && !content.contains("<tool_call") {
+            Some(super::deliverables::validated(&content, &request.project_path))
+        } else { None };
+        content = super::deliverables::visible_content(&content);
         if content.trim().is_empty() && reasoning.is_empty() && !stopped {
             stream_result?;
             return Err("模型返回了空结果。".into());
         }
         if !content.is_empty() || !reasoning.is_empty() {
             let metadata = MessageMetadata {
+                deliverables: file_roles,
                 task_control: None,
                 web_search: None,
                 exclude_from_profile: Some(true),

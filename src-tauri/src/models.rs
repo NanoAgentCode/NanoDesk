@@ -426,6 +426,8 @@ pub enum ChatStreamEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deliverables: Option<Vec<DeliverableFile>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_control: Option<bool>,
     pub web_search: Option<MessageWebSearchMetadata>,
     #[serde(default)]
@@ -437,6 +439,16 @@ pub struct MessageMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant_reasoning: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeliverableFile {
+    pub path: String,
+    pub kind: DeliverableKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum DeliverableKind { Intermediate, Final }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextSummaryMetadata {

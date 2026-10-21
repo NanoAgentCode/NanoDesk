@@ -1,5 +1,6 @@
 //! Stable facade for application-owned background conversation execution.
 mod protocol;
+mod deliverables;
 mod ownership;
 mod scope;
 mod actions;

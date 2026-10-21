@@ -59,7 +59,21 @@ pub(crate) async fn execute_registered_tool(
         }
         tool_policy::AuthorizedTool::ExecuteCommand => {
             let command = required_tool_arg(&args, "command")?;
+            let root = project_root(project_path)?;
+            let before = super::command_products::capture(root.clone()).await;
             let output = execute_authorized_command(project_path, command, tavily_api_key).await?;
+            if let Some(before) = before {
+                if let Some(after) = super::command_products::capture(root).await {
+                    let files = super::command_products::changed(&before, &after);
+                    if !files.is_empty() {
+                        state.runtime.lock().await.record_step(crate::runtime::AgentStepDraft {
+                            run_id: tool_call.run_id.clone(), kind: "generated_files".into(), status: "completed".into(),
+                            input_summary: Some(tool_call.name.clone()), output_summary: None,
+                            metadata_json: Some(serde_json::json!({ "tool_call_id": tool_call.id, "files": files }).to_string()),
+                        })?;
+                    }
+                }
+            }
             Ok(format!(
                 "命令执行成功，输出结果如下：\n\n```\n{output}\n```"
             ))

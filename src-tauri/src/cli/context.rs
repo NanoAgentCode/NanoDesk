@@ -64,6 +64,7 @@ pub(super) async fn prepare_cli_context(
             let rolling_summary = rolling_summary
                 .ok_or_else(|| AppError::Message("没有可摘要的历史消息".to_string()))?;
             let metadata = MessageMetadata {
+                deliverables: None,
                 task_control: None,
                 web_search: None,
                 exclude_from_profile: Some(true),

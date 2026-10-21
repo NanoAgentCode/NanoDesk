@@ -1,6 +1,7 @@
 import { useRef, useState, type MutableRefObject } from "react";
 import { listMessages, listAgentRunTimelines } from "../../api";
 import type { AgentToolCall, PersistedMessage } from "../../types";
+import { restoreToolProducts } from "../../lib/toolProducts";
 import { mergeBackgroundMessages } from "../../lib/backgroundAgent";
 import { findPendingClarification } from "../../lib/messageHelpers";
 import type { BackgroundAgentClient } from "./useBackgroundAgents";
@@ -42,7 +43,7 @@ export function useChatHistory({ activeConversationIdRef, background, setNotice 
             [snapshot.stream_message!.id]: snapshot.reasoning
           }));
         const restoredToolCalls = timelines
-          .flatMap((timeline) => timeline.tool_calls)
+          .flatMap(restoreToolProducts)
           .reduce<Record<string, AgentToolCall>>((current, toolCall) => {
             current[toolCall.message_id] = toolCall;
             return current;

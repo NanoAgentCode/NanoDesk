@@ -274,6 +274,7 @@ export interface WebSearchResponse {
 }
 
 export interface MessageMetadata {
+  deliverables?: { path: string; kind: "intermediate" | "final" }[] | null;
   task_control?: boolean | null;
   web_search?: MessageWebSearchMetadata | null;
   exclude_from_profile?: boolean | null;
@@ -595,6 +596,7 @@ export interface AgentStepDraft {
 }
 
 export interface AgentToolCall {
+  generated_files?: string[];
   id: string;
   run_id: string;
   message_id: string;

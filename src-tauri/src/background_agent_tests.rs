@@ -2217,3 +2217,47 @@ fn execution_snapshot_survives_restart_and_does_not_follow_active_model() {
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn successful_command_products_are_persisted_in_run_history() {
+    let command = if cfg!(windows) { "[IO.File]::WriteAllBytes((Join-Path $PWD 'poem.docx'), [byte[]](1,2,3))" } else { "printf doc > poem.docx" };
+    let server = MockModel::start(vec![(vec![format!("<tool_call name=\"execute_command\"><command>{command}</command></tool_call>")],0),(vec!["[Document](poem.docx)".into()],0)]);
+    let fixture = Fixture::new(&server.url, "full");
+    fixture.start().await.unwrap().unwrap();
+    let runtime = fixture.state.runtime.lock().await;
+    let tools = runtime.list_tool_calls(&fixture.request.run_id).unwrap();
+    assert_eq!(tools[0].status, "completed");
+    let steps = runtime.list_steps(&fixture.request.run_id).unwrap();
+    let products = steps.iter().find(|step| step.kind == "generated_files").unwrap();
+    let metadata: serde_json::Value = serde_json::from_str(products.metadata_json.as_ref().unwrap()).unwrap();
+    assert_eq!(metadata["tool_call_id"], tools[0].id);
+    assert_eq!(metadata["files"], serde_json::json!(["poem.docx"]));
+    drop(runtime);
+    server.worker.join().unwrap();
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn goal_based_deliveries_survive_multiple_runs_and_database_reopen() {
+    let first = "诗已写入。\n<deliverables>[{\"path\":\"poem.md\",\"kind\":\"final\"}]</deliverables>";
+    let second = "已转换。\n<deliverables>[{\"path\":\"convert.js\",\"kind\":\"intermediate\"},{\"path\":\"poem.docx\",\"kind\":\"final\"}]</deliverables>";
+    let server = MockModel::start(vec![(vec![first.into()],0),(vec![second.into()],0)]);
+    let mut fixture = Fixture::new(&server.url, "full");
+    for name in ["poem.md", "convert.js", "poem.docx"] { std::fs::write(fixture.root.join("work").join(name), "existing confirmed file").unwrap(); }
+    fixture.start().await.unwrap().unwrap();
+    for index in 0..30 {
+        fixture.state.db.lock().await.append_message(internal_message(&fixture.request.conversation_id, format!("discussion {index}"))).unwrap();
+    }
+    let user = fixture.state.db.lock().await.append_message(crate::models::MessageDraft { conversation_id: fixture.request.conversation_id.clone(), role: "user".into(), content: "把之前的诗转为 DOCX".into(), metadata: None }).unwrap();
+    let run = fixture.state.runtime.lock().await.create_run(crate::runtime::AgentRunDraft { conversation_id: fixture.request.conversation_id.clone(), project_path: Some(fixture.request.project_path.clone()), model_config_id: Some(fixture.request.model_config_id.clone()), trigger_message_id: Some(user.id) }).unwrap();
+    fixture.request.run_id = run.id;
+    fixture.start().await.unwrap().unwrap();
+    let requests = server.worker.join().unwrap();
+    assert!(requests[1]["messages"][0]["content"].as_str().unwrap().contains("- poem.md"));
+    *fixture.state.db.lock().await = crate::db::Database::open(fixture.root.join("data.sqlite3")).unwrap();
+    let history = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    let roles = history.iter().filter_map(|message| message.metadata.as_ref()).filter_map(|metadata| metadata.deliverables.as_ref()).flatten().map(|file| (file.path.clone(), format!("{:?}", file.kind))).collect::<Vec<_>>();
+    assert_eq!(roles, vec![("poem.md".into(), "Final".into()), ("convert.js".into(), "Intermediate".into()), ("poem.docx".into(), "Final".into())]);
+    assert!(history.iter().all(|message| !message.content.contains("<deliverables>")));
+    fixture.cleanup();
+}

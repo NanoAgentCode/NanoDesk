@@ -124,6 +124,7 @@ pub(super) fn internal_message(conversation_id: &str, content: String) -> Messag
         role: "user".into(),
         content,
         metadata: Some(MessageMetadata {
+                deliverables: None,
             task_control,
             web_search: None,
             exclude_from_profile: Some(true),

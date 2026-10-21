@@ -23,6 +23,6 @@ export default function DeliverablesPanel({ files, projectPath }: { files: Deliv
         </div>)}
       </section>;
     })}
-    <p className="task-summary-loading">中间文件来自成功的文件写入记录；回复链接指向的已记录或项目内现有文件归入最终交付。</p>
+    <p className="task-summary-loading">文件按每轮任务目标与用途分类；最终交付物会保留，后续作为输入使用不会降级。</p>
   </div>;
 }

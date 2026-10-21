@@ -6,3 +6,5 @@ pub(crate) mod observation;
 pub(crate) mod ocr;
 
 pub(crate) mod remote_ocr;
+
+mod command_products;

@@ -3,7 +3,7 @@ import type { AgentToolCall, PersistedMessage, ProjectFileEntry, RagFile } from 
 export interface Deliverable { id: string; name: string; path?: string; kind: "upload" | "intermediate" | "final" }
 const normalize = (path: string) => path.replace(/\\/g, "/").replace(/^\.\//, "");
 
-/** Only successful writes are generated files; assistant links identify delivery. */
+/** Goal-based roles are durable per message; legacy replies can still use file links. */
 export function collectDeliverables(conversationId: string, messages: PersistedMessage[], files: RagFile[], tools: AgentToolCall[], projectFiles: ProjectFileEntry[] = [], projectPath = ""): Deliverable[] {
   const result = new Map<string, Deliverable>();
   const scoped = messages.filter(message => message.conversation_id === conversationId);
@@ -19,13 +19,27 @@ export function collectDeliverables(conversationId: string, messages: PersistedM
     for (const match of block?.matchAll(/^- (.+?): (.+)$/gm) || []) add(match[2].trim(), "upload", match[1]);
   }
   for (const tool of tools) {
-    if (!messageIds.has(tool.message_id) || tool.name !== "write_file" || tool.status !== "completed") continue;
+    if (!messageIds.has(tool.message_id) || tool.status !== "completed") continue;
+    if (tool.name === "execute_command") {
+      for (const path of tool.generated_files || []) add(path, "intermediate");
+    }
+    if (tool.name !== "write_file") continue;
     try {
       const args = JSON.parse(tool.args_json);
       if (typeof args.path === "string" && args.path.trim()) add(args.path, "intermediate");
     } catch { /* Older malformed records must not hide other files. */ }
   }
+  const roles = new Map<string, "intermediate" | "final">();
+  for (const message of scoped.filter(message => message.role === "assistant" && message.metadata?.generation_status !== "interrupted")) {
+    for (const file of message.metadata?.deliverables || []) {
+      const path = normalize(file.path);
+      // A later conversion may use an old delivery as input; it must retain its delivery identity.
+      if (roles.get(path) !== "final") roles.set(path, file.kind);
+    }
+  }
+  for (const [path, kind] of roles) add(path, kind);
   for (const message of scoped.filter(message => message.role === "assistant")) {
+    if (message.metadata?.deliverables != null || message.metadata?.generation_status === "interrupted") continue;
     const content = message.content.replace(/<tool_call\b[\s\S]*?<\/tool_call>/g, "");
     for (const match of content.matchAll(/\[[^\]]*\]\((?:<([^>]+)>|([^\s)]+))\)/g)) {
       let path = match[1] || match[2];
@@ -34,6 +48,7 @@ export function collectDeliverables(conversationId: string, messages: PersistedM
       const root = normalize(projectPath).replace(/\/+$/, "");
       if (root && path.startsWith(`${root}/`)) path = path.slice(root.length + 1);
       const existing = result.get(path);
+      if (roles.has(path)) continue;
       if (existing?.kind === "intermediate") existing.kind = "final";
       else if (!existing && projectFiles.some(file => !file.is_dir && normalize(file.path) === path)) add(path, "final");
     }
