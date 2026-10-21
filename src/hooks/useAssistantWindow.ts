@@ -35,8 +35,12 @@ export function useAssistantWindow(choosingFiles: boolean, hasMention: boolean, 
 
   useEffect(() => {
     document.body.classList.add("assistant-surface");
+    document.documentElement.classList.add("assistant-document");
     document.getElementById("nano-startup")?.remove();
-    return () => document.body.classList.remove("assistant-surface");
+    return () => {
+      document.body.classList.remove("assistant-surface");
+      document.documentElement.classList.remove("assistant-document");
+    };
   }, []);
   useEffect(() => {
     const controller = createAssistantTransition(resizeAssistant, setPhase, (err, expanding) => {

@@ -31,7 +31,7 @@ export const resizeAssistant = (presentation: "icon" | "input" | "picker") => in
 
 export const readAssistantClipboardPaths = () => invoke<string[]>("read_assistant_clipboard_paths");
 
-export async function submitAssistantRequest(text: string, conversationId: string | null, filePaths: string[] = [], clipboardFiles: import("../lib/assistantClipboard").AssistantClipboardFile[] = []) {
+export async function submitAssistantRequest(text: string, conversationId: string | null, filePaths: string[] = [], clipboardFiles: import("../lib/assistantClipboard").AssistantClipboardFile[] = [], onProgress?: (progress: import("../lib/assistantAttachments").AssistantAttachmentProgress) => void) {
   const id = crypto.randomUUID();
   let unlisten: (() => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -39,6 +39,7 @@ export async function submitAssistantRequest(text: string, conversationId: strin
     await new Promise<void>((resolve, reject) => {
       void listen<AssistantReply>(ASSISTANT_REPLY_EVENT, ({ payload }) => {
         if (payload.id !== id) return;
+        if (payload.attachment) { onProgress?.(payload.attachment); return; }
         payload.error ? reject(new Error(payload.error)) : resolve();
       }).then(async (stop) => {
         unlisten = stop;

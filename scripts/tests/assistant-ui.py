@@ -39,6 +39,9 @@ const invoke=window.__TAURI_INTERNALS__.invoke;
 window.__TAURI_INTERNALS__.invoke=async(command,args={})=>{
  if(command==='plugin:event|emit_to' && args.event==='assistant:request') {
    window.lastRequest=args.payload;
+   if(window.deferSubmit)return;
+   const files=[...(args.payload.filePaths||[]),...(args.payload.clipboardFiles||[])];
+   files.forEach((_,index)=>window.testEmit('assistant:reply',{id:args.payload.id,attachment:{index,status:window.failSubmit?'failed':'success',...(window.failSubmit?{error:'测试文件无法读取'}:{})}}));
    window.testEmit('assistant:reply',{id:args.payload.id,...(window.failSubmit?{error:'模拟提交失败'}:{})});return;
  }
  return invoke(command,args);
@@ -116,7 +119,8 @@ with sync_playwright() as p:
             expect(orb).to_have_attribute('aria-busy','false')
         page.evaluate('window.failSubmit=true')
         field.press('Enter')
-        expect(page.get_by_role('alert')).to_contain_text('模拟提交失败')
+        expect(page.get_by_role('button',name='发送消息')).to_have_attribute('title','模拟提交失败')
+        expect(page.get_by_role('alert')).to_have_count(0)
         expect(field).to_have_value('继续分析')
         page.evaluate('window.failSubmit=false')
         # Real text paste keeps the cursor position and native insertion behavior.
@@ -129,15 +133,47 @@ with sync_playwright() as p:
         page.evaluate("window.clipboardPaths=['D:/paste.pdf']")
         field.dispatch_event('keydown',{'key':'v','ctrlKey':True})
         expect(page.get_by_role('button',name='移除文件 paste.pdf')).to_be_visible()
+        file_box=page.get_by_role('button',name='移除文件 paste.pdf').bounding_box()
+        input_box=page.locator('.assistant-input-bar').bounding_box()
+        assert file_box['y']+file_box['height']<=input_box['y'],(file_box,input_box)
+        assert page.locator('#assistant-panel').evaluate('e=>e.scrollHeight<=e.clientHeight'), 'assistant panel must not scroll vertically'
         page.get_by_role('button',name='移除文件 paste.pdf').click()
         page.evaluate('window.clipboardPaths=[]')
         # Clipboard blobs survive submission failures and reach the main window.
         field.evaluate("""e=>{const data=new DataTransfer();data.items.add(new File(['hello'],'clip.txt',{type:'text/plain'}));e.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));}""")
         expect(page.get_by_role('button',name='移除文件 clip.txt')).to_be_visible()
+        # Picked and pasted files share one row above the input, even with long names.
+        page.get_by_role('button',name='上传文件').click()
+        page.evaluate("window.clipboardPaths=['D:/a-very-long-attachment-name-for-layout-check.pdf','D:/another-long-attachment-name.pdf']")
+        field.dispatch_event('keydown',{'key':'v','ctrlKey':True})
+        expect(page.get_by_role('button',name='移除文件 another-long-attachment-name.pdf')).to_be_attached()
+        assert page.locator('.assistant-files').count()==1
+        assert page.locator('#assistant-panel').evaluate('e=>e.scrollHeight<=e.clientHeight')
+        page.get_by_role('button',name='移除文件 another-long-attachment-name.pdf').scroll_into_view_if_needed()
+        for chip in page.locator('.assistant-files button').all():
+            box=chip.bounding_box(); bar=page.locator('.assistant-input-bar').bounding_box()
+            assert box['y']>=0 and box['y']+box['height']<=bar['y'],(box,bar)
+        page.evaluate('window.deferSubmit=true')
+        page.get_by_role('button',name='发送消息').click()
+        expect(page.get_by_role('button',name='发送消息')).to_be_disabled()
+        page.evaluate("""()=>{const id=window.lastRequest.id;for(const [index,status] of [[0,'success'],[1,'failed'],[2,'processing'],[3,'processing']])window.testEmit('assistant:reply',{id,attachment:{index,status,...(status==='failed'?{error:'文件无法读取'}:{})}});}""")
+        expect(page.locator('.assistant-file-status--success')).to_have_count(1)
+        expect(page.locator('.assistant-file-status--failed')).to_have_count(1)
+        expect(page.locator('.assistant-file-status--processing')).to_have_count(2)
+        expect(page.get_by_role('alert')).to_have_count(0)
+        page.screenshot(path=str(root/f'assistant-file-status-{scale}.png'),omit_background=True)
+        page.evaluate("""()=>{const id=window.lastRequest.id;for(const index of [2,3])window.testEmit('assistant:reply',{id,attachment:{index,status:'success'}});window.testEmit('assistant:reply',{id,error:'文件处理未完成'});window.deferSubmit=false;}""")
+        expect(page.get_by_role('button',name='发送消息')).to_be_enabled()
+        expect(page.locator('.assistant-file-status--success')).to_have_count(3)
+        expect(page.locator('.assistant-file-status--failed')).to_have_count(1)
+        for name in ['test.pdf','a-very-long-attachment-name-for-layout-check.pdf','another-long-attachment-name.pdf']:
+            page.get_by_role('button',name=f'移除文件 {name}',exact=True).click()
+        page.evaluate('window.clipboardPaths=[]')
         field.fill('')
         page.evaluate('window.failSubmit=true')
         page.get_by_role('button',name='发送消息').click()
-        expect(page.get_by_role('alert')).to_contain_text('模拟提交失败')
+        expect(page.locator('.assistant-file-status--failed')).to_have_count(1)
+        expect(page.get_by_role('alert')).to_have_count(0)
         expect(page.get_by_role('button',name='移除文件 clip.txt')).to_be_visible()
         assert page.evaluate('window.lastRequest.clipboardFiles[0].name')=='clip.txt'
         assert page.evaluate("atob(window.lastRequest.clipboardFiles[0].dataUrl.split(',')[1])")=='hello'

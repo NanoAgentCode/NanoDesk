@@ -11,6 +11,9 @@ import "./AssistantMode.css";
 import { useBackgroundAgents } from "../hooks/chat/useBackgroundAgents";
 
 import AssistantSurface from "./AssistantSurface";
+import AssistantAttachmentChip from "./AssistantAttachmentChip";
+import type { AssistantAttachmentStatus } from "../lib/assistantAttachments";
+interface AssistantFile { id: string; name: string; path?: string; file?: AssistantClipboardFile; status: AssistantAttachmentStatus; error?: string }
 import { useAssistantWindow } from "../hooks/useAssistantWindow";
 
 export default function AssistantMode() {
@@ -22,8 +25,10 @@ export default function AssistantMode() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [filePaths, setFilePaths] = useState<string[]>([]);
-  const [clipboardFiles, setClipboardFiles] = useState<AssistantClipboardFile[]>([]);
+  const [attachments, setAttachments] = useState<AssistantFile[]>([]);
+  const [sendError, setSendError] = useState("");
+  const filePaths = attachments.flatMap(item => item.path ? [item.path] : []);
+  const clipboardFiles = attachments.flatMap(item => item.file ? [item.file] : []);
   const pasting = useRef(false);
   const [choosingFiles, setChoosingFiles] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -58,14 +63,29 @@ export default function AssistantMode() {
   }
   async function send() {
     if (busy || choosingFiles || (!text.trim() && !filePaths.length && !clipboardFiles.length) || mention) return;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setSendError("");
+    const ordered = [...attachments.filter(item => item.path), ...attachments.filter(item => item.file)];
+    setAttachments(current => current.map(item => ({ ...item, status: "pending", error: undefined })));
     try {
-      await submitAssistantRequest(text.trim(), selected?.id || null, filePaths, clipboardFiles);
-      setFilePaths([]);
-      setClipboardFiles([]);
+      await submitAssistantRequest(text.trim(), selected?.id || null, filePaths, clipboardFiles, progress => {
+        const id = ordered[progress.index]?.id;
+        if (!id) return;
+        setAttachments(current => current.map(item => item.id === id ? { ...item, status: progress.status, error: progress.error } : item));
+      });
+      setAttachments([]);
       setText(""); setCursor(0); setSelected(null); setExpanded(false);
-    } catch (err) { setError(String(err).replace(/^Error: /, "")); }
+    } catch (err) {
+      const detail = String(err).replace(/^Error: /, "");
+      setSendError(detail);
+      setAttachments(current => current.map(item => item.status === "pending" || item.status === "processing" ? { ...item, status: "failed", error: detail } : item));
+    }
     finally { setBusy(false); }
+  }
+  function addPaths(paths: string[]) {
+    setAttachments(current => [...current, ...[...new Set(paths)].filter(path => !current.some(item => item.path === path)).map(path => ({
+      id: crypto.randomUUID(), name: attachmentName({ kind: "path", path }), path, status: "pending" as const,
+    }))]);
+    setSendError("");
   }
   async function chooseFiles() {
     setChoosingFiles(true); setError("");
@@ -74,7 +94,7 @@ export default function AssistantMode() {
       if (!paths) return;
       const files = Array.isArray(paths) ? paths : [paths];
       const supported = files.filter((path) => classifyAttachment({ kind: "path", path }) !== "unsupported");
-      setFilePaths((current) => [...new Set([...current, ...supported])]);
+      addPaths(supported);
       if (supported.length !== files.length) setError("部分文件格式不支持，请选择图片、音频或文档。");
     } catch (err) { setError(String(err)); }
     finally { setChoosingFiles(false); }
@@ -85,8 +105,8 @@ export default function AssistantMode() {
     setChoosingFiles(true); setError("");
     try {
       const pasted = await prepareAssistantClipboard(files, paths ? async () => paths : readAssistantClipboardPaths);
-      setFilePaths(current => [...new Set([...current, ...pasted.paths])]);
-      setClipboardFiles(current => [...current, ...pasted.files]);
+      addPaths(pasted.paths);
+      setAttachments(current => [...current, ...pasted.files.map(file => ({ id: crypto.randomUUID(), name: file.name, file, status: "pending" as const }))]);
       if (pasted.unsupported) setError("部分文件格式不支持，请选择图片、音频或文档。");
     } catch (error) { setError(String(error)); }
     finally { pasting.current = false; setChoosingFiles(false); }
@@ -104,6 +124,9 @@ export default function AssistantMode() {
         {!suggestions.length && <p>{loading ? "正在读取会话…" : "没有匹配的会话"}</p>}
       </div>
     </section>}
+    {(filePaths.length > 0 || clipboardFiles.length > 0) && <div className="assistant-files" aria-label="待上传文件">
+      {attachments.map(item => <AssistantAttachmentChip key={item.id} name={item.name} path={item.path} status={item.status} error={item.error} disabled={busy || choosingFiles} onRemove={() => { setAttachments(current => current.filter(file => file.id !== item.id)); setSendError(""); }} />)}
+    </div>}
     <div className="assistant-input-bar">
       <button className="assistant-new" type="button" aria-label="上传文件" title="添加附件（图片、音频、文档）" disabled={busy || choosingFiles} onClick={() => void chooseFiles()}><Plus size={24} /></button>
       {selected && <button className="assistant-target" type="button" title={`继续：${selected.title}；点击取消`} disabled={busy} onClick={() => setSelected(null)}><MessageCircle size={16} /><span>{selected.title}</span><X size={12} /></button>}
@@ -131,10 +154,8 @@ export default function AssistantMode() {
           }
           if (event.key === "Enter") { event.preventDefault(); if (mention) { if (suggestions[index]) selectConversation(suggestions[index]); } else void send(); }
         }} />
-      <button className="assistant-send" type="button" aria-label="发送消息" disabled={busy || choosingFiles || (!text.trim() && !filePaths.length && !clipboardFiles.length) || !!mention} onClick={() => void send()}><ArrowUp size={24} /></button>
+      <button className={`assistant-send${sendError ? " assistant-send--failed" : ""}`} type="button" aria-label="发送消息" title={sendError || "发送消息"} disabled={busy || choosingFiles || (!text.trim() && !filePaths.length && !clipboardFiles.length) || !!mention} onClick={() => void send()}><ArrowUp size={24} /></button>
     </div>
-    {!!filePaths.length && <div className="assistant-files" aria-label="待上传文件">{filePaths.map((path) => <button type="button" key={path} title={path} disabled={busy} aria-label={`移除文件 ${attachmentName({ kind: "path", path })}`} onClick={() => setFilePaths((current) => current.filter((file) => file !== path))}><span>{attachmentName({ kind: "path", path })}</span><X size={12} /></button>)}</div>}
-    {!!clipboardFiles.length && <div className="assistant-files" aria-label="待上传的粘贴文件">{clipboardFiles.map((file, index) => <button type="button" key={index} title={file.name} disabled={busy || choosingFiles} aria-label={`移除文件 ${file.name}`} onClick={() => setClipboardFiles(current => current.filter((_, i) => i !== index))}><span>{file.name}</span><X size={12} /></button>)}</div>}
     {error && <p className="assistant-error" role="alert">{error}</p>}
   </AssistantSurface>;
 }

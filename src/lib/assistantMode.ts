@@ -1,7 +1,7 @@
 import type { Conversation } from "../types";
 
 export interface AssistantRequest { id: string; text: string; conversationId: string | null; filePaths?: string[]; clipboardFiles?: import("./assistantClipboard").AssistantClipboardFile[] }
-export interface AssistantReply { id: string; error?: string }
+export interface AssistantReply { id: string; error?: string; attachment?: import("./assistantAttachments").AssistantAttachmentProgress }
 export const ASSISTANT_REQUEST_EVENT = "assistant:request";
 export const ASSISTANT_REPLY_EVENT = "assistant:reply";
 

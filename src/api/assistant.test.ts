@@ -90,4 +90,23 @@ describe("assistant visibility and handoff", () => {
     await submitAssistantRequest("", null, [], files);
     expect(mocks.emitTo).toHaveBeenCalledWith("main", "assistant:request", expect.objectContaining({ text: "", clipboardFiles: files }));
   });
+  it("keeps waiting after progress and ignores progress for another request", async () => {
+    let receive!: (event: { payload: unknown }) => void;
+    let requestId = "";
+    mocks.listen.mockImplementation(async (_event, handler) => { receive = handler; return mocks.stop; });
+    mocks.emitTo.mockImplementation(async (_target, _event, payload) => { requestId = payload.id; });
+    const progress = vi.fn();
+    let finished = false;
+    const submission = submitAssistantRequest("", null, ["D:/file.pdf"], [], progress).then(() => { finished = true; });
+    await vi.waitFor(() => expect(requestId).not.toBe(""));
+    receive({ payload: { id: "other", attachment: { index: 0, status: "failed" } } });
+    receive({ payload: { id: requestId, attachment: { index: 0, status: "processing" } } });
+    await Promise.resolve();
+    expect(progress).toHaveBeenCalledTimes(1);
+    expect(progress).toHaveBeenCalledWith({ index: 0, status: "processing" });
+    expect(finished).toBe(false);
+    receive({ payload: { id: requestId } });
+    await submission;
+    expect(finished).toBe(true);
+  });
 });

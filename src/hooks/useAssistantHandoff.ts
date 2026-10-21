@@ -7,6 +7,7 @@ import type { UseChatReturn } from "./useChat";
 import type { UseProjectsReturn } from "./useProjects";
 import type { UseModelReturn } from "./useModel";
 import { restoreAssistantClipboardFile } from "../lib/assistantClipboard";
+import { processAssistantAttachments } from "../lib/assistantAttachments";
 
 function requireAssistantModel(model: UseModelReturn, text: string, savedId: string) {
   const routedId = model.routing.enabled ? model.routing.resolve(text)?.modelId : null;
@@ -75,8 +76,12 @@ export function useAssistantHandoff(chat: UseChatReturn, projects: UseProjectsRe
         const modelId = chat.resolveConversationModelId(request.targetId);
         requireAssistantModel(model, request.text, modelId);
         if ((request.filePaths?.length || request.clipboardFiles?.length) && !request.attachmentsReady) {
-          if (request.clipboardFiles?.length) await chat.handleAssistantAttachments(request.filePaths || [], request.clipboardFiles.map(restoreAssistantClipboardFile));
-          else await chat.handleAssistantAttachments(request.filePaths!);
+          const paths = request.filePaths || [];
+          const files = request.clipboardFiles || [];
+          await processAssistantAttachments(paths.length + files.length, async index => {
+            if (index < paths.length) await chat.handleAssistantAttachments([paths[index]]);
+            else await chat.handleAssistantAttachments([], [restoreAssistantClipboardFile(files[index - paths.length])]);
+          }, attachment => emitTo("assistant", ASSISTANT_REPLY_EVENT, { id: request.id, attachment }));
           setPending({ ...request, attachmentsReady: true });
           return;
         }

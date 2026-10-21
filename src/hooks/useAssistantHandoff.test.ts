@@ -96,7 +96,10 @@ describe("assistant background submission", () => {
       await vi.waitFor(() => expect(chat.handleAssistantAttachments).toHaveBeenCalledWith(["D:/test.pdf"]));
       await vi.waitFor(() => expect(mocks.setPending).toHaveBeenCalledWith(expect.objectContaining({ attachmentsReady: true })));
       expect(send).not.toHaveBeenCalled();
-      expect(mocks.emitTo).not.toHaveBeenCalled();
+      expect(mocks.emitTo.mock.calls.map(([, , payload]) => payload)).toEqual([
+        { id: "request", attachment: { index: 0, status: "processing" } },
+        { id: "request", attachment: { index: 0, status: "success" } },
+      ]);
       mocks.pending = mocks.setPending.mock.calls.find(([value]) => value?.attachmentsReady)?.[0];
       mocks.effects = [];
       chat.chatInput = "音频识别文字";
