@@ -2,6 +2,26 @@ import { describe, expect, it } from "vitest";
 import { buildSystemMessage } from "./chatSystemMessage";
 
 describe("buildSystemMessage structured agent protocols", () => {
+  it.each([false, true])("grounds CLI arguments in local help (deferred=%s)", (deferred) => {
+    const message = buildSystemMessage([], null, null, [], [
+      { id: "bash_tool", enabled: true, parameters: {} },
+      { id: "tavily_search", enabled: true, parameters: {} }
+    ], [], [], [], [], undefined, deferred);
+    expect(message.content).toContain("先单独调用该子命令的 --help");
+    expect(message.content).toContain("等待实际帮助结果后");
+    expect(message.content).toContain("不要将 API 字段名直接当作 CLI 参数");
+    expect(message.content).toContain("tvly search --help");
+    expect(message.content).toContain("--time-range day|week|month|year");
+    expect(message.content).toContain("不支持 --days");
+    expect(message.content).toContain("不要原样重试");
+  });
+
+  it("omits command guidance without Bash and Tavily guidance when disabled", () => {
+    const bash = { id: "bash_tool", enabled: true, parameters: {} };
+    const tavily = { id: "tavily_search", enabled: false, parameters: {} };
+    expect(buildSystemMessage([], null, null, [], [bash, tavily]).content).not.toContain("tvly search --help");
+    expect(buildSystemMessage([], null, null, [], [{ ...tavily, enabled: true }]).content).not.toContain("先单独调用该子命令的 --help");
+  });
   it("defers duplicated rules to the authoritative background assembler", () => {
     const project = { id: "p", name: "P", path: "C:/p" } as Parameters<typeof buildSystemMessage>[2];
     const standalone = buildSystemMessage([], null, project);

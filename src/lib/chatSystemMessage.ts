@@ -78,6 +78,18 @@ export function buildSystemMessage(
     : "";
 
   const enabledSkills = skills.filter((s) => s.enabled);
+  const commandGenerationInstruction = enabledSkills.some((s) => s.id === "bash_tool")
+    ? [
+        "命令生成规则：",
+        "- 以本机 CLI 的实际帮助为参数依据，不要将 API 字段名直接当作 CLI 参数，也不要套用其他工具或旧版本的选项。",
+        "- 当前上下文没有该子命令的帮助、参数不确定或技能说明与本机行为冲突时，先单独调用该子命令的 --help，等待实际帮助结果后再生成业务命令；不要把帮助和业务命令串在一次调用中。已有本轮帮助结果时直接复用。",
+        "- 按当前系统的 shell 语法生成短命令，正确引用空格、中文和特殊字符；只添加任务必需且已确认支持的参数。",
+        "- 遇到 No such option、unrecognized arguments、unknown option 或参数值错误时，不要原样重试；先核对对应子命令的帮助，再重新生成完整工具调用。失败命令可能已执行部分操作，重试前检查实际结果并遵守当前审批策略。",
+        enabledSkills.some((s) => s.id === "tavily_search" || s.id === "tavily_cli")
+          ? "- Tavily：首次搜索先读取 tvly search --help。已验证版本的时间过滤写法为 --time-range day|week|month|year，日期范围使用 --start-date YYYY-MM-DD 和 --end-date YYYY-MM-DD，不支持 --days。此处 | 表示可选值，实际只传一个值；任意天数按运行上下文计算日期范围，不要擅自改成近一周。最终以本机帮助为准。"
+          : ""
+      ].filter(Boolean).join("\n")
+    : "";
   const mcpTools = mcpServers.flatMap((server) =>
     server.status.connected
       ? server.tools.map((tool) => ({
@@ -160,6 +172,7 @@ MCP（仅已连接工具，参数遵循 schema）：<tool_call name="mcp__server
     projectContext,
     activeProject && !deferRetrieval ? "代码定位优先使用当前问题的代码索引检索结果，先按命中路径和行号读取文件。索引不足或过期时，可在明确的项目目录内搜索，允许显式指定当前项目根目录（例如 rg -n pattern .，或 Get-ChildItem -Path . -Recurse -Filter *.tsx），优先缩小到相关子目录。禁止搜索父目录、项目外或范围不明的路径。没有索引时提示使用左侧项目名称旁的数据库图标建立项目索引，但仍可读取已知文件或执行项目内搜索。工具被拒绝后应缩小范围，不要原样重复失败命令。" : "",
     mcpContext,
+    commandGenerationInstruction,
     skillsContext || mcpContext ? `当前已启用的技能列表与工具调用规范：\n${skillsContext || "无已启用本地技能"}\n\n${toolsSystemInstruction}` : "",
     clarificationSystemInstruction,
     deferRetrieval ? "" : planningSystemInstruction,
