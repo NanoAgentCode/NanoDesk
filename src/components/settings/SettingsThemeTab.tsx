@@ -3,6 +3,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { Checkbox, Group, Radio, SegmentedControl, Stack, Switch, Text } from "@mantine/core";
 import TaskSettingsSection from "./TaskSettingsSection";
 import { getDocumentContextMenu, setDocumentContextMenu } from "../../api/documentChat";
+import { listen } from "@tauri-apps/api/event";
 import { themeLabels } from "../../lib/appHelpers";
 import type { ThemeMode } from "../../types";
 import { getAutostart, setAutostart } from "../../api";
@@ -28,10 +29,13 @@ export default function SettingsThemeTab({ themeMode, setThemeMode }: SettingsTh
   const [documentMenuError, setDocumentMenuError] = useState("");
   useEffect(() => {
     let active = true;
+    const subscription = listen<boolean>("document-chat:enabled", ({ payload }) => {
+      if (active) { setDocumentMenu(payload); setDocumentMenuError(""); }
+    });
     void getDocumentContextMenu().then((value) => { if (active) setDocumentMenu(value); })
       .catch((e) => { if (active) setDocumentMenuError(String(e)); })
       .finally(() => { if (active) setDocumentMenuBusy(false); });
-    return () => { active = false; };
+    return () => { active = false; void subscription.then(stop => stop()).catch(console.error); };
   }, []);
   const [assistantVisible, setAssistantVisibleState] = useState(getStoredAssistantVisible);
   const [assistantBusy, setAssistantBusy] = useState(false);

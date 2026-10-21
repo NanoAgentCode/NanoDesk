@@ -76,7 +76,7 @@ pub fn open_from_args(app: &AppHandle, args: Vec<String>, cwd: PathBuf) -> bool 
 fn menu_command(exe: &Path) -> String { format!("\"{}\" --document-chat \"%1\"", exe.display()) }
 
 #[tauri::command]
-pub fn set_document_context_menu(enabled: bool) -> Result<(), String> {
+pub fn set_document_context_menu(app: AppHandle, enabled: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
         use winreg::{enums::HKEY_CURRENT_USER, RegKey};
@@ -99,10 +99,10 @@ pub fn set_document_context_menu(enabled: bool) -> Result<(), String> {
                 }
             }
         }
-        Ok(())
+        crate::desktop::sync_document_chat_menu(&app, enabled)
     }
     #[cfg(not(windows))]
-    { let _ = enabled; Err("文档右键菜单仅支持 Windows。".into()) }
+    { let _ = (app, enabled); Err("文档右键菜单仅支持 Windows。".into()) }
 }
 
 #[tauri::command]

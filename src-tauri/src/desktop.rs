@@ -13,6 +13,18 @@ use tauri::tray::TrayIconEvent;
 use tauri::{AppHandle, Manager, Emitter, WebviewUrl, WebviewWindowBuilder, LogicalSize, LogicalPosition};
 
 struct AssistantTrayMenu(MenuItem<tauri::Wry>);
+struct DocumentChatTrayMenu(MenuItem<tauri::Wry>);
+
+fn document_chat_menu_label(enabled: bool) -> &'static str {
+    if enabled { "关闭文档对话" } else { "开启文档对话" }
+}
+
+pub(crate) fn sync_document_chat_menu(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    if let Some(menu) = app.try_state::<DocumentChatTrayMenu>() {
+        menu.0.set_text(document_chat_menu_label(enabled)).map_err(|err| err.to_string())?;
+    }
+    app.emit("document-chat:enabled", enabled).map_err(|err| err.to_string())
+}
 
 fn assistant_menu_label(visible: bool) -> &'static str {
     if visible { "隐藏助手" } else { "开启助手" }
@@ -172,10 +184,14 @@ pub(crate) fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
     let assistant_item = MenuItem::with_id(app, "tray_assistant", assistant_menu_label(false), true, None::<&str>)
         .map_err(|err| err.to_string())?;
     app.manage(AssistantTrayMenu(assistant_item.clone()));
+    let document_item = MenuItem::with_id(app, "tray_document_chat",
+        document_chat_menu_label(crate::document_chat::get_document_context_menu()), cfg!(windows), None::<&str>)
+        .map_err(|err| err.to_string())?;
+    app.manage(DocumentChatTrayMenu(document_item.clone()));
     let separator = PredefinedMenuItem::separator(app).map_err(|err| err.to_string())?;
     let quit_item = MenuItem::with_id(app, "tray_quit", "退出应用", true, None::<&str>)
         .map_err(|err| err.to_string())?;
-    let menu = Menu::with_items(app, &[&show_item, &assistant_item, &separator, &quit_item])
+    let menu = Menu::with_items(app, &[&show_item, &assistant_item, &document_item, &separator, &quit_item])
         .map_err(|err| err.to_string())?;
 
     let tray = TrayIconBuilder::with_id(brand::TRAY_ID)
@@ -212,6 +228,12 @@ pub(crate) fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
                     }
                 });
             }
+            "tray_document_chat" => {
+                let enabled = !crate::document_chat::get_document_context_menu();
+                if let Err(err) = crate::document_chat::set_document_context_menu(app.clone(), enabled) {
+                    logging::error("tray", "failed to toggle document chat", serde_json::json!({ "error": err }));
+                }
+            }
             "tray_quit" => app.exit(0),
             _ => {}
         })
@@ -238,6 +260,11 @@ pub(crate) fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
 
 #[cfg(test)]
 mod assistant_tray_tests {
+    #[test]
+    fn document_menu_offers_the_opposite_of_current_state() {
+        assert_eq!(super::document_chat_menu_label(true), "关闭文档对话");
+        assert_eq!(super::document_chat_menu_label(false), "开启文档对话");
+    }
     #[test]
     fn menu_offers_the_opposite_of_current_visibility() {
         assert_eq!(super::assistant_menu_label(true), "隐藏助手");
