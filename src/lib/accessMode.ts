@@ -11,17 +11,17 @@ export const ACCESS_MODE_OPTIONS: ReadonlyArray<{
   {
     value: "ask",
     label: "请求批准",
-    description: "每次先规划，经用户审核后执行；工具操作仍需批准"
+    description: "先审规划，工具操作需批准"
   },
   {
     value: "auto",
     label: "帮我批准",
-    description: "自动执行低、中风险操作，高风险操作仍需批准"
+    description: "低中风险自动，高风险需批准"
   },
   {
     value: "full",
     label: "完全访问",
-    description: "自动执行策略允许的操作，仍保留安全硬限制"
+    description: "允许的操作自动执行，保留安全限制"
   }
 ] as const;
 

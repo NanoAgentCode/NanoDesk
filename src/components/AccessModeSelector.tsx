@@ -21,11 +21,11 @@ export default function AccessModeSelector({ value, onChange, disabled = false }
 
   return (
     <Menu
-      width={350}
+      width={280}
       position="top-start"
-      offset={10}
+      offset={6}
       shadow="xl"
-      radius="lg"
+      radius="md"
       withinPortal
       transitionProps={{ transition: "pop-bottom-left", duration: 140 }}
     >
@@ -49,8 +49,8 @@ export default function AccessModeSelector({ value, onChange, disabled = false }
             <Menu.Item
               key={option.value}
               className={`access-mode-option ${option.value === "full" ? "risk-high" : ""}`}
-              leftSection={<Icon size={22} strokeWidth={1.8} />}
-              rightSection={selected ? <Check size={20} strokeWidth={2.2} /> : null}
+              leftSection={<Icon size={18} strokeWidth={1.8} />}
+              rightSection={selected ? <Check size={16} strokeWidth={2.2} /> : null}
               onClick={() => onChange(option.value)}
               disabled={disabled}
             >
