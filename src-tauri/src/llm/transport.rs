@@ -44,7 +44,7 @@ where
         )));
     }
 
-    let mut buffer = String::new();
+    let mut buffer = Vec::new();
     let mut stream = response.bytes_stream();
 
     use futures_util::StreamExt;
@@ -65,23 +65,42 @@ where
             }
         };
 
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some(line_end) = buffer.find('\n') {
-            let line = buffer[..line_end].trim().to_string();
-            buffer = buffer[line_end + 1..].to_string();
-            if process_sse_line(&mut emit, &request_id, &line, provider)? {
+        // HTTP chunks can split a UTF-8 code point. Decode only complete SSE
+        // lines, retaining all unfinished bytes until the next chunk arrives.
+        buffer.extend_from_slice(&chunk);
+        while let Some(line_end) = buffer.iter().position(|byte| *byte == b'\n') {
+            let done = process_sse_bytes(&mut emit, &request_id, &buffer[..line_end], provider)?;
+            buffer.drain(..=line_end);
+            if done {
                 emit(ChatStreamEvent::Done { request_id })?;
                 return Ok(());
             }
         }
     }
 
-    if !buffer.trim().is_empty() {
-        process_sse_line(&mut emit, &request_id, buffer.trim(), provider)?;
+    if !buffer.is_empty() {
+        process_sse_bytes(&mut emit, &request_id, &buffer, provider)?;
     }
 
     emit(ChatStreamEvent::Done { request_id })?;
     Ok(())
+}
+
+fn process_sse_bytes<F>(
+    emit: &mut F,
+    request_id: &str,
+    bytes: &[u8],
+    provider: StreamProvider,
+) -> AppResult<bool>
+where
+    F: FnMut(ChatStreamEvent) -> AppResult<()>,
+{
+    let line = std::str::from_utf8(bytes).map_err(|error| {
+        let message = format!("模型流式响应包含无效 UTF-8：{error}");
+        emit_stream_error(emit, request_id, &message);
+        AppError::from(message)
+    })?;
+    process_sse_line(emit, request_id, line.trim(), provider)
 }
 
 pub(super) fn process_sse_line<F>(
@@ -213,6 +232,72 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_utf8_reports_error_instead_of_saving_replacement_characters() {
+        for bytes in [b"data: \xff".as_slice(), b"data: \xe4\xb8".as_slice()] {
+            let mut events = Vec::new();
+            let result = process_sse_bytes(&mut |event| { events.push(event); Ok(()) }, "invalid", bytes, StreamProvider::OpenAi);
+            assert!(result.is_err());
+            assert_eq!(events.len(), 1);
+            assert!(matches!(&events[0], ChatStreamEvent::Error { message, .. } if message.contains("UTF-8")));
+        }
+    }
+
+    #[tokio::test]
+    async fn split_utf8_stream_preserves_content_reasoning_and_file_payload() {
+        use std::io::{Read, Write};
+        let text = "每条以原文为准。注：中文 🧪";
+        let tool = format!("<tool_call name=\"write_file\"><path>报告.md</path><content>{text}</content></tool_call>");
+        for provider in [StreamProvider::OpenAi, StreamProvider::Anthropic] {
+            let lines = match provider {
+                StreamProvider::OpenAi => vec![
+                    serde_json::json!({"choices":[{"delta":{"reasoning_content":text}}]}),
+                    serde_json::json!({"choices":[{"delta":{"content":tool}}]}),
+                ],
+                StreamProvider::Anthropic => vec![
+                    serde_json::json!({"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":text}}),
+                    serde_json::json!({"type":"content_block_delta","delta":{"type":"text_delta","text":tool}}),
+                ],
+            };
+            // End without a newline as well as splitting every multibyte character.
+            let body = format!("data: {}\r\n\r\ndata: {}", lines[0], lines[1]);
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let worker = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                socket.set_nodelay(true).unwrap();
+                let mut headers = Vec::new();
+                let mut byte = [0];
+                while !headers.ends_with(b"\r\n\r\n") {
+                    socket.read_exact(&mut byte).unwrap();
+                    headers.push(byte[0]);
+                }
+                write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").unwrap();
+                for byte in body.as_bytes() {
+                    socket.write_all(&[b'1', b'\r', b'\n', *byte, b'\r', b'\n']).unwrap();
+                    socket.flush().unwrap();
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                socket.write_all(b"0\r\n\r\n").unwrap();
+            });
+            let mut content = String::new();
+            let mut reasoning = String::new();
+            let result = stream_sse_response("utf8".into(), reqwest::Client::builder().no_proxy().build().unwrap().get(format!("http://{address}")), provider, |event| {
+                match event {
+                    ChatStreamEvent::Delta { content: delta, .. } => content.push_str(&delta),
+                    ChatStreamEvent::ReasoningDelta { content: delta, .. } => reasoning.push_str(&delta),
+                    _ => (),
+                }
+                Ok(())
+            }).await;
+            worker.join().unwrap();
+            result.unwrap();
+            assert_eq!(reasoning, text);
+            assert_eq!(content, tool);
+        }
+    }
 
     #[tokio::test]
     async fn terminal_events_finish_without_waiting_for_connection_close() {
