@@ -81,4 +81,13 @@ describe("assistant visibility and handoff", () => {
     await submitAssistantRequest("分析文件", "project", ["D:/report.pdf", "D:/image.png"]);
     expect(mocks.emitTo).toHaveBeenCalledWith("main", "assistant:request", expect.objectContaining({ filePaths: ["D:/report.pdf", "D:/image.png"] }));
   });
+  it("passes clipboard bytes without requiring text or a disk file path", async () => {
+    mocks.listen.mockImplementation(async (_event, handler) => {
+      mocks.emitTo.mockImplementationOnce(async (_target, _event, payload) => handler({ payload: { id: payload.id } }));
+      return mocks.stop;
+    });
+    const files = [{ name: "paste.png", type: "image/png", dataUrl: "data:image/png;base64,aGVsbG8=" }];
+    await submitAssistantRequest("", null, [], files);
+    expect(mocks.emitTo).toHaveBeenCalledWith("main", "assistant:request", expect.objectContaining({ text: "", clipboardFiles: files }));
+  });
 });

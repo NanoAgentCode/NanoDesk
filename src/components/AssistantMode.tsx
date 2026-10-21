@@ -3,7 +3,8 @@ import { ArrowUp, MessageCircle, Plus, X } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { classifyAttachment, attachmentName } from "../lib/attachmentUploads";
 import { listConversationProjectPaths, listConversations } from "../api/conversations";
-import { submitAssistantRequest } from "../api/assistant";
+import { readAssistantClipboardPaths, submitAssistantRequest } from "../api/assistant";
+import { prepareAssistantClipboard, type AssistantClipboardFile } from "../lib/assistantClipboard";
 import { filterAssistantConversations, getConversationMention, removeConversationMention } from "../lib/assistantMode";
 import type { Conversation } from "../types";
 import "./AssistantMode.css";
@@ -22,6 +23,8 @@ export default function AssistantMode() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [filePaths, setFilePaths] = useState<string[]>([]);
+  const [clipboardFiles, setClipboardFiles] = useState<AssistantClipboardFile[]>([]);
+  const pasting = useRef(false);
   const [choosingFiles, setChoosingFiles] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const mention = getConversationMention(text, cursor);
@@ -54,11 +57,12 @@ export default function AssistantMode() {
     requestAnimationFrame(() => { input.current?.focus(); input.current?.setSelectionRange(mention.start, mention.start); });
   }
   async function send() {
-    if (busy || choosingFiles || (!text.trim() && !filePaths.length) || mention) return;
+    if (busy || choosingFiles || (!text.trim() && !filePaths.length && !clipboardFiles.length) || mention) return;
     setBusy(true); setError("");
     try {
-      await submitAssistantRequest(text.trim(), selected?.id || null, filePaths);
+      await submitAssistantRequest(text.trim(), selected?.id || null, filePaths, clipboardFiles);
       setFilePaths([]);
+      setClipboardFiles([]);
       setText(""); setCursor(0); setSelected(null); setExpanded(false);
     } catch (err) { setError(String(err).replace(/^Error: /, "")); }
     finally { setBusy(false); }
@@ -74,6 +78,18 @@ export default function AssistantMode() {
       if (supported.length !== files.length) setError("部分文件格式不支持，请选择图片、音频或文档。");
     } catch (err) { setError(String(err)); }
     finally { setChoosingFiles(false); }
+  }
+  async function pasteFiles(files: File[], paths?: string[]) {
+    if (busy || choosingFiles || pasting.current) return;
+    pasting.current = true;
+    setChoosingFiles(true); setError("");
+    try {
+      const pasted = await prepareAssistantClipboard(files, paths ? async () => paths : readAssistantClipboardPaths);
+      setFilePaths(current => [...new Set([...current, ...pasted.paths])]);
+      setClipboardFiles(current => [...current, ...pasted.files]);
+      if (pasted.unsupported) setError("部分文件格式不支持，请选择图片、音频或文档。");
+    } catch (error) { setError(String(error)); }
+    finally { pasting.current = false; setChoosingFiles(false); }
   }
   return <AssistantSurface phase={phase} expanded={expanded} running={running} onActivate={() => {
     setExpanded((current) => !current);
@@ -92,20 +108,33 @@ export default function AssistantMode() {
       <button className="assistant-new" type="button" aria-label="上传文件" title="添加附件（图片、音频、文档）" disabled={busy || choosingFiles} onClick={() => void chooseFiles()}><Plus size={24} /></button>
       {selected && <button className="assistant-target" type="button" title={`继续：${selected.title}；点击取消`} disabled={busy} onClick={() => setSelected(null)}><MessageCircle size={16} /><span>{selected.title}</span><X size={12} /></button>}
       <input ref={input} aria-label="助手消息" placeholder={selected ? "继续这个会话…" : "开始新聊天，或 @ 选择已有会话"} value={text} disabled={busy}
+        onPaste={event => {
+          const files = Array.from(event.clipboardData.files);
+          if (files.length) event.preventDefault();
+          void pasteFiles(files);
+        }}
         role="combobox" aria-expanded={!!mention} aria-controls="assistant-conversations" aria-autocomplete="list" aria-activedescendant={mention && suggestions[index] ? `assistant-option-${index}` : undefined}
         onChange={(event) => { setText(event.target.value); setCursor(event.target.selectionStart || 0); setError(""); }}
         onSelect={(event) => setCursor(event.currentTarget.selectionStart || 0)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          if (event.ctrlKey && !event.altKey && event.key.toLowerCase() === "v" && !busy && !choosingFiles) {
+            // Explorer file copies may not dispatch a WebView paste event.
+            // Keep the default paste action so ordinary text and browser images work.
+            void readAssistantClipboardPaths().then(paths => {
+              if (paths.length) void pasteFiles([], paths);
+            }).catch(error => setError(String(error)));
+          }
           if (event.key === "Escape") { setExpanded(false); return; }
           if (mention && ["ArrowUp", "ArrowDown"].includes(event.key)) {
             event.preventDefault(); setIndex((current) => suggestions.length ? (current + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length : 0);
           }
           if (event.key === "Enter") { event.preventDefault(); if (mention) { if (suggestions[index]) selectConversation(suggestions[index]); } else void send(); }
         }} />
-      <button className="assistant-send" type="button" aria-label="发送消息" disabled={busy || choosingFiles || (!text.trim() && !filePaths.length) || !!mention} onClick={() => void send()}><ArrowUp size={24} /></button>
+      <button className="assistant-send" type="button" aria-label="发送消息" disabled={busy || choosingFiles || (!text.trim() && !filePaths.length && !clipboardFiles.length) || !!mention} onClick={() => void send()}><ArrowUp size={24} /></button>
     </div>
     {!!filePaths.length && <div className="assistant-files" aria-label="待上传文件">{filePaths.map((path) => <button type="button" key={path} title={path} disabled={busy} aria-label={`移除文件 ${attachmentName({ kind: "path", path })}`} onClick={() => setFilePaths((current) => current.filter((file) => file !== path))}><span>{attachmentName({ kind: "path", path })}</span><X size={12} /></button>)}</div>}
+    {!!clipboardFiles.length && <div className="assistant-files" aria-label="待上传的粘贴文件">{clipboardFiles.map((file, index) => <button type="button" key={index} title={file.name} disabled={busy || choosingFiles} aria-label={`移除文件 ${file.name}`} onClick={() => setClipboardFiles(current => current.filter((_, i) => i !== index))}><span>{file.name}</span><X size={12} /></button>)}</div>}
     {error && <p className="assistant-error" role="alert">{error}</p>}
   </AssistantSurface>;
 }

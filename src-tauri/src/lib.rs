@@ -298,6 +298,7 @@ pub fn run() {
             desktop::show_app_window,
             desktop::set_assistant_visible,
             desktop::resize_assistant,
+            desktop::clipboard::read_assistant_clipboard_paths,
             desktop::minimize_to_tray,
             desktop::quit_app,
             desktop::get_autostart,

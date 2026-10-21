@@ -18,6 +18,21 @@ vi.mock("../api/assistant", () => ({ restoreAssistantVisibility: vi.fn().mockRes
 import { useAssistantHandoff } from "./useAssistantHandoff";
 
 describe("assistant background submission", () => {
+  it.each([false, true])("uploads clipboard files with strict attachment handling, failure=%s", async fails => {
+    const file = { name: "note.txt", type: "text/plain", dataUrl: "data:text/plain;base64,aGVsbG8=" };
+    mocks.pending = { id: "clip", text: "", targetId: "target", clipboardFiles: [file] };
+    const upload = fails ? vi.fn().mockRejectedValue(new Error("附件处理失败")) : vi.fn().mockResolvedValue(undefined);
+    const chat = { activeConversationId: "target", activeConversation: { id: "target" }, busy: false, chatInput: "", pendingImageAttachments: [], speech: { isBusy: () => false }, resolveConversationModelId: () => "model", handleAssistantAttachments: upload, handleAssistantMessage: vi.fn() } as unknown as UseChatReturn;
+    const model = { models: [{ id: "model" }], routing: { enabled: false, fixedModelIds: ["model"] } } as unknown as UseModelReturn;
+    useAssistantHandoff(chat, {} as UseProjectsReturn, model, vi.fn(), vi.fn());
+    mocks.effects[1]();
+    await vi.waitFor(() => expect(upload).toHaveBeenCalled());
+    expect(upload.mock.calls[0][0]).toEqual([]);
+    expect(await upload.mock.calls[0][1][0].text()).toBe("hello");
+    expect(chat.handleAssistantMessage).not.toHaveBeenCalled();
+    if (fails) await vi.waitFor(() => expect(mocks.emitTo).toHaveBeenCalledWith("assistant", "assistant:reply", { id: "clip", error: "附件处理失败" }));
+    else await vi.waitFor(() => expect(mocks.setPending).toHaveBeenCalledWith(expect.objectContaining({ attachmentsReady: true })));
+  });
   beforeEach(() => {
     vi.clearAllMocks(); mocks.effects = []; mocks.pending = null;
     mocks.listen.mockResolvedValue(() => {});

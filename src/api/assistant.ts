@@ -29,7 +29,9 @@ export async function setAssistantVisible(visible: boolean) {
 export const restoreAssistantVisibility = () => invoke("set_assistant_visible", { visible: getStoredAssistantVisible() });
 export const resizeAssistant = (presentation: "icon" | "input" | "picker") => invoke("resize_assistant", { presentation });
 
-export async function submitAssistantRequest(text: string, conversationId: string | null, filePaths: string[] = []) {
+export const readAssistantClipboardPaths = () => invoke<string[]>("read_assistant_clipboard_paths");
+
+export async function submitAssistantRequest(text: string, conversationId: string | null, filePaths: string[] = [], clipboardFiles: import("../lib/assistantClipboard").AssistantClipboardFile[] = []) {
   const id = crypto.randomUUID();
   let unlisten: (() => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -40,9 +42,9 @@ export async function submitAssistantRequest(text: string, conversationId: strin
         payload.error ? reject(new Error(payload.error)) : resolve();
       }).then(async (stop) => {
         unlisten = stop;
-        timer = setTimeout(() => reject(new Error("未收到确认，请到主窗口检查消息是否已发送后再操作。")), filePaths.length ? 180000 : 30000);
+        timer = setTimeout(() => reject(new Error("未收到确认，请到主窗口检查消息是否已发送后再操作。")), filePaths.length || clipboardFiles.length ? 180000 : 30000);
         try {
-          await emitTo("main", ASSISTANT_REQUEST_EVENT, { id, text, conversationId, ...(filePaths.length ? { filePaths } : {}) } satisfies AssistantRequest);
+          await emitTo("main", ASSISTANT_REQUEST_EVENT, { id, text, conversationId, ...(filePaths.length ? { filePaths } : {}), ...(clipboardFiles.length ? { clipboardFiles } : {}) } satisfies AssistantRequest);
         } catch (error) { reject(error); }
       }).catch(reject);
     });

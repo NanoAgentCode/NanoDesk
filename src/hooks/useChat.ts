@@ -835,7 +835,10 @@ export function useChat({
     loadMessages,
     handleSendMessage,
     handleAssistantMessage: (text: string) => handleSendMessage(text),
-    handleAssistantAttachments: (paths: string[]) => handleAttachmentSources(paths.map((path) => ({ kind: "path", path })), true),
+    handleAssistantAttachments: (paths: string[], files: File[] = []) => handleAttachmentSources([
+      ...paths.map((path) => ({ kind: "path" as const, path })),
+      ...files.map((file) => ({ kind: "file" as const, file }))
+    ], true),
     handleInterruptGeneration,
     handleRegenerateLastResponse,
     handleExecuteTool,

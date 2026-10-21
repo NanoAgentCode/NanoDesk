@@ -27,6 +27,7 @@ window.__TAURI_INTERNALS__ = {
   if(command === 'list_conversations') return window.fixtures.filter(c => !c.archived && (c.project_path||null) === (args.projectPath||null));
   if(command === 'resize_assistant') { window.presentation = args.presentation; return; }
   if(command === 'plugin:dialog|open') return ['D:/test.pdf'];
+  if(command === 'read_assistant_clipboard_paths') return window.clipboardPaths || [];
   return null;
  }
 };
@@ -46,7 +47,7 @@ window.__TAURI_INTERNALS__.invoke=async(command,args={})=>{
 with sync_playwright() as p:
     browser=p.chromium.launch(channel='msedge',headless=True)
     for scale in [1,1.5,2]:
-        context=browser.new_context(viewport={'width':88,'height':88},device_scale_factor=scale)
+        context=browser.new_context(viewport={'width':88,'height':88},device_scale_factor=scale,permissions=['clipboard-read','clipboard-write'])
         context.add_init_script(mock)
         page=context.new_page(); errors=[]
         page.on('pageerror',lambda error:errors.append(str(error)))
@@ -118,6 +119,32 @@ with sync_playwright() as p:
         expect(page.get_by_role('alert')).to_contain_text('模拟提交失败')
         expect(field).to_have_value('继续分析')
         page.evaluate('window.failSubmit=false')
+        # Real text paste keeps the cursor position and native insertion behavior.
+        field.fill('前后')
+        field.evaluate('e=>e.setSelectionRange(1,1)')
+        page.evaluate("navigator.clipboard.writeText('粘贴')")
+        field.press('Control+v')
+        expect(field).to_have_value('前粘贴后')
+        # Explorer fallback also works when no browser paste event is dispatched.
+        page.evaluate("window.clipboardPaths=['D:/paste.pdf']")
+        field.dispatch_event('keydown',{'key':'v','ctrlKey':True})
+        expect(page.get_by_role('button',name='移除文件 paste.pdf')).to_be_visible()
+        page.get_by_role('button',name='移除文件 paste.pdf').click()
+        page.evaluate('window.clipboardPaths=[]')
+        # Clipboard blobs survive submission failures and reach the main window.
+        field.evaluate("""e=>{const data=new DataTransfer();data.items.add(new File(['hello'],'clip.txt',{type:'text/plain'}));e.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));}""")
+        expect(page.get_by_role('button',name='移除文件 clip.txt')).to_be_visible()
+        field.fill('')
+        page.evaluate('window.failSubmit=true')
+        page.get_by_role('button',name='发送消息').click()
+        expect(page.get_by_role('alert')).to_contain_text('模拟提交失败')
+        expect(page.get_by_role('button',name='移除文件 clip.txt')).to_be_visible()
+        assert page.evaluate('window.lastRequest.clipboardFiles[0].name')=='clip.txt'
+        assert page.evaluate("atob(window.lastRequest.clipboardFiles[0].dataUrl.split(',')[1])")=='hello'
+        page.screenshot(path=str(root/f'assistant-clipboard-{scale}.png'),omit_background=True)
+        page.get_by_role('button',name='移除文件 clip.txt').click()
+        page.evaluate('window.failSubmit=false')
+        field.fill('继续分析')
         page.get_by_role('button',name='上传文件').click()
         expect(page.get_by_role('button',name='移除文件 test.pdf')).to_be_visible()
         panel=page.locator('#assistant-panel').bounding_box(); icon=orb.bounding_box()

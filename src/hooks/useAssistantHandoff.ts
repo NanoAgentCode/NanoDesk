@@ -6,6 +6,7 @@ import { ASSISTANT_REPLY_EVENT, ASSISTANT_REQUEST_EVENT, validateAssistantHandof
 import type { UseChatReturn } from "./useChat";
 import type { UseProjectsReturn } from "./useProjects";
 import type { UseModelReturn } from "./useModel";
+import { restoreAssistantClipboardFile } from "../lib/assistantClipboard";
 
 function requireAssistantModel(model: UseModelReturn, text: string, savedId: string) {
   const routedId = model.routing.enabled ? model.routing.resolve(text)?.modelId : null;
@@ -33,7 +34,7 @@ export function useAssistantHandoff(chat: UseChatReturn, projects: UseProjectsRe
         try {
           const { chat: state, projects: projectState, model: models } = current.current;
           validateAssistantHandoff(state.busy || state.uploadingAttachment || state.speech.isBusy(), state.chatInput, state.pendingImageAttachments.length);
-          if (!request.text?.trim() && !request.filePaths?.length) throw new Error("消息不能为空。");
+          if (!request.text?.trim() && !request.filePaths?.length && !request.clipboardFiles?.length) throw new Error("消息不能为空。");
           let targetId: string;
           if (request.conversationId) {
             const paths = projectState.projects.map((project) => project.path);
@@ -73,8 +74,9 @@ export function useAssistantHandoff(chat: UseChatReturn, projects: UseProjectsRe
         validateAssistantHandoff(chat.busy || chat.uploadingAttachment || chat.speech.isBusy(), request.attachmentsReady ? "" : chat.chatInput, request.attachmentsReady ? 0 : chat.pendingImageAttachments.length);
         const modelId = chat.resolveConversationModelId(request.targetId);
         requireAssistantModel(model, request.text, modelId);
-        if (request.filePaths?.length && !request.attachmentsReady) {
-          await chat.handleAssistantAttachments(request.filePaths);
+        if ((request.filePaths?.length || request.clipboardFiles?.length) && !request.attachmentsReady) {
+          if (request.clipboardFiles?.length) await chat.handleAssistantAttachments(request.filePaths || [], request.clipboardFiles.map(restoreAssistantClipboardFile));
+          else await chat.handleAssistantAttachments(request.filePaths!);
           setPending({ ...request, attachmentsReady: true });
           return;
         }
@@ -85,7 +87,7 @@ export function useAssistantHandoff(chat: UseChatReturn, projects: UseProjectsRe
         processing.current = false;
         notice(String(error));
         await emitTo("assistant", ASSISTANT_REPLY_EVENT, { id: request.id, error: String(error).replace(/^Error: /, "") });
-      } finally { if (!request.filePaths?.length || request.attachmentsReady) processing.current = false; }
+      } finally { if ((!request.filePaths?.length && !request.clipboardFiles?.length) || request.attachmentsReady) processing.current = false; }
     })().catch((error) => notice(String(error)));
   }, [pending, chat.activeConversationId, chat.activeConversation]);
 }
