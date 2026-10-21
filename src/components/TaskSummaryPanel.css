@@ -15,6 +15,21 @@
 .task-summary-rail { writing-mode: vertical-rl; align-self: center; margin-top: 12px; letter-spacing: 3px; font-size: 12px; padding: 10px 6px; }
 .task-summary-content { padding: 22px 20px; overflow-y: auto; min-height: 0; }
 .task-summary-content[hidden] { display: none; }
+.task-summary-tabs { display: flex; gap: 4px; min-width: 0; flex-wrap: wrap; }
+.task-summary-tabs button { gap: 5px; font-size: 12px; white-space: nowrap; }
+.task-summary-tabs button[aria-selected="true"] { color: var(--accent-color, #3b82f6); background: color-mix(in srgb, var(--accent-color, #3b82f6) 10%, transparent); }
+.task-summary-tabs small { font-size: 10px; }
+.deliverables-group { margin: 24px 0; }
+.deliverables-group h3 { display: flex; align-items: center; justify-content: space-between; font-size: 13px; margin: 0 0 12px; }
+.deliverables-group h3 small { color: var(--text-secondary); font-weight: 400; }
+.deliverable-file { display: flex; align-items: flex-start; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+.deliverable-file > svg { flex-shrink: 0; color: var(--text-secondary); margin-top: 2px; }
+.deliverable-file > div { flex: 1; min-width: 0; }
+.deliverable-file strong, .deliverable-file small { display: block; overflow-wrap: anywhere; line-height: 1.6; }
+.deliverable-file strong { font-size: 12px; font-weight: 500; }
+.deliverable-file small { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+.deliverable-file button { border: 0; padding: 3px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.deliverable-file button:hover { color: var(--accent-color, #3b82f6); }
 .task-plan-goal { font-size: 14px; line-height: 1.7; margin: 0 0 12px; overflow-wrap: anywhere; }
 .task-plan-entry { border-bottom: 1px solid var(--border-color); margin-bottom: 16px; }
 .task-plan-entry-header { cursor: pointer; padding: 4px 0 16px; overflow-wrap: anywhere; }

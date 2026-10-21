@@ -10,14 +10,18 @@ import type { AgentTaskPlan, AgentAccessMode } from "../types";
 import { parseTaskPlan } from "../lib/messageHelpers";
 import FriendlyError from "./FriendlyError";
 import { Button, Modal, Textarea } from "@mantine/core";
+import DeliverablesPanel from "./DeliverablesPanel";
+import type { Deliverable } from "../lib/deliverables";
 
 const COLLAPSED_KEY = `${APP_STORAGE_PREFIX}-task-summary-collapsed`;
 const WIDTH_KEY = `${APP_STORAGE_PREFIX}-task-summary-width`;
 const DEFAULT_WIDTH = 280;
 
-export default function TaskSummaryPanel({ conversationId, revision, busy, onNavigate, accessMode = "ask", allowCommand = false }: {
+export default function TaskSummaryPanel({ conversationId, revision, busy, onNavigate, accessMode = "ask", allowCommand = false, deliverables = [], projectPath = "" }: {
   conversationId: string; revision: string; busy: boolean; onNavigate?: (id: string) => void; accessMode?:AgentAccessMode;allowCommand?:boolean;
+  deliverables?: Deliverable[]; projectPath?: string;
 }) {
+  const [tab, setTab] = useState<"plan" | "files">("plan");
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSED_KEY) === "true");
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
@@ -120,13 +124,20 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
           : actualWidth + (event.key === "ArrowLeft" ? step : -step));
       }} />}
     <header className="task-summary-header">
-      {!collapsed && <h2><ListTree size={17} aria-hidden="true" />任务规划</h2>}
+      {!collapsed && <div className="task-summary-tabs" role="tablist" aria-label="任务详情">
+        <button type="button" role="tab" id="task-plan-tab" aria-selected={tab === "plan"} aria-controls="task-plan-panel" onClick={() => setTab("plan")}><ListTree size={15} />任务规划</button>
+        <button type="button" role="tab" id="deliverables-tab" aria-selected={tab === "files"} aria-controls="deliverables-panel" onClick={() => setTab("files")}>交付物{deliverables.length > 0 && <small>{deliverables.length}</small>}</button>
+      </div>}
       <button type="button" onClick={toggle} aria-expanded={!collapsed} aria-controls="task-summary-content"
         aria-label={collapsed ? "展开任务规划" : "收起任务规划"} title={collapsed ? "展开任务规划" : "收起任务规划"}>
         {collapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
       </button>
     </header>
     <div id="task-summary-content" className="task-summary-content" hidden={collapsed}>
+      <div id="deliverables-panel" role="tabpanel" aria-labelledby="deliverables-tab" hidden={tab !== "files"}>
+        <DeliverablesPanel key={conversationId} files={deliverables} projectPath={projectPath} />
+      </div>
+      <div id="task-plan-panel" role="tabpanel" aria-labelledby="task-plan-tab" hidden={tab !== "plan"}>
       {actionError && !temporaryOpened && <FriendlyError error={actionError} />}
       {run && <div className="task-plan-actions">
         {["running","awaiting_tool","awaiting_plan","awaiting_clarification"].includes(run.status) && <Button size="xs" disabled={acting} onClick={()=>void taskAction("pause")}>暂停任务</Button>}
@@ -163,6 +174,7 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
         })}
       </>}
 
+      </div>
     </div>
     <Modal opened={temporaryOpened} onClose={()=>{if(!acting)setTemporaryOpened(false);}} title="插入临时任务" centered>
       <p>主任务会先暂停并保存进度。临时任务在独立会话执行，完成后同步结果、更新主线未完成步骤并自动恢复。</p>
