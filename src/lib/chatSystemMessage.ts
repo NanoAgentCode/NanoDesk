@@ -158,7 +158,7 @@ MCP（仅已连接工具，参数遵循 schema）：<tool_call name="mcp__server
     runtimeContext,
     profileContext || "",
     projectContext,
-    activeProject && !deferRetrieval ? "代码定位优先使用当前问题的代码索引检索结果，先按命中路径和行号读取文件。索引不足或过期时，可在明确的项目子目录内搜索（例如 rg -n pattern src/components，或 Get-ChildItem -Path src/components -Recurse -Filter *.tsx）；不要从项目根目录递归扫描。没有索引时提示使用左侧项目名称旁的数据库图标建立项目索引，但仍可读取已知文件或执行限定目录的搜索。工具被拒绝后应缩小范围，不要原样重复失败命令。" : "",
+    activeProject && !deferRetrieval ? "代码定位优先使用当前问题的代码索引检索结果，先按命中路径和行号读取文件。索引不足或过期时，可在明确的项目目录内搜索，允许显式指定当前项目根目录（例如 rg -n pattern .，或 Get-ChildItem -Path . -Recurse -Filter *.tsx），优先缩小到相关子目录。禁止搜索父目录、项目外或范围不明的路径。没有索引时提示使用左侧项目名称旁的数据库图标建立项目索引，但仍可读取已知文件或执行项目内搜索。工具被拒绝后应缩小范围，不要原样重复失败命令。" : "",
     mcpContext,
     skillsContext || mcpContext ? `当前已启用的技能列表与工具调用规范：\n${skillsContext || "无已启用本地技能"}\n\n${toolsSystemInstruction}` : "",
     clarificationSystemInstruction,

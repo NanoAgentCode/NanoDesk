@@ -27,7 +27,9 @@ describe("buildSystemMessage structured agent protocols", () => {
       id: "project", name: "Project", path: "C:/workspace/project"
     } as Parameters<typeof buildSystemMessage>[2]);
     expect(message.content).toContain("代码定位优先使用当前问题的代码索引检索结果");
-    expect(message.content).toContain("rg -n pattern src/components");
+    expect(message.content).toContain("rg -n pattern .");
+    expect(message.content).toContain("允许显式指定当前项目根目录");
+    expect(message.content).toContain("禁止搜索父目录、项目外或范围不明的路径");
     expect(message.content).toContain("没有索引时");
     expect(message.content).toContain("不要原样重复失败命令");
   });

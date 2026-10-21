@@ -173,7 +173,7 @@ fn bounded_path(path: &str, root: &str) -> bool {
     if normalized.split('/').any(|part| part == "..") {
         return false;
     }
-    // A wildcard is bounded only when its fixed directory is a proper child.
+    // A wildcard is bounded when its fixed directory is inside the project.
     let fixed = if let Some(index) = normalized.find(['*', '?', '[']) {
         let Some(slash) = normalized[..index].rfind('/') else {
             return false;
@@ -182,10 +182,17 @@ fn bounded_path(path: &str, root: &str) -> bool {
     } else {
         normalized.as_str()
     };
-    let Ok(relative) = validate_project_relative_path(root, fixed) else {
+    let Ok(project) = super::project_root(root) else {
         return false;
     };
-    let Ok(project) = super::project_root(root) else {
+    if fixed.split('/').all(|part| part.is_empty() || part == ".") {
+        return true;
+    }
+    if std::path::Path::new(fixed).is_absolute() {
+        return std::path::Path::new(fixed).canonicalize()
+            .map(|target| target == project).unwrap_or(false);
+    }
+    let Ok(relative) = validate_project_relative_path(root, fixed) else {
         return false;
     };
     let Ok(target) = project.join(relative).canonicalize() else {
@@ -255,6 +262,16 @@ mod tests {
             "dir /s src/*.rs",
             "findstr /s /n service src/*.rs",
             "rg service src/app.rs",
+            "rg service .",
+            "rg service ./",
+            "find . -name '*.rs'",
+            "grep -r service .",
+            "rg service src .",
+            "Get-ChildItem -Path . -Recurse -Filter *.tsx",
+            "rg --files .",
+            "rg service src; rg service .",
+            "rg service src\nrg service .",
+            "rg service src | rg model .",
             "rg cd src",
             "git grep service -- src/components",
             "find src -name '*.rs'",
@@ -268,32 +285,24 @@ mod tests {
                 "should allow: {command}"
             );
         }
-        assert!(is_broad_search(
+        assert!(!is_broad_search(
             &format!("rg service '{}'", root.display()),
             project
         ));
         for command in [
             "rg service",
             "git grep service",
-            "find . -name '*.rs'",
             "Get-ChildItem -Depth 3",
             "Get-ChildItem -Recurse:$true",
             "rg --files",
-            "rg service .",
-            "rg service ./",
             "Get-ChildItem -Recurse -Filter *.tsx",
             "dir /s *.rs",
-            "grep -r service .",
-            "rg service src .",
             "rg service ../outside",
             "rg service src/../",
             "rg service $env:HOME",
             "rg service missing",
             "rg -g src service",
-            "rg service src; rg service .",
-            "rg service src\nrg service .",
             "cd ..; rg service src",
-            "rg service src | rg model .",
             "rg service src | rg --files",
             "rg service src || rg service",
             "rg service .git",

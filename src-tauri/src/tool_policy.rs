@@ -7,7 +7,7 @@ use crate::project_files::{normalize_relative_path, project_root, resolve_projec
 
 mod search_scope;
 
-pub(crate) const CODE_SEARCH_INSTRUCTION: &str = "代码定位优先使用当前问题的代码索引检索结果，先按命中路径和行号读取文件。索引不足或过期时，可在明确的项目子目录内搜索（例如 rg -n pattern src/components，或 Get-ChildItem -Path src/components -Recurse -Filter *.tsx）；不要从项目根目录递归扫描。没有索引时提示使用左侧项目名称旁的数据库图标建立项目索引，但仍可读取已知文件或执行限定目录的搜索。工具被拒绝后应缩小范围，不要原样重复失败命令。";
+pub(crate) const CODE_SEARCH_INSTRUCTION: &str = "代码定位优先使用当前问题的代码索引检索结果，先按命中路径和行号读取文件。索引不足或过期时，可在明确的项目目录内搜索，允许显式指定当前项目根目录（例如 rg -n pattern .，或 Get-ChildItem -Path . -Recurse -Filter *.tsx），优先缩小到相关子目录。禁止搜索父目录、项目外或范围不明的路径。没有索引时提示使用左侧项目名称旁的数据库图标建立项目索引，但仍可读取已知文件或执行项目内搜索。工具被拒绝后应缩小范围，不要原样重复失败命令。";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolPolicyDescriptor {
@@ -326,7 +326,7 @@ fn evaluate_command(command: &str, project_path: &str) -> AppResult<CommandPolic
     }
     if search_scope::is_broad_search(command, project_path) {
         return Err(AppError::Message(
-            format!("工具策略拒绝未限定范围的递归搜索。请优先使用代码索引结果；结果不足时指定项目内的具体子目录或文件，不能使用项目根目录、父目录或范围不明的路径。{CODE_SEARCH_INSTRUCTION}"),
+            format!("工具策略拒绝未限定范围的递归搜索。请优先使用代码索引结果；结果不足时显式指定项目根目录、子目录或文件，不能使用父目录、项目外或范围不明的路径。{CODE_SEARCH_INSTRUCTION}"),
         ));
     }
     if is_write_like_command(&tokens) {
@@ -544,10 +544,12 @@ mod tests {
         let allowed = evaluate_tool_call("execute_command", &args(&[("command", "Get-ChildItem src/components -Recurse -Filter *.tsx")]), &ctx)
             .expect("a scoped code search must be allowed");
         assert_eq!(allowed.risk, "medium");
-        let error = evaluate_tool_call("execute_command", &args(&[("command", "rg -n service .")]), &ctx)
+        evaluate_tool_call("execute_command", &args(&[("command", "rg -n service .")]), &ctx)
+            .expect("explicit project root search must be allowed");
+        let error = evaluate_tool_call("execute_command", &args(&[("command", "rg -n service ..")]), &ctx)
             .unwrap_err().to_string();
         assert!(error.contains("代码索引"));
-        assert!(error.contains("具体子目录"));
+        assert!(error.contains("项目"));
         fs::remove_dir_all(root).unwrap();
     }
 
