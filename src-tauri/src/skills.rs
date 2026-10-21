@@ -1,7 +1,6 @@
 use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::Manager;
 use tokio::sync::Semaphore;
 
 use crate::error::{AppError, AppResult};
@@ -358,7 +357,7 @@ fn fallback_description(provider: &str, slug: &str) -> String {
     format!("来自 {provider} 官方仓库的 \"{slug}\" 技能。")
 }
 
-pub async fn list_local_skills(app: &tauri::AppHandle) -> AppResult<(String, Vec<GitHubSkill>)> {
+pub async fn list_local_skills(app: &crate::command_host::CommandHost) -> AppResult<(String, Vec<GitHubSkill>)> {
     let data_dir = app
         .path()
         .app_data_dir()

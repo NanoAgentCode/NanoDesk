@@ -1,3 +1,4 @@
+import routingRules from "../config/modelRoutingRules.json";
 import type { ModelConfig, ModelRoutingProfile } from "../types";
 import { isChatModel } from "./modelCapabilities";
 
@@ -107,18 +108,11 @@ export interface ModelRoutingDecision {
   fallback: boolean;
 }
 
-const TASK_PATTERNS: Array<[RoutingTask, RegExp]> = [
-  ["coding", /(?:代码|编程|函数|bug|报错|调试|重构|接口|数据库|sql|typescript|javascript|python|rust|java|api|code|implement|debug|refactor)/i],
-  ["translation", /(?:翻译|译成|translate|translation)/i],
-  ["summary", /(?:总结|摘要|概括|提炼|纪要|summari[sz]e|summary)/i],
-  ["writing", /(?:写作|文案|文章|润色|改写|创作|邮件|报告|write|rewrite|polish)/i],
-  ["reasoning", /(?:分析|推理|论证|规划|方案|比较|研究|原因|为什么|analy[sz]e|reason|research|plan|compare)/i]
-];
-
 export function classifyRoutingTask(content: string, hasImages = false): RoutingTask {
   if (hasImages) return "vision";
-  for (const [task, pattern] of TASK_PATTERNS) {
-    if (pattern.test(content)) return task;
+  const lower = content.toLowerCase();
+  for (const [task, keywords] of routingRules.tasks) {
+    if ((keywords as string[]).some(keyword => lower.includes(keyword))) return task as RoutingTask;
   }
   return "general";
 }
@@ -156,15 +150,7 @@ export function routeModel(
 }
 
 // 智能模式：按任务类型在 质量/成本/均衡/速度 四个维度间自动选择策略
-export const SMART_TASK_STRATEGY: Record<RoutingTask, RoutingStrategy> = {
-  coding: "quality",
-  reasoning: "quality",
-  writing: "quality",
-  vision: "quality",
-  translation: "cost",
-  summary: "speed",
-  general: "balanced"
-};
+export const SMART_TASK_STRATEGY = routingRules.smart as Record<RoutingTask, RoutingStrategy>;
 
 export function resolveSmartStrategy(task: RoutingTask): RoutingStrategy {
   return SMART_TASK_STRATEGY[task];

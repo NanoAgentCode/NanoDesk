@@ -4,7 +4,7 @@ use crate::models::ChatRequest;
 use crate::models::ModelConfig;
 use crate::models::ModelConfigDraft;
 use crate::AppState;
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub(crate) async fn list_model_configs(state: State<'_, AppState>) -> AppResult<Vec<ModelConfig>> {

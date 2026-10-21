@@ -1,4 +1,4 @@
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 use crate::error::{AppError, AppResult};
 use crate::llm::create_embeddings;

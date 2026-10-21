@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use base64::Engine as _;
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 use crate::error::{AppError, AppResult};
 use crate::{finish_observation, start_observation, AppState, ObservationStart};

@@ -6,7 +6,8 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use tauri::{AppHandle, Emitter, State};
+use crate::command_host::CommandHost as AppHandle;
+use crate::app_state::CommandState as State;
 
 use crate::error::AppResult;
 use crate::models::{

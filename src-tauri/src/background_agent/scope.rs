@@ -1,7 +1,7 @@
 use super::protocol::BackgroundAgentRequest;
 use crate::error::{AppError, AppResult};
 use crate::runtime::AgentRun;
-use tauri::{AppHandle, Manager};
+use crate::command_host::CommandHost as AppHandle;
 
 pub(super) fn validate_scope(
     app: &AppHandle,

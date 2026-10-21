@@ -7,8 +7,8 @@ use crate::services::observation::ObservationStart;
 use crate::settings::load_tavily_api_key;
 use crate::shell;
 use crate::AppState;
-use tauri::AppHandle;
-use tauri::State;
+use crate::command_host::CommandHost as AppHandle;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub(crate) async fn execute_bash_command(

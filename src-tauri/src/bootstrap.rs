@@ -8,18 +8,19 @@ use std::collections::HashMap;
 use std::path::Path;
 use tokio::sync::Mutex;
 
-pub(crate) fn open_app_state(data_dir: &Path) -> Result<AppState, String> {
+pub(crate) fn open_app_state(data_dir: &Path) -> Result<AppState, String> { open_state(data_dir, true) }
+pub(crate) fn open_cli_state(data_dir: &Path) -> Result<AppState, String> { open_state(data_dir, false) }
+fn open_state(data_dir: &Path, recover: bool) -> Result<AppState, String> {
     let temp_dir = data_dir.join("temp");
     std::fs::create_dir_all(&temp_dir)
         .map_err(|err| format!("failed to create temp directory: {err}"))?;
     let db_path = data_dir.join(brand::MAIN_DATABASE_NAME);
     let db = Database::open(db_path).map_err(|err| err.to_string())?;
     let runtime_path = data_dir.join(brand::RUNTIME_DATABASE_NAME);
-    let runtime = RuntimeStore::open(runtime_path).map_err(|err| err.to_string())?;
-    let automation = automation::AutomationStore::open(
-        &data_dir.join(brand::AUTOMATION_DATABASE_NAME),
-    )
-    .map_err(|err| err.to_string())?;
+    let runtime = if recover { RuntimeStore::open(runtime_path) } else { RuntimeStore::connect(runtime_path) }.map_err(|err| err.to_string())?;
+    let automation_path = data_dir.join(brand::AUTOMATION_DATABASE_NAME);
+    let automation = if recover { automation::AutomationStore::open(&automation_path) }
+        else { automation::AutomationStore::connect(&automation_path) }.map_err(|err| err.to_string())?;
     let observability_path = data_dir.join(brand::OBSERVABILITY_DATABASE_NAME);
     let observability = match SqliteObservabilitySink::open(observability_path) {
         Ok(sink) => ObservabilityPipeline::new(vec![Box::new(sink)]),

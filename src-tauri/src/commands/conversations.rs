@@ -9,7 +9,7 @@ use crate::services::observation::finish_observation;
 use crate::services::observation::start_observation;
 use crate::services::observation::ObservationStart;
 use crate::AppState;
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub(crate) async fn list_conversations(
@@ -80,6 +80,11 @@ pub(crate) async fn create_conversation(
 pub(crate) async fn delete_conversation(state: State<'_, AppState>, id: String) -> AppResult<()> {
     if state.background_agents.owns_conversation(&id) {
         return Err("此会话仍有后台任务，请先停止任务再删除会话。".into());
+    }
+    for run in state.runtime.lock().await.list_runs(&id,200)? {
+        if crate::background_agent::lease::active(&state,&run.id)? {
+            return Err("此会话仍由其他客户端执行任务，请先停止任务再删除会话。".into());
+        }
     }
     let span = start_observation(
         &state,

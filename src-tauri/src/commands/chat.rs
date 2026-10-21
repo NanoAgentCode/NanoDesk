@@ -9,9 +9,8 @@ use crate::services::observation::start_observation;
 use crate::services::observation::ObservationStart;
 use crate::AppState;
 use std::time::Duration;
-use tauri::AppHandle;
-use tauri::Emitter;
-use tauri::State;
+use crate::command_host::CommandHost as AppHandle;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub(crate) async fn chat(

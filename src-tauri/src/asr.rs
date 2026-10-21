@@ -5,7 +5,8 @@ use std::time::Duration;
 use base64::Engine as _;
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use crate::app_state::CommandState as State;
+use crate::command_host::CommandHost as AppHandle;
 
 use crate::error::{AppError, AppResult};
 use crate::models::ModelSupplier;

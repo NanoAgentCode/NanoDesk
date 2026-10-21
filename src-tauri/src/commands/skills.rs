@@ -2,7 +2,7 @@ use crate::error::AppResult;
 use crate::skills;
 use crate::skills::sync_anthropic_skills as fetch_anthropic_skills;
 use crate::skills::GitHubSkill;
-use tauri::AppHandle;
+use crate::command_host::CommandHost as AppHandle;
 
 #[tauri::command]
 pub(crate) async fn sync_anthropic_skills() -> AppResult<Vec<GitHubSkill>> {

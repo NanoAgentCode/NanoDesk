@@ -2,7 +2,21 @@ use super::*;
 
 impl RuntimeStore {
     pub fn recover_interrupted_work(&self) -> AppResult<RuntimeRecoverySummary> {
-        let interrupted_tool_calls = self.list_tool_calls_by_status("running")?;
+        // A desktop restart must not recover work still owned by a CLI process.
+        self.conn.execute_batch("CREATE TEMP TABLE IF NOT EXISTS live_runtime_runs (id TEXT PRIMARY KEY); DELETE FROM live_runtime_runs;")?;
+        let mut live = std::collections::HashSet::new();
+        let mut guards = Vec::new();
+        if let Some(root) = self.conn.path().map(std::path::Path::new).and_then(|path|path.parent()).filter(|path| !path.as_os_str().is_empty()) {
+            let mut query = self.conn.prepare("SELECT id FROM agent_runs WHERE status IN ('running','awaiting_tool','awaiting_plan','awaiting_clarification')")?;
+            let ids = query.query_map([], |row| row.get::<_,String>(0))?.collect::<Result<Vec<_>,_>>()?;
+            for id in ids {
+                match crate::background_agent::lease::acquire(root,&id)? {
+                    Some(guard) => guards.push(guard),
+                    None => { self.conn.execute("INSERT INTO live_runtime_runs (id) VALUES (?1)",[&id])?; live.insert(id); }
+                }
+            }
+        }
+        let interrupted_tool_calls = self.list_tool_calls_by_status("running")?.into_iter().filter(|tool|!live.contains(&tool.run_id)).collect::<Vec<_>>();
         for tool_call in &interrupted_tool_calls {
             self.record_step(AgentStepDraft {
                 run_id: tool_call.run_id.clone(),
@@ -32,12 +46,12 @@ impl RuntimeStore {
                 updated_at = ?1,
                 completed_at = ?1,
                 attempt_count = CASE WHEN attempt_count = 0 THEN 1 ELSE attempt_count END
-            WHERE status = 'running'
+            WHERE status = 'running' AND run_id NOT IN (SELECT id FROM live_runtime_runs)
             ",
             params![now],
         )?;
 
-        let interrupted_runs = self.list_runs_needing_recovery()?;
+        let interrupted_runs = self.list_runs_needing_recovery()?.into_iter().filter(|run| !live.contains(&run.id)).collect::<Vec<_>>();
         for run in &interrupted_runs {
             let awaiting_recovery = self.run_has_recoverable_tool_call(&run.id)?;
             self.record_step(AgentStepDraft {
@@ -62,7 +76,7 @@ impl RuntimeStore {
                 updated_at = ?1,
                 completed_at = NULL,
                 error = 'tool execution failed or was interrupted; user decision required'
-            WHERE status IN ('running', 'awaiting_tool')
+            WHERE status IN ('running', 'awaiting_tool') AND id NOT IN (SELECT id FROM live_runtime_runs)
               AND EXISTS (
                   SELECT 1
                   FROM agent_tool_calls
@@ -80,7 +94,7 @@ impl RuntimeStore {
                 updated_at = ?1,
                 completed_at = ?1,
                 error = 'agent run interrupted by app restart'
-            WHERE status = 'running'
+            WHERE (status = 'running'
                OR (
                     status = 'awaiting_tool'
                     AND (
@@ -99,7 +113,7 @@ impl RuntimeStore {
                               )
                         )
                     )
-               )
+               )) AND id NOT IN (SELECT id FROM live_runtime_runs)
             ",
             params![now],
         )?;

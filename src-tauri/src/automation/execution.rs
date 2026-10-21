@@ -5,7 +5,7 @@ use crate::{
     AppState,
 };
 use std::{collections::BTreeMap, time::{Duration, Instant}};
-use tauri::{AppHandle, Manager};
+use crate::command_host::CommandHost as AppHandle;
 
 pub(super) async fn execute(app: &AppHandle, run: &AutomationRun) -> AppResult<String> {
     let state = app.state::<AppState>();

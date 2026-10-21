@@ -36,6 +36,7 @@ mod skills;
 mod tool_policy;
 
 mod app_state;
+mod command_host;
 mod bootstrap;
 mod task_budget;
 mod task_notifications;
@@ -93,9 +94,9 @@ pub fn run() {
                 serde_json::json!({ "path": data_dir.display().to_string() }),
             );
             app.manage(bootstrap::open_app_state(&data_dir)?);
-            profile::start_worker(app.handle().clone());
-            automation::start_worker(app.handle().clone());
-            background_agent::restore_waiting_runs(app.handle().clone());
+            profile::start_worker(app.handle().clone().into());
+            automation::start_worker(app.handle().clone().into());
+            background_agent::restore_waiting_runs(app.handle().clone().into());
             let args: Vec<String> = std::env::args().collect();
             if args.iter().any(|arg| arg == "--document-chat") {
                 if let Some(window) = app.get_webview_window("main") { window.hide()?; }

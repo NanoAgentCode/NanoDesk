@@ -1,4 +1,4 @@
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 use crate::agent_runner::{self, AgentModelOutputResolution};
 use crate::core::plugin::{AgentToolDefinition, PluginManifest};

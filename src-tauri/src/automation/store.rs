@@ -22,7 +22,11 @@ impl AutomationStore {
     pub(super) fn open_memory() -> AppResult<Self> {
         Self::init(Connection::open_in_memory()?)
     }
-    fn init(conn: Connection) -> AppResult<Self> {
+    pub(crate) fn connect(path: &Path) -> AppResult<Self> {
+        Self::init_with_recovery(Connection::open(path)?, false)
+    }
+    fn init(conn: Connection) -> AppResult<Self> { Self::init_with_recovery(conn, true) }
+    fn init_with_recovery(conn: Connection, recover: bool) -> AppResult<Self> {
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS automations (id TEXT PRIMARY KEY, data TEXT NOT NULL);
@@ -32,25 +36,35 @@ impl AutomationStore {
             CREATE INDEX IF NOT EXISTS automation_ready ON automation_runs(status, available_at);",
         )?;
         let store = Self { conn };
-        for mut job in store.list()? {
+        if !recover { return Ok(store); }
+        store.recover_after_restart()?;
+        Ok(store)
+    }
+    pub(crate) fn recover_after_restart(&self) -> AppResult<()> {
+        let _lease = if let Some(root) = self.conn.path().map(std::path::Path::new).and_then(|path|path.parent()).filter(|path|!path.as_os_str().is_empty()) {
+            match crate::background_agent::lease::acquire(root,"automation-worker")? {
+                Some(lease) => Some(lease), None => return Ok(()),
+            }
+        } else { None };
+        for mut job in self.list()? {
             if matches!(job.config.trigger, Trigger::Files { .. })
                 && job.config.missed_policy == MissedPolicy::Skip
             {
                 job.snapshot = None;
                 job.pending_paths.clear();
                 job.changed_at = None;
-                store.put(&job)?;
+                self.put(&job)?;
             }
         }
-        for mut run in store.runs_all()? {
+        for mut run in self.runs_all()? {
             if run.status == "running" {
                 run.status = "interrupted".into();
                 run.error =
                     Some("应用退出时任务尚未结束，结果未知；请检查后手动重试或忽略。".into());
-                store.put_run(&run)?;
+                self.put_run(&run)?;
             }
         }
-        Ok(store)
+        Ok(())
     }
     pub fn list(&self) -> AppResult<Vec<Automation>> {
         let mut stmt = self

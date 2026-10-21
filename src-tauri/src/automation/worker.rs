@@ -2,12 +2,19 @@ use super::{execution::execute, files::scan_files, types::*};
 use crate::{error::AppResult, AppState};
 use chrono::Utc;
 use std::{path::PathBuf, time::Duration};
-use tauri::{AppHandle, Emitter, Manager};
+use crate::command_host::CommandHost as AppHandle;
 
 pub fn start_worker(app: AppHandle) {
+    let root = match app.path().app_data_dir() { Ok(root)=>root, Err(_)=>return };
+    // Exactly one scheduler/executor may own this queue across desktop and CLI.
+    let lease = match crate::background_agent::lease::acquire(&root,"automation-worker") {
+        Ok(Some(lease)) => std::sync::Arc::new(lease), _ => return,
+    };
+    let scanner_lease = lease.clone();
     // Scanning/queue advancement stays independent of the execution worker.
     let scanner_app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let _lease = scanner_lease;
         let mut ticker = tokio::time::interval(Duration::from_secs(2));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -22,6 +29,7 @@ pub fn start_worker(app: AppHandle) {
         }
     });
     tauri::async_runtime::spawn(async move {
+        let _lease = lease;
         loop {
             let state = app.state::<AppState>();
             let claimed = state.automation.lock().await.claim(Utc::now().timestamp());
@@ -63,7 +71,7 @@ pub fn start_worker(app: AppHandle) {
                         "task attempt finished",
                         serde_json::json!({ "run_id": run.id, "failed": failed }),
                     );
-                    if finished.is_ok() && succeeded { crate::task_notifications::notify_completed(&app, &run.id, &run.config.name).await; }
+                    if finished.is_ok() && succeeded { if let Some(native) = app.native() { crate::task_notifications::notify_completed(native, &run.id, &run.config.name).await; } }
                     let _ = app.emit("automation-changed", &run.id);
                 }
                 Ok(None) => tokio::time::sleep(Duration::from_secs(1)).await,

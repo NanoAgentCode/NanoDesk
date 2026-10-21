@@ -198,8 +198,15 @@ pub(super) fn print_help() {
     println!();
     println!("{}", theme.label("选项"));
     for (option, description) in [
+        ("--commands", "列出全部共用业务命令及参数"),
+        ("--call <命令>", "调用业务命令，输出 JSON"),
+        ("--params <JSON>", "业务命令参数对象（snake_case）"),
+        ("--serve", "JSON 行持久业务会话及实时事件"),
+        ("--access-mode <模式>", "ask（默认）/auto/full，使用共用审批策略"),
+        ("--routing <模式>", "manual/smart/balanced/quality/speed/cost"),
+        ("--routing-models <JSON>", "四种策略到模型 ID 的映射"),
         ("-C, --project <目录>", "指定项目目录"),
-        ("    --temp", "启动不绑定项目、不保存历史的临时对话"),
+        ("    --temp", "启动不绑定项目、完成后清理历史的临时对话"),
         ("    --continue", "恢复当前项目最近会话"),
         (
             "    --resume <会话ID>",

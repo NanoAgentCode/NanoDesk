@@ -120,7 +120,9 @@ npm.cmd run install:nano
 nano
 ```
 
-`nano` 默认以当前目录作为项目并在启动时更新代码/文档索引；配置 Embedding 后，它与桌面端共用同一套关键词/向量混合索引和召回。项目会话自动保存，长期对话也共用上下文预算与滚动摘要规则，并与桌面端共享异步用户画像；`nano --temp` 不保存历史，因此不收集画像。首次运行且没有聊天模型时，命令行会引导配置模型并隐藏 API Key 输入；进入交互界面后可用 `/model add` 新增并立即切换模型，用 `/model <名称或 ID>` 切换已有模型。启动信息、交互命令、状态和错误使用统一终端配色，并自动兼容 `NO_COLOR`。使用 `nano --sessions` 获取会话列表、`nano --show <会话ID>` 查看历史、`nano --continue` 恢复最近会话、`nano --files` 获取项目文件列表，或用 `nano --temp` 启动不绑定项目且不保存历史的普通临时对话。详见[构建、配置与运维](docs/构建配置与运维.md#2-nano-终端客户端)。
+`nano` 默认以当前目录作为项目并更新代码/文档索引；聊天改为调用与桌面相同的任务执行器，共用工具、审批、澄清、预算、恢复、交付物和整体完成判定。`--access-mode ask` 为默认值，支持 `auto/full`；`--routing` 提供固定、智能和四维路由，任务关键词与桌面共用一份规则，策略模型通过 `--routing-models` 指定。项目会话持久化，`--temp` 的已完成会话会清理且不收集画像，未完成任务保留以便恢复。
+
+使用 `nano --commands` 查看 145 个与桌面同源的业务命令，`nano --call <命令> --params <JSON>` 执行单次命令，`nano --serve` 提供持久 JSON 行会话、后台任务、自动任务、MCP/SSH 连接和实时事件。托盘、窗口、剪贴板和资源管理器菜单等 11 个桌面交互入口不纳入对齐。详见[CLI 功能对齐与协议](docs/CLI功能对齐.md)。首次模型配置、`/model add`、`--sessions/--show/--continue/--resume/--files` 继续支持。
 
 类型检查和前端构建：
 
@@ -205,7 +207,7 @@ src-tauri/src/agent_commands.rs Agent 运行时生命周期与审批 command
 src-tauri/src/background_agent/ 协议、所有权、生命周期、决策、执行与上下文
 src-tauri/src/automation/      自动任务协议、调度、扫描、存储与执行
 src-tauri/src/runtime/         run/tool/时间线、恢复及执行请求存储
-src-tauri/src/cli/             CLI 模型、上下文、主题与展示
+src-tauri/src/cli/             CLI 模型、共用业务调度、路由、主题与展示
 src-tauri/src/llm/             模型协议、供应商、SSE、发现与 Embeddings
 src-tauri/src/observability.rs 观测 sink/pipeline 与观测库
 src-tauri/src/logging.rs       按天写入并自动清理的系统操作日志

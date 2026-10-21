@@ -1,10 +1,10 @@
 mod theme;
+pub(crate) mod business;
 mod models;
-mod context;
+mod routing;
 mod presentation;
 use theme::CliTheme;
 use models::*;
-use context::prepare_cli_context;
 use presentation::*;
 use std::env;
 use std::io::{self, Write};
@@ -12,25 +12,21 @@ use std::path::{Path, PathBuf};
 #[cfg(not(test))]
 use std::thread;
 
+#[cfg(test)]
 use uuid::Uuid;
 
 use crate::brand;
 use crate::code_index::{persist_project_code_index, prepare_project_code_index};
 use crate::context::load_base_context_for_db;
-use crate::context_budget::{
-    build_summary_prompt, fit_context_messages, prepare_context_plan, SUMMARY_OUTPUT_TOKENS,
-};
 use crate::conversation_service::{
     append_conversation_message, bind_conversation_model, create_conversation,
     load_conversation_history as service_load_conversation_history,
 };
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
-use crate::llm::{send_chat_completion, stream_chat_completion};
 use crate::models::{
-    ChatMessage, ChatRequest, ChatStreamEvent, ChatStreamRequest, ContextPreparationRequest,
-    ContextSummaryMetadata, Conversation, ConversationDraft, Message, MessageDraft,
-    MessageMetadata, ModelConfig, ModelConfigDraft, ProjectFileEntry,
+    ChatMessage, Conversation, ConversationDraft, Message, MessageDraft,
+    ModelConfig, ModelConfigDraft, ProjectFileEntry,
 };
 use crate::project_files::{list_project_files, project_root};
 #[cfg(test)]
@@ -47,6 +43,13 @@ enum SessionMode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CliOptions {
+    call: Option<String>,
+    params: serde_json::Value,
+    commands: bool,
+    serve: bool,
+    access_mode: String,
+    routing: String,
+    routing_models: std::collections::BTreeMap<String,Option<String>>,
     mode: SessionMode,
     prompt: Option<String>,
     model: Option<String>,
@@ -64,6 +67,7 @@ struct CliOptions {
 impl Default for CliOptions {
     fn default() -> Self {
         Self {
+            call: None, params: serde_json::json!({}), commands: false, serve: false, access_mode: "ask".into(), routing: "manual".into(), routing_models: std::collections::BTreeMap::new(),
             mode: SessionMode::Project(env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
             prompt: None,
             model: None,
@@ -130,6 +134,19 @@ where
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--routing" => {
+                options.routing = next_value(&mut args, &arg)?;
+                if !["manual","smart","balanced","quality","speed","cost"].contains(&options.routing.as_str()) { return Err("无效路由模式".into()); }
+            }
+            "--routing-models" => options.routing_models = serde_json::from_str(&next_value(&mut args,&arg)?).map_err(|error|format!("invalid routing models: {error}"))?,
+            "--access-mode" => {
+                options.access_mode = next_value(&mut args, &arg)?;
+                if !["ask", "auto", "full"].contains(&options.access_mode.as_str()) { return Err("--access-mode 必须是 ask、auto 或 full".into()); }
+            }
+            "--serve" => options.serve = true,
+            "--commands" => options.commands = true,
+            "--call" => options.call = Some(next_value(&mut args, &arg)?),
+            "--params" => options.params = serde_json::from_str(&next_value(&mut args, &arg)?).map_err(|error| format!("invalid JSON params: {error}"))?,
             "-h" | "--help" => options.help = true,
             "-V" | "--version" => options.version = true,
             "--temp" => {
@@ -165,6 +182,15 @@ where
         }
     }
 
+    if options.routing_models.keys().any(|strategy| !["balanced","quality","speed","cost"].contains(&strategy.as_str())) {
+        return Err("--routing-models 只能包含 balanced/quality/speed/cost".into());
+    }
+    if options.commands || options.call.is_some() || options.serve {
+        if options.prompt.is_some() || options.continue_latest || options.resume.is_some() || options.list_sessions || options.show_session.is_some() || options.list_files || options.model.is_some() || (usize::from(options.commands) + usize::from(options.serve) + usize::from(options.call.is_some()) > 1) {
+            return Err("--call/--commands 不能与聊天、会话列表或模型选择选项混用".into());
+        }
+        if !options.params.is_object() { return Err("--params 必须是 JSON 对象".into()); }
+    } else if options.params != serde_json::json!({}) { return Err("--params 需要 --call".into()); }
     if matches!(options.mode, SessionMode::Temporary)
         && (options.continue_latest
             || options.resume.is_some()
@@ -202,13 +228,63 @@ where
 }
 
 async fn run_session(options: CliOptions) -> AppResult<()> {
+    if options.commands {
+        println!("{}", serde_json::to_string_pretty(&business::COMMANDS.iter().map(|(name, params)| serde_json::json!({"command":name,"params":params})).collect::<Vec<_>>())?);
+        return Ok(());
+    }
     let data_dir = match options.data_dir.clone() {
         Some(path) => path,
         None => default_app_data_dir()?,
     };
     std::fs::create_dir_all(&data_dir)?;
+    if options.call.is_some() || options.serve {
+        let state = std::sync::Arc::new(crate::bootstrap::open_cli_state(&data_dir)?);
+        let streaming = options.serve;
+        let host = crate::command_host::CommandHost::Headless { state, data_dir, events: std::sync::Arc::new(move |name,payload| {
+            let event = serde_json::json!({"event":name,"payload":payload});
+            if streaming { println!("{event}"); } else { eprintln!("{event}"); }
+        }) };
+        if let Some(command) = &options.call {
+            if ["start_background_agent","respond_background_agent","start_temporary_task","return_to_parent_task","chat_stream","start_ops_ssh_session","index_rag_file","list_rag_files","generate_profile_now","run_profile_worker_now","run_automation_now"].contains(&command.as_str()) {
+                return Err("该命令需要持续运行的执行会话，请使用 nano --serve；单次聊天可使用 nano -p。".into());
+            }
+            if command == "call_mcp_tool" || command == "refresh_mcp_tools" {
+                business::dispatch(&host,"restore_mcp_servers",&serde_json::json!({})).await?;
+            }
+            let value = business::dispatch(&host, command, &options.params).await?;
+            println!("{}", serde_json::to_string_pretty(&value)?);
+        } else {
+            host.state::<crate::AppState>().runtime.lock().await.recover_interrupted_work()?;
+            host.state::<crate::AppState>().automation.lock().await.recover_after_restart()?;
+            crate::background_agent::restore_waiting_runs(host.clone());
+            crate::automation::start_worker(host.clone());
+            crate::profile::start_worker(host.clone());
+            use std::io::BufRead;
+            for line in std::io::stdin().lock().lines() {
+                let line = line?;
+                let response = match serde_json::from_str::<serde_json::Value>(&line) {
+                    Ok(request) => {
+                        let id = request.get("id").cloned().unwrap_or(serde_json::Value::Null);
+                        let params = request.get("params").cloned().unwrap_or_else(|| serde_json::json!({}));
+                        match business::dispatch(&host, request["command"].as_str().unwrap_or_default(), &params).await {
+                            Ok(result) => serde_json::json!({"id":id,"result":result}),
+                            Err(error) => serde_json::json!({"id":id,"error":error.to_string()}),
+                        }
+                    }
+                    Err(error) => serde_json::json!({"id":null,"error":format!("invalid JSON request: {error}")}),
+                };
+                println!("{response}");
+                io::stdout().flush()?;
+            }
+        }
+        return Ok(());
+    }
     let db_path = data_dir.join(brand::MAIN_DATABASE_NAME);
     let db = Database::open(db_path.clone())?;
+    let host = crate::command_host::CommandHost::Headless {
+        state: std::sync::Arc::new(crate::bootstrap::open_cli_state(&data_dir)?), data_dir: data_dir.clone(),
+        events: std::sync::Arc::new(|_,_| {}),
+    };
     let project = match &options.mode {
         SessionMode::Temporary => None,
         SessionMode::Project(path) => {
@@ -264,6 +340,7 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         .and_then(|conversation| conversation.model_config_id.as_deref());
     let mut active_model =
         resolve_session_model(&models, options.model.as_deref(), saved_model_id)?;
+    let mut fallback_model_id = active_model.id.clone();
     if let Some(id) = conversation_id.as_deref() {
         if options.model.is_some() || saved_model_id != Some(active_model.id.as_str()) {
             bind_conversation_model(&db, id, Some(&active_model.id))?;
@@ -276,9 +353,12 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         }
     }
     start_profile_worker(db_path);
+    business::dispatch(&host, "restore_mcp_servers", &serde_json::json!({})).await?;
 
     if let Some(prompt) = options.prompt.as_deref() {
+        active_model = routing::select(&models,models.iter().find(|model|model.id==fallback_model_id).unwrap_or(&active_model),prompt,&options.routing,&options.routing_models);
         ask(
+            &host, &options.access_mode,
             &db,
             &active_model,
             project.as_deref(),
@@ -294,6 +374,11 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
                 "post-response cycle failed",
                 serde_json::json!({ "error": error.to_string() }),
             );
+        }
+        if project.is_none() {
+            if let Some(id) = conversation_id.take() {
+                business::dispatch(&host, "delete_conversation", &serde_json::json!({"id":id})).await?;
+            }
         }
         return Ok(());
     }
@@ -324,6 +409,11 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         }
         if input == "/clear" {
             history.clear();
+            if project.is_none() {
+                if let Some(id) = conversation_id.take() {
+                    business::dispatch(&host, "delete_conversation", &serde_json::json!({"id":id})).await?;
+                }
+            }
             if project.is_some() {
                 conversation_id = None;
                 print_success("已结束当前会话，下一条消息将创建新项目会话。");
@@ -340,6 +430,7 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
             match add_chat_model(&db, &mut models, configure_additional_model) {
                 Ok(model) => {
                     active_model = model;
+                    fallback_model_id = active_model.id.clone();
                     if let Some(id) = conversation_id.as_deref() {
                         bind_conversation_model(&db, id, Some(&active_model.id))?;
                     }
@@ -356,6 +447,7 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
             match resolve_model(&models, Some(selector.trim())) {
                 Ok(model) => {
                     active_model = model;
+                    fallback_model_id = active_model.id.clone();
                     if let Some(id) = conversation_id.as_deref() {
                         bind_conversation_model(&db, id, Some(&active_model.id))?;
                     }
@@ -369,7 +461,9 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
             continue;
         }
 
+        active_model = routing::select(&models,models.iter().find(|model|model.id==fallback_model_id).unwrap_or(&active_model),&input,&options.routing,&options.routing_models);
         if let Err(err) = ask(
+            &host, &options.access_mode,
             &db,
             &active_model,
             project.as_deref(),
@@ -381,6 +475,11 @@ async fn run_session(options: CliOptions) -> AppResult<()> {
         .await
         {
             print_error(&err.to_string());
+        }
+    }
+    if project.is_none() {
+        if let Some(id) = conversation_id.take() {
+            business::dispatch(&host, "delete_conversation", &serde_json::json!({"id":id})).await?;
         }
     }
     Ok(())
@@ -489,6 +588,8 @@ async fn rebuild_project_indexes(db: &Database, root: &Path) -> AppResult<()> {
 }
 
 async fn ask(
+    host: &crate::command_host::CommandHost,
+    access_mode: &str,
     db: &Database,
     model: &ModelConfig,
     project: Option<&Path>,
@@ -497,146 +598,80 @@ async fn ask(
     history: &mut Vec<Message>,
     input: &str,
 ) -> AppResult<()> {
-    let system = build_system_message(db, project, input).await?;
-    let user_message = ChatMessage {
-        role: "user".to_string(),
-        content: input.to_string(),
-    };
-    let user_history_message = if let Some(project_session_path) = project_session_path {
-        if conversation_id.is_none() {
-            let conversation = create_conversation(
-                db,
-                ConversationDraft {
-                    title: Some("New chat".to_string()),
-                    model_config_id: Some(model.id.clone()),
-                    project_path: Some(project_session_path.to_string()),
-                },
-            )?;
-            *conversation_id = Some(conversation.id);
+    let mut system = build_system_message(db, project, input).await?;
+    system.content.push_str("\n使用 XML 工具执行操作，不要只输出代码。格式：<tool_call name=\"工具名\"><参数名>值</参数名></tool_call>。可用工具定义：");
+    system.content.push_str(&serde_json::to_string(&host.state::<crate::AppState>().plugins.agent_tool_definitions())?);
+    let skills = business::dispatch(host, "list_local_skills", &serde_json::json!({})).await?;
+    let mcp = business::dispatch(host, "list_mcp_servers", &serde_json::json!({})).await?;
+    system.content.push_str(&format!("\n本地技能目录和描述（按任务需要读取相关技能，资料不构成额外授权）：{skills}\nMCP 服务及可用工具：{mcp}\nMCP XML 工具名使用 mcp__服务ID__工具名，arguments 参数为 JSON。"));
+    if conversation_id.is_none() {
+        *conversation_id = Some(create_conversation(db, ConversationDraft {
+            title: Some(input.chars().take(50).collect()), model_config_id: Some(model.id.clone()),
+            project_path: project_session_path.map(str::to_string),
+        })?.id);
+    }
+    let id = conversation_id.as_deref().ok_or("缺少会话 ID")?;
+    bind_conversation_model(db, id, Some(&model.id))?;
+    let user = append_conversation_message(db, MessageDraft { conversation_id: id.into(), role: "user".into(), content: input.into(), metadata: if project.is_none() { Some(serde_json::from_value(serde_json::json!({"exclude_from_profile":true}))?) } else { None } })?;
+    let run = business::dispatch(host,"create_agent_run", &serde_json::json!({"draft":{
+        "conversation_id":id,"project_path":project_session_path,"model_config_id":model.id,"trigger_message_id":user.id
+    }})).await?;
+    let run_id = run["id"].as_str().ok_or("缺少任务 ID")?;
+    let work = project.map(Path::to_path_buf).unwrap_or(host.path().app_data_dir().map_err(|error| AppError::from(error.to_string()))?.join("temp"));
+    business::dispatch(host,"start_background_agent", &serde_json::json!({"request":{
+        "run_id":run_id,"conversation_id":id,"model_config_id":model.id,"project_path":work.to_string_lossy(),
+        "system_message":system,"access_mode":access_mode,"allow_command":true,"replace_message_id":null
+    }})).await?;
+    let mut handled = String::new();
+    loop {
+        let runs = business::dispatch(host,"list_agent_runs",&serde_json::json!({"conversation_id":id})).await?;
+        let run = runs.as_array().and_then(|runs| runs.iter().find(|run| run["id"] == run_id)).ok_or("任务记录丢失")?;
+        let status = run["status"].as_str().unwrap_or_default();
+        if status == "completed" {
+            if !host.state::<crate::AppState>().background_agents.owns_conversation(id) { break; }
         }
-        let persistent_id = conversation_id
-            .as_deref()
-            .ok_or_else(|| AppError::Message("创建项目会话后未获得会话 ID".to_string()))?;
-        append_conversation_message(
-            db,
-            MessageDraft {
-                conversation_id: persistent_id.to_string(),
-                role: user_message.role.clone(),
-                content: user_message.content.clone(),
-                metadata: None,
-            },
-        )?
-    } else {
-        transient_message(&user_message.role, &user_message.content)
-    };
-    let mut planning_history = history.clone();
-    planning_history.push(user_history_message.clone());
-    let prepared = prepare_cli_context(
-        db,
-        model,
-        conversation_id.as_deref(),
-        system,
-        &planning_history,
-        input,
-    )
-    .await?;
-    let mut messages = Vec::with_capacity(prepared.context_messages.len() + 1);
-    messages.push(prepared.system_message);
-    messages.extend(prepared.context_messages.iter().map(message_to_chat));
-
-    let request_id = Uuid::new_v4().to_string();
-    let lease_owner = format!("cli-chat-{request_id}");
-    let request = ChatStreamRequest {
-        request_id,
-        model_config_id: model.id.clone(),
-        messages,
-        temperature: None,
-        trace_id: None,
-        max_tokens: Some(prepared.output_reserve),
-        top_p: None,
-        reasoning_effort: None,
-    };
-    let mut answer = String::new();
-    let mut stream_error = None;
-    print!("\n{} ", CliTheme::stdout().brand("nano:"));
-    io::stdout().flush()?;
-    db.start_profile_foreground_lease(&lease_owner, 30)?;
-    let stream_result = {
-        let stream = stream_chat_completion(model.clone(), request, |event| {
-            match event {
-                ChatStreamEvent::Delta { content, .. } => {
-                    print!("{content}");
-                    io::stdout().flush()?;
-                    answer.push_str(&content);
+        if matches!(status,"failed"|"awaiting_recovery"|"paused"|"cancelled") {
+            *history = db.list_messages(id)?;
+            return Err(run["error"].as_str().unwrap_or("任务已暂停或取消，使用业务命令恢复。").into());
+        }
+        if matches!(status,"awaiting_plan"|"awaiting_tool"|"awaiting_clarification") {
+            let state_key = format!("{}:{}:{}",status, run["plan_json"],run["updated_at"]);
+            if state_key != handled {
+                use std::io::IsTerminal;
+                if !std::io::stdin().is_terminal() {
+                    return Err(format!("任务 {run_id} 等待用户决定（{status}）；使用 nano --serve 的 respond_background_agent 继续，或明确选择 --access-mode auto/full。 ").into());
                 }
-                ChatStreamEvent::Error { message, .. } => stream_error = Some(message),
-                ChatStreamEvent::ReasoningDelta { .. }
-                | ChatStreamEvent::Done { .. }
-                | ChatStreamEvent::Interrupted { .. } => {}
+                let decision = if status == "awaiting_plan" {
+                    println!("规划：{}",run["plan_json"].as_str().unwrap_or_default());
+                    print!("批准规划？[y/N] "); io::stdout().flush()?;
+                    let mut answer=String::new();io::stdin().read_line(&mut answer)?;
+                    serde_json::json!({"run_id":run_id,"action":if answer.trim().eq_ignore_ascii_case("y") {"approve_plan"} else {"reject_plan"},"answer":run["plan_json"].as_str()})
+                } else if status == "awaiting_tool" {
+                    let timeline = business::dispatch(host,"list_agent_run_timelines",&serde_json::json!({"conversation_id":id})).await?;
+                    let tool = timeline.as_array().into_iter().flatten().find(|timeline| timeline["run"]["id"] == run_id)
+                        .and_then(|timeline| timeline["tool_calls"].as_array()).and_then(|tools| tools.iter().rev().find(|tool| tool["status"]=="pending_approval")).ok_or("缺少待审核工具")?;
+                    println!("工具：{} {}",tool["name"],tool["args_json"]);
+                    print!("批准工具？[y/N] ");io::stdout().flush()?;
+                    let mut answer=String::new();io::stdin().read_line(&mut answer)?;
+                    serde_json::json!({"run_id":run_id,"action":if answer.trim().eq_ignore_ascii_case("y") {"approve"} else {"reject"},"tool_call_id":tool["id"]})
+                } else {
+                    let messages=db.list_messages(id)?;
+                    let latest=messages.last().ok_or("缺少澄清问题")?;
+                    println!("{}",latest.content);print!("补充说明：");io::stdout().flush()?;
+                    let mut answer=String::new();io::stdin().read_line(&mut answer)?;
+                    serde_json::json!({"run_id":run_id,"action":"clarify","message_id":latest.id,"answer":answer.trim()})
+                };
+                business::dispatch(host,"respond_background_agent",&serde_json::json!({"decision":decision})).await?;
+                handled = state_key;
             }
-            Ok(())
-        });
-        tokio::pin!(stream);
-        loop {
-            match tokio::time::timeout(std::time::Duration::from_secs(10), &mut stream).await {
-                Ok(result) => break result,
-                Err(_) => db.start_profile_foreground_lease(&lease_owner, 30)?,
-            }
-        }
-    };
-    db.finish_profile_foreground_lease(&lease_owner)?;
-    stream_result?;
-    println!("\n");
-    if let Some(message) = stream_error {
-        return Err(AppError::Message(message));
+        } else { handled.clear(); }
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     }
-    if answer.trim().is_empty() {
-        return Err(AppError::Message("模型返回了空响应".to_string()));
+    *history = db.list_messages(id)?;
+    if let Some(answer) = history.iter().rev().find(|message|message.role=="assistant") {
+        println!("\n{} {}\n", CliTheme::stdout().brand("nano:"), answer.content);
     }
-    let assistant_message = ChatMessage {
-        role: "assistant".to_string(),
-        content: answer,
-    };
-    let assistant_history_message = if project_session_path.is_some() {
-        let persistent_id = conversation_id
-            .as_deref()
-            .ok_or_else(|| AppError::Message("保存项目会话时缺少会话 ID".to_string()))?;
-        append_conversation_message(
-            db,
-            MessageDraft {
-                conversation_id: persistent_id.to_string(),
-                role: assistant_message.role.clone(),
-                content: assistant_message.content.clone(),
-                metadata: None,
-            },
-        )?
-    } else {
-        transient_message(&assistant_message.role, &assistant_message.content)
-    };
-    history.push(user_history_message);
-    if let Some(summary) = prepared.created_summary {
-        history.push(summary);
-    }
-    history.push(assistant_history_message);
     Ok(())
-}
-
-fn transient_message(role: &str, content: &str) -> Message {
-    Message {
-        id: Uuid::new_v4().to_string(),
-        conversation_id: String::new(),
-        role: role.to_string(),
-        content: content.to_string(),
-        metadata: None,
-        created_at: chrono::Utc::now(),
-    }
-}
-
-fn message_to_chat(message: &Message) -> ChatMessage {
-    ChatMessage {
-        role: message.role.clone(),
-        content: message.content.clone(),
-    }
 }
 
 async fn build_system_message(
@@ -659,7 +694,7 @@ async fn build_system_message(
         )
     } else {
         format!(
-            "你是 {} 的终端助手。回答应准确、简明、可执行。当前临时会话只保存在进程内，退出后不会写入对话历史。",
+            "你是 {} 的终端助手。回答应准确、简明、可执行。当前临时会话不绑定项目；任务使用本地记录支持审批和恢复，正常完成后清理会话历史。",
             brand::DISPLAY_NAME
         )
     };
@@ -1079,7 +1114,8 @@ mod tests {
 
         let root = env::temp_dir().join(format!("nano-cli-ask-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root).expect("temporary project should be created");
-        let db = Database::open(root.join("nano-test.sqlite3")).expect("database should open");
+        let db = Database::open(root.join(brand::MAIN_DATABASE_NAME)).expect("database should open");
+        let host = crate::command_host::CommandHost::Headless { state: std::sync::Arc::new(crate::bootstrap::open_cli_state(&root).unwrap()), data_dir: root.clone(), events: std::sync::Arc::new(|_,_| {}) };
         let listener = TcpListener::bind("127.0.0.1:0").expect("mock server should bind");
         let address = listener.local_addr().expect("mock address should resolve");
         let (request_sender, request_receiver) = mpsc::channel();
@@ -1186,6 +1222,7 @@ mod tests {
 
         runtime
             .block_on(ask(
+                &host, "full",
                 &db,
                 &model,
                 Some(&root),
@@ -1209,6 +1246,7 @@ mod tests {
         assert_eq!(messages[1].content, "saved answer");
         assert_eq!(history.len(), 2);
         assert_eq!(captured_request.matches("first question").count(), 1);
+        drop(host);
         drop(db);
         std::fs::remove_dir_all(root).expect("temporary project should be removed");
     }
@@ -1266,5 +1304,16 @@ mod tests {
         assert!(!message.content.contains("当前项目根目录"));
         drop(db);
         std::fs::remove_dir_all(root).expect("temporary directory should be removed");
+    }
+
+    #[test]
+    fn business_command_options_are_explicit_and_reject_ambiguous_modes() {
+        let options = parse_args(args(&["--call","list_model_configs","--params","{}"])).unwrap();
+        assert_eq!(options.call.as_deref(),Some("list_model_configs"));
+        assert!(parse_args(args(&["--call","list_items","--serve"])).is_err());
+        assert!(parse_args(args(&["--call","list_items","-p","hello"])).is_err());
+        assert!(parse_args(args(&["--params","[]","--call","list_items"])).is_err());
+        assert!(parse_args(args(&["--access-mode","invalid"])).is_err());
+        assert!(parse_args(args(&["--serve"])).unwrap().serve);
     }
 }

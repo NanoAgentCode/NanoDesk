@@ -6,11 +6,26 @@ use super::{
 };
 use crate::{error::AppError, AppState};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager};
+use crate::command_host::CommandHost as AppHandle;
 
 pub(super) fn spawn(app: AppHandle, request: BackgroundAgentRequest, control: Arc<Control>) {
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
+        let root = match app.path().app_data_dir() { Ok(root)=>root, Err(error)=>{ fail_start(&app,&state,&request,error.to_string()).await; return; } };
+        let _lease = match super::lease::acquire(&root,&request.run_id) {
+            Ok(Some(lease)) => lease,
+            Ok(None) => { state.background_agents.remove(&request.run_id); return; },
+            Err(error) => {
+                fail_start(&app,&state,&request,error.to_string()).await; return;
+            }
+        };
+        let _conversation_lease = match super::lease::acquire(&root,&format!("conversation-{}",request.conversation_id)) {
+            Ok(Some(lease)) => lease,
+            result => {
+                let error = result.err().map(|error|error.to_string()).unwrap_or_else(||"此会话已有其他客户端执行的任务，请先暂停或结束它。".into());
+                fail_start(&app,&state,&request,error).await; return;
+            }
+        };
         let key = crate::settings::load_tavily_api_key(&app).unwrap_or(None);
         let result = drive(&state, request.clone(), control, key, |snapshot| {
             state.background_agents.update(snapshot.clone());
@@ -37,7 +52,7 @@ pub(super) fn spawn(app: AppHandle, request: BackgroundAgentRequest, control: Ar
             let child_conversation = run.conversation_id.clone();
             if run.status == "completed" {
                 let name = state.db.lock().await.list_conversations(run.project_path.as_deref()).map(|items| items.into_iter().find(|c| c.id == run.conversation_id).map(|c| c.title).unwrap_or_else(|| "聊天任务".into())).unwrap_or_else(|_| "聊天任务".into());
-                crate::task_notifications::notify_completed(&app, &run.id, &name).await;
+                if let Some(native) = app.native() { crate::task_notifications::notify_completed(native, &run.id, &name).await; }
             }
             let _ = app.emit(
                 "background-agent",
@@ -64,6 +79,12 @@ pub(super) fn spawn(app: AppHandle, request: BackgroundAgentRequest, control: Ar
             }
         }
     });
+}
+
+async fn fail_start(app: &AppHandle, state: &AppState, request: &BackgroundAgentRequest, error: String) {
+    let _ = state.runtime.lock().await.finish_run(&request.run_id,"failed",Some(error.clone()));
+    state.background_agents.remove(&request.run_id);
+    let _ = app.emit("background-agent", BackgroundAgentSnapshot { run_id: request.run_id.clone(), conversation_id: request.conversation_id.clone(), status: "failed".into(), error: Some(error), stream_message: None, reasoning: String::new(), executing_tool_message_id: None, document_progress: None });
 }
 
 pub fn restore_waiting_runs(app: AppHandle) {

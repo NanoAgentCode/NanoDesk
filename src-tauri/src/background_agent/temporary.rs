@@ -15,10 +15,13 @@ pub(crate) struct TaskInterruption {
 }
 
 pub(super) async fn pause(state: &AppState, run_id: &str) -> AppResult<()> {
-    if state.background_agents.pause(run_id) {
+    let local = state.background_agents.pause(run_id);
+    let remote = !local && super::lease::active(state,run_id)?;
+    if remote { super::lease::request(state,run_id,"pause").await?; }
+    if local || remote {
         // In-flight side effects finish and are recorded before ownership is released.
         tokio::time::timeout(Duration::from_secs(65), async {
-            while state.background_agents.control(run_id).is_some() {
+            while state.background_agents.control(run_id).is_some() || (remote && super::lease::active(state,run_id).unwrap_or(true)) {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         })

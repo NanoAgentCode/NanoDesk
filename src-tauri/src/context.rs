@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 use crate::db::Database;
 use crate::error::AppResult;

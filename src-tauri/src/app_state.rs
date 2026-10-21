@@ -43,3 +43,23 @@ impl ChatStreamInterrupts {
         self.senders.remove(request_id);
     }
 }
+
+/// Borrowed business state, usable by both Tauri commands and a headless CLI.
+/// Tauri still obtains the exact managed AppState through its normal CommandArg.
+pub(crate) struct CommandState<'a, T: Send + Sync + 'static>(&'a T);
+
+impl<'a, T: Send + Sync + 'static> CommandState<'a, T> {
+    pub(crate) fn new(value: &'a T) -> Self { Self(value) }
+}
+impl<T: Send + Sync + 'static> std::ops::Deref for CommandState<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T { self.0 }
+}
+impl<T: Send + Sync + 'static> Clone for CommandState<'_, T> {
+    fn clone(&self) -> Self { Self(self.0) }
+}
+impl<'a, 'de: 'a, T: Send + Sync + 'static, R: tauri::Runtime> tauri::ipc::CommandArg<'de, R> for CommandState<'a, T> {
+    fn from_command(command: tauri::ipc::CommandItem<'de, R>) -> Result<Self, tauri::ipc::InvokeError> {
+        <tauri::State<'a, T> as tauri::ipc::CommandArg<'de, R>>::from_command(command).map(|state| Self(state.inner()))
+    }
+}

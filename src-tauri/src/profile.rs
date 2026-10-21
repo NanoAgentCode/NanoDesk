@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
 use serde_json::json;
-use tauri::{AppHandle, Manager, State};
+use crate::command_host::CommandHost as AppHandle;
+use crate::app_state::CommandState as State;
 use tokio::time::{interval, MissedTickBehavior};
 use uuid::Uuid;
 

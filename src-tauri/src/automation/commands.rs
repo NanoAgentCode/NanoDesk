@@ -1,7 +1,7 @@
 use super::types::*;
 use crate::{error::AppResult, AppState};
 use chrono::Utc;
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub async fn list_automations(state: State<'_, AppState>) -> AppResult<Vec<serde_json::Value>> {

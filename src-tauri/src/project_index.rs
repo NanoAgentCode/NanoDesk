@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use tauri::State;
+use crate::app_state::CommandState as State;
 use uuid::Uuid;
 
 use crate::brand;

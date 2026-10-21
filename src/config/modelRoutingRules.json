@@ -1,0 +1,102 @@
+{
+  "tasks": [
+    [
+      "coding",
+      [
+        "代码",
+        "编程",
+        "函数",
+        "bug",
+        "报错",
+        "调试",
+        "重构",
+        "接口",
+        "数据库",
+        "sql",
+        "typescript",
+        "javascript",
+        "python",
+        "rust",
+        "java",
+        "api",
+        "code",
+        "implement",
+        "debug",
+        "refactor"
+      ]
+    ],
+    [
+      "translation",
+      [
+        "翻译",
+        "译成",
+        "translate",
+        "translation"
+      ]
+    ],
+    [
+      "summary",
+      [
+        "总结",
+        "摘要",
+        "概括",
+        "提炼",
+        "纪要",
+        "summarise",
+        "summarize",
+        "summary"
+      ]
+    ],
+    [
+      "writing",
+      [
+        "写作",
+        "文案",
+        "文章",
+        "润色",
+        "改写",
+        "创作",
+        "邮件",
+        "报告",
+        "write",
+        "rewrite",
+        "polish"
+      ]
+    ],
+    [
+      "reasoning",
+      [
+        "分析",
+        "推理",
+        "论证",
+        "规划",
+        "方案",
+        "比较",
+        "研究",
+        "原因",
+        "为什么",
+        "analyse",
+        "analyze",
+        "reason",
+        "research",
+        "plan",
+        "compare"
+      ]
+    ]
+  ],
+  "smart": {
+    "coding": "quality",
+    "reasoning": "quality",
+    "writing": "quality",
+    "vision": "quality",
+    "translation": "cost",
+    "summary": "speed",
+    "general": "balanced"
+  },
+  "strategies": [
+    "balanced",
+    "quality",
+    "speed",
+    "cost"
+  ]
+}

@@ -2281,3 +2281,50 @@ async fn blocked_substep_does_not_fail_a_completed_alternative_or_stop_remaining
         fixture.cleanup();
     }
 }
+
+#[tokio::test]
+async fn cli_business_host_runs_the_desktop_tool_loop_and_persists_deliveries_without_a_window() {
+    let server = MockModel::start(vec![
+        (vec!["<tool_call name=\"write_file\"><path>cli-output.md</path><content>shared executor</content></tool_call>".into()],0),
+        (vec!["完成。\n<deliverables>[{\"path\":\"cli-output.md\",\"kind\":\"final\"}]</deliverables>".into()],0),
+    ]);
+    let fixture = Fixture::new(&server.url,"full");
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = events.clone();
+    let host = crate::command_host::CommandHost::Headless { state: fixture.state.clone(), data_dir: fixture.root.clone(), events: Arc::new(move |name,payload| captured.lock().unwrap().push((name.to_string(),payload))) };
+    crate::cli::business::dispatch(&host,"start_background_agent",&serde_json::json!({"request":fixture.request})).await.unwrap();
+    wait_until(|| async { !fixture.state.background_agents.owns_conversation(&fixture.request.conversation_id) }).await;
+    assert_eq!(fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status,"completed");
+    assert_eq!(std::fs::read_to_string(fixture.root.join("work/cli-output.md")).unwrap(),"shared executor");
+    let history = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    assert_eq!(history.last().unwrap().metadata.as_ref().unwrap().deliverables.as_ref().unwrap()[0].path,"cli-output.md");
+    assert!(events.lock().unwrap().iter().any(|(name,payload)| name == "background-agent" && payload["status"] == "completed"));
+    let calls = server.worker.join().unwrap();
+    assert_eq!(calls.len(),2);
+    drop(host);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn a_second_client_can_pause_and_resume_without_replaying_an_inflight_tool() {
+    let command=if cfg!(windows) {"Start-Sleep -Milliseconds 500; Add-Content -LiteralPath once.txt -Value once"} else {"sleep 0.5; echo once >> once.txt"};
+    let server=MockModel::start(vec![(vec![format!("<tool_call name=\"execute_command\"><command>{command}</command></tool_call>")],0),(vec!["Completed once.".into()],0)]);
+    let mut fixture=Fixture::new(&server.url,"full");
+    Arc::get_mut(&mut fixture.state).unwrap().settings_path=fixture.root.join("settings.json");
+    let host=crate::command_host::CommandHost::Headless{state:fixture.state.clone(),data_dir:fixture.root.clone(),events:Arc::new(|_,_|{})};
+    crate::cli::business::dispatch(&host,"start_background_agent",&serde_json::json!({"request":fixture.request})).await.unwrap();
+    wait_until(||async{fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap().iter().any(|tool|tool.status=="running")}).await;
+    let mut peer=crate::bootstrap::open_cli_state(&fixture.root).unwrap();
+    peer.runtime=tokio::sync::Mutex::new(crate::runtime::RuntimeStore::connect(fixture.root.join("runtime.sqlite3")).unwrap());
+    peer.db=tokio::sync::Mutex::new(crate::db::Database::open(fixture.root.join("data.sqlite3")).unwrap());
+    let peer=crate::command_host::CommandHost::Headless{state:Arc::new(peer),data_dir:fixture.root.clone(),events:Arc::new(|_,_|{})};
+    crate::cli::business::dispatch(&peer,"pause_background_agent",&serde_json::json!({"run_id":fixture.request.run_id})).await.unwrap();
+    assert_eq!(fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status,"paused");
+    assert_eq!(fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap()[0].status,"completed");
+    crate::cli::business::dispatch(&peer,"respond_background_agent",&serde_json::json!({"decision":{"run_id":fixture.request.run_id,"action":"resume"}})).await.unwrap();
+    wait_until(||async{peer.state::<AppState>().runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status=="completed" && !peer.state::<AppState>().background_agents.owns_conversation(&fixture.request.conversation_id)}).await;
+    assert_eq!(std::fs::read_to_string(fixture.root.join("work/once.txt")).unwrap().lines().count(),1);
+    assert_eq!(fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap()[0].attempt_count,1);
+    server.worker.join().unwrap();
+    drop(peer);drop(host);fixture.cleanup();
+}

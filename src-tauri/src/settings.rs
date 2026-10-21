@@ -1,4 +1,5 @@
-use tauri::{AppHandle, Manager, State};
+use crate::app_state::CommandState as State;
+use crate::command_host::CommandHost as AppHandle;
 
 use crate::asr::AsrConfig;
 use crate::error::{AppError, AppResult};

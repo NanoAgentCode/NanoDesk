@@ -7,7 +7,7 @@ mod transport;
 mod embeddings;
 mod catalog;
 
-use tauri::{AppHandle, Emitter};
+use crate::command_host::CommandHost as AppHandle;
 use crate::error::{AppError, AppResult};
 use crate::models::{ChatRequest, ChatResponse, ChatStreamRequest, ChatStreamEvent, ModelConfig};
 use parameters::{ensure_chat_model, is_anthropic_provider};

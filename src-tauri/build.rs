@@ -51,5 +51,15 @@ fn main() {
         println!("cargo:rustc-env={env_name}={value}");
     }
 
-    tauri_build::build()
+    // Apply the same Windows activation context to desktop, CLI and unit tests.
+    // Keep it out of resource.lib to avoid a duplicate MANIFEST resource in bins.
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let windows_manifest = manifest_dir.join("windows-app.manifest");
+        println!("cargo:rerun-if-changed={}", windows_manifest.display());
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", windows_manifest.display());
+    }
+    tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(
+        tauri_build::WindowsAttributes::new_without_app_manifest(),
+    )).expect("failed to build Tauri resources")
 }

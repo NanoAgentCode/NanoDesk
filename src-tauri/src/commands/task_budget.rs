@@ -3,7 +3,7 @@ use crate::{
     task_budget::{TaskBudget, TaskBudgetRecord, TaskSettings},
     AppState,
 };
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub async fn get_task_settings(state: State<'_, AppState>) -> AppResult<TaskSettings> {

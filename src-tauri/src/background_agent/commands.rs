@@ -2,7 +2,8 @@ use super::protocol::{BackgroundAgentDecision, BackgroundAgentRequest, Backgroun
 use super::{actions::apply_decision, lifecycle::spawn, scope::validate_scope};
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use tauri::{AppHandle, State};
+use crate::command_host::CommandHost as AppHandle;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub async fn list_background_agents(
@@ -19,6 +20,11 @@ pub async fn start_background_agent(
 ) -> AppResult<()> {
     let run = state.runtime.lock().await.get_run(&request.run_id)?;
     validate_scope(&app, &request, &run)?;
+    let root=app.path().app_data_dir().map_err(|error|AppError::from(error.to_string()))?;
+    if super::lease::acquire(&root,&format!("conversation-{}",run.conversation_id))?.is_none()
+        && !super::lease::active(&state,&run.id)? {
+        return Err("此会话已有其他客户端执行的任务，请先暂停或结束它。".into());
+    }
     if state.runtime.lock().await.list_runs(&run.conversation_id, 200)?.iter().any(|other| other.id != run.id && other.status == "paused") {
         return Err("此会话有暂停的主任务，请恢复它或使用插入临时任务。".into());
     }
@@ -126,7 +132,18 @@ pub async fn respond_background_agent(
 }
 #[tauri::command]
 pub async fn stop_background_agent(state: State<'_, AppState>, run_id: String) -> AppResult<bool> {
-    state.background_agents.stop(&run_id)
+    if state.background_agents.stop(&run_id)? { return Ok(true); }
+    if super::lease::active(&state,&run_id)? {
+        super::lease::request(&state,&run_id,"stop").await?;
+        return Ok(true);
+    }
+    let runtime=state.runtime.lock().await;
+    let run=runtime.get_run(&run_id)?;
+    if matches!(run.status.as_str(),"completed"|"cancelled") { return Ok(false); }
+    let request: BackgroundAgentRequest=serde_json::from_str(&runtime.load_execution_request(&run_id)?)?;
+    drop(runtime);
+    super::actions::cancel_task(&state,&request).await?;
+    Ok(true)
 }
 
 #[tauri::command]

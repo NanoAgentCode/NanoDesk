@@ -4,8 +4,8 @@ use crate::error::AppResult;
 use crate::services::agent_tools::execute_agent_tool_with_state;
 use crate::settings::load_tavily_api_key;
 use crate::AppState;
-use tauri::AppHandle;
-use tauri::State;
+use crate::command_host::CommandHost as AppHandle;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub(crate) async fn execute_agent_tool_call(

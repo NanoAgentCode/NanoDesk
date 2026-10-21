@@ -81,6 +81,7 @@ where
     };
     let mut budget = state.runtime.lock().await.ensure_task_budget(&request.run_id, Some(&request.model_config_id), request.budget.as_ref())?;
     loop {
+        super::lease::sync(state, &request.run_id, &control)?;
         if control.stopped.load(Ordering::SeqCst) {
             cancel_task(state, &request).await?;
             return Ok(());
@@ -96,7 +97,7 @@ where
             snapshot.stream_message = None;
             snapshot.reasoning.clear();
             emit(snapshot.clone());
-            control.wake.notified().await;
+            tokio::select! { _ = control.wake.notified() => {}, _ = tokio::time::sleep(Duration::from_secs(1)) => {} }
             continue;
         }
         if let Err(error) = budget.check() {
@@ -194,7 +195,7 @@ where
                 let mut checkpoint = tokio::time::interval(Duration::from_secs(1));
                 loop { tokio::select! {
                     result = &mut tool_future => break result.map(|execution| execution.result_text),
-                    _ = checkpoint.tick() => checkpoint_progress(state, &request.run_id, budget.elapsed_ms + tool_started.elapsed().as_millis() as u64, None)?,
+                    _ = checkpoint.tick() => { super::lease::sync(state, &request.run_id, &control)?; checkpoint_progress(state, &request.run_id, budget.elapsed_ms + tool_started.elapsed().as_millis() as u64, None)?; },
                 }}
             };
             budget.elapsed_ms += tool_started.elapsed().as_millis() as u64;
@@ -312,7 +313,7 @@ where
                         snapshot.document_progress = document_progress.borrow_and_update().clone();
                         emit(snapshot.clone());
                     },
-                    _=heartbeat.tick()=>if let Err(error)=checkpoint_progress(state, &request.run_id, context_base_ms + context_started.elapsed().as_millis() as u64, Some(&lease)){break Some(Err(error));},
+                    _=heartbeat.tick()=>{ super::lease::sync(state, &request.run_id, &control)?; if let Err(error)=checkpoint_progress(state, &request.run_id, context_base_ms + context_started.elapsed().as_millis() as u64, Some(&lease)){break Some(Err(error));} },
                     _=&mut context_timeout=>break Some(Err(AppError::from(if remaining <= 300.0 { "任务预算已达到时间上限，请调整预算后继续。" } else { "后台上下文准备超过 300 秒" }))),
                     _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst) { break None; }
                 }
@@ -411,7 +412,7 @@ where
             loop {
                 tokio::select! {
                     result=&mut future=>break result,
-                    _=heartbeat.tick()=>if let Err(error)=checkpoint_progress(state, &request.run_id, stream_base_ms + stream_started.elapsed().as_millis() as u64, Some(&lease)){break Err(error);},
+                    _=heartbeat.tick()=>{ super::lease::sync(state, &request.run_id, &control)?; if let Err(error)=checkpoint_progress(state, &request.run_id, stream_base_ms + stream_started.elapsed().as_millis() as u64, Some(&lease)){break Err(error);} },
                     _=&mut timeout=>break Err(AppError::from("任务预算已达到时间上限，请调整预算后继续。")),
                     _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst){break Ok(());}
                 }

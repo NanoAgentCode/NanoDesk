@@ -1,6 +1,6 @@
 use crate::error::AppResult;
 use crate::AppState;
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub(crate) async fn get_usage_analysis(

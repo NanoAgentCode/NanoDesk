@@ -2,6 +2,7 @@
 mod protocol;
 mod deliverables;
 mod ownership;
+pub(crate) mod lease;
 mod scope;
 mod actions;
 pub(crate) mod commands;

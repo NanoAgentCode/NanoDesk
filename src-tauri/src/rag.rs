@@ -1,4 +1,5 @@
-use tauri::{AppHandle, Emitter, State};
+use crate::command_host::CommandHost as AppHandle;
+use crate::app_state::CommandState as State;
 
 use crate::db::RagFileReplacement;
 use crate::error::{AppError, AppResult};

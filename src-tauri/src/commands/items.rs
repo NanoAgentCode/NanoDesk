@@ -7,7 +7,7 @@ use crate::services::observation::finish_observation;
 use crate::services::observation::start_observation;
 use crate::services::observation::ObservationStart;
 use crate::AppState;
-use tauri::State;
+use crate::app_state::CommandState as State;
 
 #[tauri::command]
 pub(crate) async fn list_items(
