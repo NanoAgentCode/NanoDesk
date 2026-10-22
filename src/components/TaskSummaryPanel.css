@@ -1,27 +1,25 @@
 .chat-workspace { grid-area: chat; display: flex; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
 .chat-workspace > .chat-pane { flex: 1; min-width: 0; }
-.task-summary-panel { position: relative; flex: 0 0 var(--task-summary-width, 280px); min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border-color); background: var(--chat-pane-bg); color: var(--text-primary); }
+.task-summary-panel { position: relative; flex: 0 0 var(--task-summary-width, 280px); min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 44px; grid-template-rows: auto minmax(0, 1fr); border-left: 1px solid var(--border-color); background: var(--chat-pane-bg); color: var(--text-primary); }
 .task-summary-resizer { position: absolute; inset: 0 auto 0 -5px; width: 10px; z-index: 2; cursor: col-resize; touch-action: none; }
 .task-summary-resizer::after { content: ""; position: absolute; inset: 0 auto 0 4px; width: 2px; background: transparent; transition: background 120ms ease; }
 .task-summary-resizer:hover::after, .task-summary-resizer:focus-visible::after, .task-summary-panel.is-resizing .task-summary-resizer::after { background: var(--accent-color, #3b82f6); }
 .task-summary-resizer:focus-visible { outline: none; }
-.task-summary-panel.is-collapsed { flex-basis: 44px; }
-.task-summary-header { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 12px 8px; border-bottom: 1px solid var(--border-color); }
+.task-summary-panel.is-collapsed { flex-basis: 44px; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
+.task-summary-header { grid-column: 2; grid-row: 1 / -1; min-height: 0; display: flex; flex-direction: column-reverse; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 5px; border-left: 1px solid var(--border-color); }
 .task-summary-header h2 { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; margin: 0; }
 .task-summary-header button, .task-summary-rail { border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: 6px; padding: 6px; display: flex; align-items: center; justify-content: center; }
 .task-summary-header button:hover, .task-summary-rail:hover { background: color-mix(in srgb, var(--text-secondary) 12%, transparent); color: var(--text-primary); }
 .task-summary-header button:focus-visible, .task-summary-rail:focus-visible { outline: 2px solid var(--text-secondary); outline-offset: 2px; }
-.is-collapsed .task-summary-header { flex-direction: column-reverse; gap: 12px; padding-inline: 6px; }
+.is-collapsed .task-summary-header { grid-column: 1; border-left: 0; }
 .task-summary-rail { writing-mode: vertical-rl; align-self: center; margin-top: 12px; letter-spacing: 3px; font-size: 12px; padding: 10px 6px; }
-.task-summary-content { padding: 22px 20px; overflow-y: auto; min-height: 0; }
+.task-summary-title { grid-column: 1; grid-row: 1; margin: 0; padding: 18px 20px; border-bottom: 1px solid var(--border-color); font-size: 14px; font-weight: 600; line-height: 22px; }
+.task-summary-content { grid-column: 1; grid-row: 2; padding: 22px 20px; overflow-y: auto; min-width: 0; min-height: 0; }
 .task-summary-content[hidden] { display: none; }
-.task-summary-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1; gap: 2px; min-width: 0; }
-.task-summary-tabs button { gap: 5px; font-size: 13px; font-weight: 500; white-space: nowrap; min-width: 0; }
+.task-summary-tabs { display: flex; flex-direction: column; flex: none; gap: 8px; min-width: 0; }
+.task-summary-header button { width: 32px; height: 32px; }
 .task-summary-tabs button svg { flex-shrink: 0; }
-.task-summary-tab-label { overflow: hidden; text-overflow: ellipsis; }
-.is-collapsed .task-summary-tabs { display: flex; flex-direction: column; gap: 8px; flex: none; }
-.is-collapsed .task-summary-tabs button { width: 32px; height: 32px; }
-.is-collapsed .task-summary-tab-label, .is-collapsed .task-summary-tabs small { display: none; }
+.task-summary-tab-label, .task-summary-tabs small { display: none; }
 .task-summary-tabs button[aria-selected="true"] { color: var(--accent-color, #3b82f6); background: color-mix(in srgb, var(--accent-color, #3b82f6) 10%, transparent); }
 .task-summary-tabs small { font-size: 10px; }
 .deliverables-group { margin: 24px 0; }

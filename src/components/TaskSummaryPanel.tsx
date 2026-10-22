@@ -129,15 +129,16 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
           : actualWidth + (event.key === "ArrowLeft" ? step : -step));
       }} />}
     <header className="task-summary-header">
-      <div className="task-summary-tabs" role="tablist" aria-label="任务详情" aria-orientation={collapsed ? "vertical" : "horizontal"}>
+      <div className="task-summary-tabs" role="tablist" aria-label="任务详情" aria-orientation="vertical">
         <button type="button" role="tab" id="task-plan-tab" aria-label="任务规划" title="任务规划" aria-selected={tab === "plan"} aria-controls="task-plan-panel" onClick={() => selectTab("plan")}><ListTree size={16} aria-hidden="true" /><span className="task-summary-tab-label">任务规划</span></button>
         <button type="button" role="tab" id="deliverables-tab" aria-label="交付文件" title="交付文件" aria-selected={tab === "files"} aria-controls="deliverables-panel" onClick={() => selectTab("files")}><Files size={16} aria-hidden="true" /><span className="task-summary-tab-label">交付文件</span>{deliverables.length > 0 && <small>{deliverables.length}</small>}</button>
       </div>
       <button type="button" onClick={toggle} aria-expanded={!collapsed} aria-controls="task-summary-content"
-        aria-label={collapsed ? "展开任务规划" : "收起任务规划"} title={collapsed ? "展开任务规划" : "收起任务规划"}>
+        aria-label={collapsed ? "展开任务规划" : "收起任务规划"} title={collapsed ? "展开" : "收起"}>
         {collapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
       </button>
     </header>
+    <h2 className="task-summary-title" hidden={collapsed}>{tab === "plan" ? "任务规划" : "交付文件"}</h2>
     <div id="task-summary-content" className="task-summary-content" hidden={collapsed}>
       <div id="deliverables-panel" role="tabpanel" aria-labelledby="deliverables-tab" hidden={tab !== "files"}>
         <DeliverablesPanel key={conversationId} files={deliverables} projectPath={projectPath} />
