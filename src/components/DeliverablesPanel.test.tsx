@@ -3,6 +3,18 @@ import { describe, expect, it } from "vitest";
 import DeliverablesPanel from "./DeliverablesPanel";
 
 describe("deliverable groups", () => {
+  it("renders each category as an independently collapsible group, expanded by default", () => {
+    const html = renderToStaticMarkup(<DeliverablesPanel projectPath="" files={[]} />);
+    const groups = [...html.matchAll(/<details\b([^>]*)>([\s\S]*?)<\/details>/g)];
+    expect(groups).toHaveLength(3);
+    for (const [index, group] of groups.entries()) {
+      expect(group[1]).toContain('open=""');
+      expect(group[1]).not.toMatch(/\bname=/);
+      expect(group[2]).toMatch(/<summary\b/);
+      expect(group[2]).toContain(["用户上传", "中间文件", "最终交付"][index]);
+      expect(group[2]).toContain("<small>0</small>");
+    }
+  });
   it("renders all groups, file paths and location controls only for local files", () => {
     const html = renderToStaticMarkup(<DeliverablesPanel projectPath="D:/project" files={[
       { id: "u", name: "source.pdf", kind: "upload" },

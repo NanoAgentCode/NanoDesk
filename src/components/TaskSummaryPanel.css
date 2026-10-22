@@ -20,8 +20,13 @@
 .task-summary-tabs button[aria-selected="true"] { color: var(--accent-color, #3b82f6); background: color-mix(in srgb, var(--accent-color, #3b82f6) 10%, transparent); }
 .task-summary-tabs small { font-size: 10px; }
 .deliverables-group { margin: 24px 0; }
-.deliverables-group h3 { display: flex; align-items: center; justify-content: space-between; font-size: 13px; margin: 0 0 12px; }
-.deliverables-group h3 small { color: var(--text-secondary); font-weight: 400; }
+.deliverables-group > summary { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
+.deliverables-group > summary::-webkit-details-marker { display: none; }
+.deliverables-group > summary::before { content: "▸"; color: var(--text-secondary); }
+.deliverables-group[open] > summary::before { transform: rotate(90deg); }
+.deliverables-group[open] > summary { margin-bottom: 12px; }
+.deliverables-group > summary:focus-visible { outline: 2px solid var(--accent-color, #3b82f6); outline-offset: 4px; }
+.deliverables-group > summary small { margin-left: auto; color: var(--text-secondary); font-weight: 400; }
 .deliverable-file { display: flex; align-items: flex-start; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
 .deliverable-file > svg { flex-shrink: 0; color: var(--text-secondary); margin-top: 2px; }
 .deliverable-file > div { flex: 1; min-width: 0; }
