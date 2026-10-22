@@ -81,7 +81,7 @@ impl WindowsCommandShell {
                 // Parse user code only after UTF-8 is configured. A parse error in
                 // -Command previously bypassed the encoding prelude entirely.
                 let payload = base64::engine::general_purpose::STANDARD.encode(command.as_bytes());
-                let script = format!("[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new($false); $ErrorActionPreference='Stop'; try {{ $script=[ScriptBlock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{payload}'))) }} catch {{ [Console]::Error.WriteLine('PowerShell syntax error: ' + $_.ToString()); exit 65 }}; try {{ & $script; if ($LASTEXITCODE) {{ exit $LASTEXITCODE }} }} catch {{ [Console]::Error.WriteLine($_.ToString()); exit 1 }}");
+                let script = format!("[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Activator]::CreateInstance([System.Text.UTF8Encoding], [object[]]@($false)); $ErrorActionPreference='Stop'; try {{ $script=[ScriptBlock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{payload}'))) }} catch {{ [Console]::Error.WriteLine('PowerShell syntax error: ' + $_.ToString()); exit 65 }}; try {{ & $script; if ($LASTEXITCODE) {{ exit $LASTEXITCODE }} }} catch {{ [Console]::Error.WriteLine($_.ToString()); exit 1 }}");
                 let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
                 vec!["-NoProfile".into(), "-NonInteractive".into(), "-ExecutionPolicy".into(), "Bypass".into(), "-EncodedCommand".into(), base64::engine::general_purpose::STANDARD.encode(bytes)]
             },
@@ -302,6 +302,15 @@ fn ensure_tavily_cli_if_needed(command: &str) -> AppResult<()> {
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn powershell_prelude_supports_pre_version_5_constructors() {
+        let args = WindowsCommandShell::PowerShell.args("Write-Output 'test'");
+        let bytes = base64::engine::general_purpose::STANDARD.decode(args.last().unwrap()).unwrap();
+        let words: Vec<u16> = bytes.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+        let prelude = String::from_utf16(&words).unwrap();
+        assert!(!prelude.contains("::new("), "Win7/8 built-in PowerShell cannot parse PowerShell 5 constructor syntax");
+    }
 
     #[tokio::test]
     async fn powershell_preserves_unicode_and_configures_python() {

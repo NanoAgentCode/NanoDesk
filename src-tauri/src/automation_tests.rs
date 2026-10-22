@@ -306,6 +306,8 @@ async fn ai_task_reads_context_calls_model_and_saves_markdown() {
                 Err(e) => panic!("mock model accept failed: {e}"),
             }
         };
+        // Win7-target std can inherit the listener's nonblocking socket mode.
+        socket.set_nonblocking(false).unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();

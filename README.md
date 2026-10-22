@@ -151,6 +151,8 @@ npm.cmd run package:win
 
 版本变更见 [CHANGELOG](CHANGELOG.md)，安装包从 [GitHub Releases](https://github.com/NanoAgentCode/NanoDesk/releases) 下载。
 
+Win7 SP1 / Win8 / Win8.1 / Win10 的 x86、x64 与 Win11 x64 另有[兼容候选构建流程](docs/Windows兼容构建.md)，包含双架构安装包、旧系统 WebView2 109 前置条件和逐系统待验收清单。普通发布包不代表已验证支持旧系统。
+
 ## 数据位置
 
 运行时数据保存在 Tauri app data 目录下：

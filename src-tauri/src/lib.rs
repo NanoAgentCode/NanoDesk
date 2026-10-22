@@ -34,6 +34,7 @@ mod settings;
 mod shell;
 mod skills;
 mod tool_policy;
+mod windows_compat;
 
 mod app_state;
 mod command_host;

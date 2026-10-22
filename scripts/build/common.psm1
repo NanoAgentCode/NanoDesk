@@ -39,7 +39,7 @@ function Initialize-WorkspaceMarker {
 
 # ── MSVC 环境注入 ─────────────────────────────────────────────
 function Initialize-MSVCEnvironment {
-  param([string]$Root)
+  param([string]$Root, [ValidateSet("x64", "x86")] [string]$Architecture = "x64")
 
   $VcVars = $env:VCVARS64
   if (-not $VcVars) {
@@ -60,6 +60,11 @@ function Initialize-MSVCEnvironment {
 
   if (-not $VcVars -or -not (Test-Path -LiteralPath $VcVars)) {
     throw "MSVC x64 build tools were not found. Install Visual Studio Build Tools with 'Desktop development with C++' (MSVC x64/x86 and Windows SDK), then retry. For a custom installation, set VCVARS64 to the full path of vcvars64.bat. Download: https://aka.ms/vs/17/release/vs_BuildTools.exe"
+  }
+
+  if ($Architecture -eq "x86") {
+    $VcVars = Join-Path (Split-Path $VcVars -Parent) "vcvarsamd64_x86.bat"
+    if (-not (Test-Path -LiteralPath $VcVars)) { throw "MSVC x86 build environment was not found: $VcVars" }
   }
 
   # vcvars64.bat 仅在 cmd 上下文有效，先在 cmd 中采集完整的 MSVC 环境。

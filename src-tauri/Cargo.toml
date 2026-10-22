@@ -6,6 +6,13 @@ authors = ["NanoDesk"]
 edition = "2021"
 default-run = "nano-desk"
 
+[features]
+windows-legacy = ["tauri-plugin-notification/windows7-compat"]
+
+[patch.crates-io]
+# ctor 0.8 assumes Windows has vendor=pc; Win7 Rust targets use vendor=win7.
+ctor = { path = "vendor/ctor" }
+
 [lib]
 name = "nano_desk_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
