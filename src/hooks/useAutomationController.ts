@@ -29,6 +29,7 @@ export function useAutomationController(setNotice: (message: string) => void) {
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [editing, setEditing] = useState(false);
+  const [naturalCreation, setNaturalCreation] = useState(false);
   const [draft, setDraft] = useState<AutomationDraft>(freshDraft);
   const [onceTime, setOnceTime] = useState("");
   const [busy, setBusy] = useState(false);
@@ -78,32 +79,34 @@ export function useAutomationController(setNotice: (message: string) => void) {
     }
   }
   function edit(job?: Automation) {
+    setNaturalCreation(!job);
     setDraft(job ? structuredClone(job.config) : freshDraft());
     setOnceTime(job?.config.trigger.kind === "once" ? localInput(job.config.trigger.at) : "");
     setError("");
     setEditing(true);
   }
-  async function save() {
+  async function save(interpreted?: AutomationDraft) {
+    const source = interpreted ?? draft;
     let next: AutomationDraft =
-      draft.action.kind === "ai"
+      source.action.kind === "ai"
         ? {
-            ...draft,
+            ...source,
             action: {
-              ...draft.action,
-              context_files: draft.action.context_files.map((s) => s.trim()).filter(Boolean)
+              ...source.action,
+              context_files: source.action.context_files.map((s) => s.trim()).filter(Boolean)
             }
           }
-        : draft;
+        : source;
     try {
-      if (draft.trigger.kind === "once")
+      if (!interpreted && draft.trigger.kind === "once")
         next = { ...next, trigger: { kind: "once", at: parseOnceTime(onceTime) } };
     } catch (e) {
       setError(String(e));
       return;
     }
-    if (draft.action.kind === "command") {
+    if (next.action.kind === "command") {
       const accepted = await confirmAction(
-        `授权后台脚本执行：保存后，此命令将在指定目录按触发规则自动执行。${draft.max_retries > 0 ? `失败后最多重试 ${draft.max_retries} 次；脚本应能安全重复执行。` : "不自动重试。"}\n\n${draft.project_path}\n${draft.action.command}`
+        `授权后台脚本执行：保存后，此命令将在指定目录按触发规则自动执行。${next.max_retries > 0 ? `失败后最多重试 ${next.max_retries} 次；脚本应能安全重复执行。` : "不自动重试。"}\n\n${next.project_path}\n${next.action.command}`
       );
       if (!accepted) return;
     }
@@ -147,6 +150,8 @@ export function useAutomationController(setNotice: (message: string) => void) {
     act,
     editor: {
       editing,
+      naturalCreation,
+      useManualCreation: () => setNaturalCreation(false),
       draft,
       models,
       onceTime,

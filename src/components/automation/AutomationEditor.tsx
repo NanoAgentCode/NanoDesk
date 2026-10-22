@@ -19,8 +19,11 @@ export type AutomationEditorProps = ReturnType<typeof useAutomationController>["
 import TaskBudgetFields from "../TaskBudgetFields";
 import { DEFAULT_TASK_BUDGET } from "../../lib/taskBudget";
 import ConfiguredModelSelect from "../ConfiguredModelSelect";
+import NaturalAutomationCreator from "./NaturalAutomationCreator";
 export default function AutomationEditor({
   editing,
+  naturalCreation,
+  useManualCreation,
   draft,
   models,
   onceTime,
@@ -41,6 +44,9 @@ export default function AutomationEditor({
       closeButtonProps={{ "aria-label": "关闭任务编辑" }}
     >
       <Stack gap="sm">
+        {naturalCreation ? (
+          <NaturalAutomationCreator draft={draft} models={models} busy={busy} error={error} patch={patch} save={save} close={close} manual={useManualCreation} />
+        ) : <>
         <TextInput
           label="任务名称"
           value={draft.name}
@@ -287,6 +293,7 @@ export default function AutomationEditor({
             保存任务
           </Button>
         </Group>
+        </>}
       </Stack>
     </Modal>
   );
