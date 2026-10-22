@@ -14,5 +14,5 @@ pub(crate) use worker::start_worker;
 #[cfg(test)]
 use {types::*, files::{scan_files, changed_paths}, schedule::initial_due, execution::execute_with_config};
 #[cfg(test)]
-#[path = "automation_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

@@ -193,35 +193,19 @@ src/hooks/useAccessMode.ts     三种应用模式状态与本地持久化
 src/lib/backgroundAgent.ts     后台任务 IPC 类型与会话展示投影
 src/components/                聊天区、侧栏、设置页、运行详情面板、Ops 工作台等 UI
 src/lib/                       系统提示、上下文预算与摘要编排、工具解析、格式化和安全封装
-src-tauri/src/lib.rs           Tauri command 注册、应用状态和启动流程
-src-tauri/src/app_state.rs     共享应用状态与流式取消注册表
+src-tauri/src/lib.rs           Tauri command 注册与公开入口，保留逻辑模块名
+src-tauri/src/main.rs          桌面二进制入口
+src-tauri/src/app/             应用状态、启动、桌面/文档窗口、设置及 Windows 兼容
+src-tauri/src/agents/          任务执行、自动化、上下文、预算与工具策略
+src-tauri/src/knowledge/       文档、项目文件、索引、检索、记忆与用户画像
+src-tauri/src/integrations/    模型协议、ASR、MCP、SSH、Shell 与 Skills
+src-tauri/src/storage/         SQLite 入口、领域存储、业务模型及会话服务
+src-tauri/src/shared/          错误、系统日志与观测管线
+src-tauri/src/core/            插件契约、内置插件装配与共用命令宿主
 src-tauri/src/commands/        按能力分组的 IPC 适配器
 src-tauri/src/services/        工具、OCR、环境与观测服务
-src-tauri/src/cli.rs           nano 终端交互、模型选择和项目问答上下文
+src-tauri/src/cli/             终端入口实现、模型、共用业务调度、路由与展示
 src-tauri/src/bin/nano.rs      nano 命令行二进制入口
-src-tauri/src/core/plugin.rs   后端插件契约、清单与 Agent 工具扩展点
-src-tauri/src/plugins.rs       内置后端插件装配
-src-tauri/src/db.rs            业务 SQLite schema 与共享数据库入口
-src-tauri/src/db/              分库迁移及条目、配置、会话、RAG、记忆、画像和项目索引存储
-src-tauri/src/db/schema.rs     Schema 初始化与列迁移
-src-tauri/src/code_index.rs    项目代码实体、关系和片段索引
-src-tauri/src/project_index.rs 项目文档片段索引与通用项目索引查询
-src-tauri/src/runtime.rs       Agent run/step/tool call 运行时存储
-src-tauri/src/agent_commands.rs Agent 运行时生命周期与审批 command
-src-tauri/src/background_agent/ 协议、所有权、生命周期、决策、执行与上下文
-src-tauri/src/automation/      自动任务协议、调度、扫描、存储与执行
-src-tauri/src/runtime/         run/tool/时间线、恢复及执行请求存储
-src-tauri/src/cli/             CLI 模型、共用业务调度、路由、主题与展示
-src-tauri/src/llm/             模型协议、供应商、SSE、发现与 Embeddings
-src-tauri/src/observability.rs 观测 sink/pipeline 与观测库
-src-tauri/src/logging.rs       按天写入并自动清理的系统操作日志
-src-tauri/src/llm.rs           Chat、streaming 和 embeddings 请求
-src-tauri/src/memory.rs        长期记忆 embedding 编排与混合召回入口
-src-tauri/src/profile.rs       用户画像候选过滤、异步 Worker、上下文注入与管理命令
-src-tauri/src/db/profile_store.rs 用户画像状态机、预算、租约、Reducer 与删除屏障
-src-tauri/src/ops.rs           Ops SSH/SCP、交互终端与 AI 辅助命令
-src-tauri/src/mcp.rs           MCP client manager 与传输实现
-src-tauri/src/agent_runner.rs  XML tool_call 解析与运行时结果模型
 scripts/build-installer.ps1    Windows 打包脚本
 scripts/install-cli.ps1        构建 nano.exe、复制到 cargo 所在目录并校验已有 PATH
 docs/                          系统设计、运维和学习路线文档

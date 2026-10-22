@@ -1,50 +1,94 @@
+#[path = "agents/agent_commands.rs"]
 mod agent_commands;
+#[path = "agents/agent_runner.rs"]
 mod agent_runner;
+#[path = "integrations/asr.rs"]
 mod asr;
+#[path = "agents/automation/mod.rs"]
 mod automation;
+#[path = "agents/background_agent/mod.rs"]
 mod background_agent;
+#[path = "app/brand.rs"]
 mod brand;
+#[path = "cli/mod.rs"]
 mod cli;
+#[path = "knowledge/code_index.rs"]
 mod code_index;
+#[path = "agents/context.rs"]
 mod context;
+#[path = "agents/context_budget.rs"]
 mod context_budget;
+#[path = "agents/task_summary.rs"]
 mod task_summary;
+#[path = "storage/conversation_service.rs"]
 mod conversation_service;
 mod core;
+#[path = "storage/db/mod.rs"]
 mod db;
+#[path = "shared/error.rs"]
 mod error;
+#[path = "knowledge/file_content.rs"]
 mod file_content;
+#[path = "integrations/llm/mod.rs"]
 mod llm;
+#[path = "shared/logging.rs"]
 mod logging;
+#[path = "integrations/mcp.rs"]
 mod mcp;
+#[path = "knowledge/memory.rs"]
 mod memory;
+#[path = "storage/models.rs"]
 mod models;
+#[path = "shared/observability.rs"]
 mod observability;
+#[path = "integrations/ops.rs"]
 mod ops;
+#[path = "core/plugins.rs"]
 mod plugins;
+#[path = "knowledge/profile.rs"]
 mod profile;
+#[path = "knowledge/project_files.rs"]
 mod project_files;
+#[path = "knowledge/project_index.rs"]
 mod project_index;
+#[path = "knowledge/project_retrieval.rs"]
 mod project_retrieval;
+#[path = "knowledge/rag.rs"]
 mod rag;
+#[path = "knowledge/rag_retrieval.rs"]
 mod rag_retrieval;
+#[path = "agents/runtime/mod.rs"]
 mod runtime;
+#[path = "agents/runtime_events.rs"]
 mod runtime_events;
+#[path = "app/settings.rs"]
 mod settings;
+#[path = "integrations/shell.rs"]
 mod shell;
+#[path = "integrations/skills.rs"]
 mod skills;
+#[path = "agents/tool_policy/mod.rs"]
 mod tool_policy;
+#[path = "app/windows_compat.rs"]
 mod windows_compat;
 
+#[path = "app/app_state.rs"]
 mod app_state;
+#[path = "core/command_host.rs"]
 mod command_host;
+#[path = "app/bootstrap.rs"]
 mod bootstrap;
+#[path = "agents/task_budget.rs"]
 mod task_budget;
+#[path = "agents/task_notifications.rs"]
 mod task_notifications;
 mod commands;
 mod services;
+#[path = "app/desktop/mod.rs"]
 mod desktop;
+#[path = "app/document_chat/mod.rs"]
 mod document_chat;
+#[path = "knowledge/document_insights.rs"]
 mod document_insights;
 
 pub(crate) use app_state::{AppState, ChatStreamInterrupts};

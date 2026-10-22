@@ -23,5 +23,5 @@ pub(crate) use lifecycle::restore_waiting_runs;
 #[cfg(test)]
 use {actions::{apply_decision, internal_message}, executor::drive, protocol::*};
 #[cfg(test)]
-#[path = "background_agent_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

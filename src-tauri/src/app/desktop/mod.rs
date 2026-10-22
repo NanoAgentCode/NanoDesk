@@ -197,7 +197,7 @@ pub(crate) fn setup_system_tray(app: &mut tauri::App) -> Result<(), String> {
 
     let tray = TrayIconBuilder::with_id(brand::TRAY_ID)
         .icon(tauri::image::Image::new_owned(
-            include_bytes!("../icons/tray-light.rgba").to_vec(),
+            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/icons/tray-light.rgba")).to_vec(),
             32,
             32,
         ))
