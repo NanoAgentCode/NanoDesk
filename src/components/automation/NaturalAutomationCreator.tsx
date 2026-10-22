@@ -33,12 +33,13 @@ export default function NaturalAutomationCreator({ draft, models, busy, error, p
     }
   }
   return <Stack gap="sm">
-    <Textarea label="描述你想定时完成的任务" placeholder="例如：每天上午九点，总结项目进展并生成日报。" description="支持单次、固定间隔和每日定时；时间不明确时会提示补充。" minRows={3} autosize value={description} disabled={busy} onChange={(e) => { invalidate(); setDescription(e.currentTarget.value); }} />
-    <ConfiguredModelSelect label="模型" description="用于理解描述和执行任务，识别会调用此模型。" models={models} value={modelId} disabled={busy} onChange={(id) => { invalidate(); patch({ action: { kind: "ai", model_config_id: id || "", prompt: "", context_files: [] } }); }} />
+    <Textarea label="描述你想定时完成的任务" placeholder="例如：每天上午九点，生成一份项目日报模板。" description="支持单次、固定间隔和每日定时；请明确时间，并核对 AI 识别结果。" minRows={3} autosize value={description} disabled={busy} onChange={(e) => { invalidate(); setDescription(e.currentTarget.value); }} />
+    <ConfiguredModelSelect label="模型" description="用于理解描述和执行任务；识别调用不计入任务预算。" models={models} value={modelId} disabled={busy} onChange={(id) => { invalidate(); patch({ action: { kind: "ai", model_config_id: id || "", prompt: "", context_files: [] } }); }} />
     <Group align="end" wrap="nowrap">
       <TextInput style={{ flex: 1 }} label="工作目录" placeholder="成果保存到此目录" value={draft.project_path} disabled={locked} onChange={(e) => patch({ project_path: e.currentTarget.value })} />
       <Button variant="light" aria-label="选择工作目录" disabled={locked} onClick={() => { void open({ directory: true, multiple: false }).then((path) => { if (typeof path === "string") patch({ project_path: path }); }).catch((e) => setParseError(String(e))); }}><FolderOpen size={17} /></Button>
     </Group>
+    <Text size="xs" c="dimmed">此入口仅生成文本，不自动读取工作目录中的文件。需要提供文件资料时，请使用手动配置；切换后需重新填写任务要求和触发规则。</Text>
     <Button variant="light" loading={parsing} disabled={busy || !modelId || !description.trim()} onClick={() => { void recognize(); }}>识别时间和任务</Button>
     {result && <Paper withBorder p="sm" aria-label="识别结果">
       <Stack gap={4}>
