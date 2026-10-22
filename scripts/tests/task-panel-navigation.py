@@ -12,13 +12,13 @@ output.mkdir(parents=True, exist_ok=True)
 
 def assert_vertical_icons(panel):
     header = panel.locator('.task-summary-header')
-    toggle = header.get_by_role('button')
+    expect(header.get_by_role('button')).to_have_count(0)
     plan = header.get_by_role('tab', name='任务规划', exact=True)
     files = header.get_by_role('tab', name='交付文件', exact=True)
-    boxes = [control.bounding_box() for control in [toggle, plan, files]]
-    assert len(header.locator('svg').all()) == 3
+    boxes = [control.bounding_box() for control in [plan, files]]
+    assert len(header.locator('svg').all()) == 2
     assert all(abs(box['x'] - boxes[0]['x']) < 1 for box in boxes), boxes
-    assert boxes[0]['y'] < boxes[1]['y'] < boxes[2]['y'], boxes
+    assert boxes[0]['y'] < boxes[1]['y'], boxes
     assert plan.inner_text() == files.inner_text() == ''
     expect(header.get_by_role('tablist')).to_have_attribute('aria-orientation', 'vertical')
 
@@ -49,7 +49,18 @@ with sync_playwright() as p:
             assert plan.locator('svg').count() == files.locator('svg').count() == 1
             assert_vertical_icons(panel)
             expect(panel.get_by_role('heading', name='任务规划', exact=True)).to_be_visible()
-            expect(panel.get_by_role('button', name='收起任务规划', exact=True)).to_have_attribute('title', '收起')
+            for icon, label in [(plan, '任务规划'), (files, '交付文件')]:
+                if label == '交付文件':
+                    icon.click()
+                icon.click()
+                expect(panel).to_have_class('task-summary-panel is-collapsed')
+                assert_vertical_icons(panel)
+                assert page.evaluate("localStorage.getItem('nanodesk-task-summary-collapsed')") == 'true'
+                icon.click()
+                expect(panel.get_by_role('heading', name=label, exact=True)).to_be_visible()
+                assert page.evaluate("localStorage.getItem('nanodesk-task-summary-collapsed')") == 'false'
+            plan.click()
+            expect(panel.get_by_role('heading', name='任务规划', exact=True)).to_be_visible()
             files.click()
             expect(panel.get_by_role('heading', name='交付文件', exact=True)).to_be_visible()
             expect(panel.get_by_role('tabpanel', name='交付文件')).to_be_visible()
@@ -57,12 +68,11 @@ with sync_playwright() as p:
             expect(panel.get_by_text('中间文件', exact=True)).to_be_visible()
             expect(panel.get_by_text('最终交付', exact=True)).to_be_visible()
             page.screenshot(path=str(output / f'{name}-expanded.png'))
-            panel.get_by_role('button', name='收起任务规划', exact=True).click()
+            files.click()
             expect(panel).to_have_class('task-summary-panel is-collapsed')
             expect(plan).to_be_visible()
             expect(files).to_be_visible()
             assert_vertical_icons(panel)
-            expect(panel.get_by_role('button', name='展开任务规划', exact=True)).to_have_attribute('title', '展开')
             assert abs(panel.bounding_box()['width'] - 44) < 1
             assert plan.inner_text() == files.inner_text() == ''
             expect(panel.get_by_role('tabpanel')).to_have_count(0)
@@ -71,10 +81,10 @@ with sync_playwright() as p:
             plan.click()
             expect(panel.get_by_role('tabpanel', name='任务规划')).to_be_visible()
             expect(plan).to_have_attribute('aria-selected', 'true')
-            panel.get_by_role('button', name='收起任务规划', exact=True).click()
+            plan.click()
             files.click()
             expect(panel.get_by_role('tabpanel', name='交付文件')).to_be_visible()
-            panel.get_by_role('button', name='收起任务规划', exact=True).click()
+            files.click()
             page.reload()
             page.wait_for_load_state('networkidle')
             expect(panel).to_have_class('task-summary-panel is-collapsed')
@@ -90,4 +100,4 @@ with sync_playwright() as p:
             context.close()
     finally:
         browser.close()
-print('PASS: persistent three-icon vertical rail, tooltips, navigation, persistence, responsive layout and unchanged document window.')
+print('PASS: two-icon vertical rail without a separate toggle, navigation, persistence, responsive layout and unchanged document window.')
