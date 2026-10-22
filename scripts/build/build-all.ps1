@@ -13,6 +13,7 @@ param(
 $ErrorActionPreference = "Stop"
 Import-Module (Join-Path $PSScriptRoot "common.psm1") -DisableNameChecking
 $Root = Get-ProjectRoot
+$null = Get-ReleaseVersion -Root $Root
 $Brand = Get-BrandConfig -Root $Root
 if (-not $EntryPoint) {
   $EntryPoint = if ($Fast) { "package:fast" } else { "package:win" }

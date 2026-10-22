@@ -188,6 +188,7 @@ function Get-ProjectRoot {
 }
 
 . (Join-Path $PSScriptRoot "frontend-cache.ps1")
+. (Join-Path $PSScriptRoot "release-artifacts.ps1")
 
 function Get-TauriOverrideConfig {
   param([string]$Root)
@@ -202,6 +203,7 @@ function Get-TauriOverrideConfig {
 }
 
 Export-ModuleMember -Function `
+  Get-ReleaseVersion, Export-ReleaseArtifact, `
   Get-TauriOverrideConfig, Get-BrandConfig, `
   Initialize-WorkspaceMarker, `
   Initialize-MSVCEnvironment, `

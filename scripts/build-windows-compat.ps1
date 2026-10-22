@@ -7,7 +7,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$version = (Get-Content (Join-Path $root 'src-tauri/tauri.conf.json') -Raw | ConvertFrom-Json).version
+Import-Module (Join-Path $PSScriptRoot 'build/common.psm1') -DisableNameChecking
+$version = Get-ReleaseVersion -Root $root
 $architectures = if ($Architecture -eq 'all') { @('x86', 'x64') } else { @($Architecture) }
 $plans = @($architectures | ForEach-Object {
   [pscustomobject]@{
@@ -20,7 +21,6 @@ $plans = @($architectures | ForEach-Object {
 })
 if ($DryRun) { return $plans }
 
-Import-Module (Join-Path $PSScriptRoot 'build/common.psm1') -DisableNameChecking
 $toolchain = $plans[0].Toolchain
 & rustup run $toolchain rustc --version
 if ($LASTEXITCODE -ne 0) { throw "Install the toolchain first: rustup toolchain install $toolchain --profile minimal --component rust-src" }
@@ -46,6 +46,7 @@ foreach ($plan in $plans) {
   $keys += ('CFLAGS_' + $plan.Target.Replace('-', '_')), ('CXXFLAGS_' + $plan.Target.Replace('-', '_'))
 }
 $saved = @{}
+$artifacts = @()
 foreach ($key in $keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process') }
 Push-Location $root
 try {
@@ -91,6 +92,7 @@ try {
     try { $hash = ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
     finally { $stream.Dispose(); $sha.Dispose() }
     [IO.File]::WriteAllText((Join-Path $output "$($plan.InstallerName).sha256"), "$hash  $($plan.InstallerName)`n", [Text.UTF8Encoding]::new($false))
+    $artifacts += @{ installer = $plan.InstallerName; target = $plan.Target; sha256 = $hash; sizeBytes = (Get-Item (Join-Path $output $plan.InstallerName)).Length }
   }
   $sourceCommit = & git rev-parse HEAD
   $sourceChanges = @(& git status --porcelain)
@@ -101,11 +103,14 @@ try {
     sourceHasChanges = ($sourceChanges.Count -gt 0)
     sourceChanges = $sourceChanges
     architectures = @($plans | ForEach-Object { $_.Architecture })
+    artifacts = $artifacts
     builtAtUtc = [DateTime]::UtcNow.ToString('o')
     status = 'candidate; operating system acceptance tests pending'
     legacyWebView2 = 'Requires separately installed Microsoft WebView2 Runtime 109 on Windows 7/8/8.1'
   } | ConvertTo-Json -Depth 4
   [IO.File]::WriteAllText((Join-Path $output 'BUILD-INFO.json'), $info, [Text.UTF8Encoding]::new($false))
+  $checksums = ($artifacts | ForEach-Object { "$($_.sha256)  $($_.installer)" }) -join "`n"
+  [IO.File]::WriteAllText((Join-Path $output 'SHA256SUMS.txt'), "$checksums`n", [Text.UTF8Encoding]::new($false))
 } finally {
   Pop-Location
   foreach ($key in $keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }

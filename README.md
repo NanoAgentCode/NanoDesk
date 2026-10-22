@@ -151,6 +151,8 @@ npm.cmd run package:win
 
 版本变更见 [CHANGELOG](CHANGELOG.md)，安装包从 [GitHub Releases](https://github.com/NanoAgentCode/NanoDesk/releases) 下载。
 
+打包前检查 npm、Cargo、Tauri 三处版本一致；发布构建使用 Cargo 锁文件并关闭交互提示。标准包同时归集到 `.build/releases/v<版本>/windows-x64/`，附带 `.sha256` 和 `BUILD-INFO.json`（版本、目标架构、文件大小、哈希、源码提交及工作树修改状态），便于核对后手动发布。
+
 Win7 SP1 / Win8 / Win8.1 / Win10 的 x86、x64 与 Win11 x64 另有[兼容候选构建流程](docs/Windows兼容构建.md)，包含双架构安装包、旧系统 WebView2 109 前置条件和逐系统待验收清单。普通发布包不代表已验证支持旧系统。
 
 ## 数据位置

@@ -22,6 +22,8 @@ Tauri build 对 Tier 3 目标的 rustup 校验无法通过，因此脚本先以 
 
 候选包、SHA-256 文件和导入表位于 `.build/windows-compat/<版本>/`，名称带 `windows-compat`，不覆盖普通发布包。编译输出分别保存在 `src-tauri/target/<目标>/release/`。与现有安装包一致，编译并打包桌面程序及 `nano.exe`，不生成独立 CLI 安装器。
 
+构建前验证 npm、Cargo、Tauri 三处版本一致。`BUILD-INFO.json` 的 `artifacts` 和 `SHA256SUMS.txt` 只列出本次选择并成功构建的架构，包含实际安装包名称、目标、大小及 SHA-256；单架构重建不会把目录内其他旧包记为本次产物。
+
 兼容流程关闭 Tauri 的混合 CRT 链接辅助逻辑（该逻辑仍动态依赖 UCRT），改为完整静态 CRT；延迟加载 WinRT 激活与 `ole32.dll`，避免 Win7 启动时解析不存在的 WinRT / `CoIncrementMTAUsage` 入口。相关功能仍需实际系统测试；延迟加载不能证明所有调用路径都有旧系统回退。
 
 `ctor` 0.8.0 的本地补丁只让 Windows CRT 初始化宏识别 `vendor=win7`，原始许可证及修改说明保存在 `src-tauri/vendor/ctor/`。通知启用插件的 `windows7-compat` 功能，现有 `builder().show()` 会由插件在内部自动分发到 Win7 兼容通知路径。

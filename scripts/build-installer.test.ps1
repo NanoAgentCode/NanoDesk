@@ -6,6 +6,8 @@ Copy-Item -Path (Join-Path $Workspace "scripts\build\*") -Destination (Join-Path
 Copy-Item -LiteralPath (Join-Path $Workspace "scripts\build-installer.ps1") -Destination (Join-Path $global:InstallerTestRoot "scripts\build-installer.ps1")
 Copy-Item -LiteralPath (Join-Path $Workspace "brand.config.json") -Destination (Join-Path $global:InstallerTestRoot "brand.config.json")
 Set-Content -LiteralPath (Join-Path $global:InstallerTestRoot "src-tauri\tauri.conf.json") -Value '{"version":"0.2.1"}'
+Set-Content -LiteralPath (Join-Path $global:InstallerTestRoot "package.json") -Value '{"version":"0.2.1"}'
+Set-Content -LiteralPath (Join-Path $global:InstallerTestRoot "src-tauri\Cargo.toml") -Value "[package]`nversion = `"0.2.1`""
 Set-Content -LiteralPath (Join-Path $global:InstallerTestRoot "src\app.tsx") -Value "export const app = 1;"
 
 # Simulate successful builds without a compiler, installer generator, or network.
@@ -21,6 +23,9 @@ function global:cmd.exe {
     return
   }
   if ($command -like '*npm.cmd run tauri build*') {
+    if ($command -like '*--bundles nsis*' -and ($command -notlike '*--ci*' -or $command -notlike '*-- --locked*')) {
+      throw 'Release builds must be non-interactive and preserve the Cargo lockfile'
+    }
     if ($command -notmatch '--config "([^"]+)"') {
       throw "Bundle must provide a beforeBuildCommand override"
     }
@@ -87,6 +92,10 @@ try {
     throw "package:win must always rebuild the frontend (full mode)"
   }
   Write-Host "PASS: package:win full flow; artifact verification uses the build-start version even when the configuration changes during the build."
+  Set-Content -LiteralPath (Join-Path $global:InstallerTestRoot "package.json") -Value '{"version":"0.2.2"}'
+  Set-Content -LiteralPath (Join-Path $global:InstallerTestRoot "src-tauri\Cargo.toml") -Value "[package]`nversion = `"0.2.2`""
+  # Updating package.json correctly invalidates the frontend once.
+  Invoke-Build -File (Join-Path $global:InstallerTestRoot "scripts\build-installer.ps1")
 
   # ── 场景 2：package:fast 增量复用——前端应被跳过 ──
   $distIndex = Join-Path $global:InstallerTestRoot "dist\index.html"

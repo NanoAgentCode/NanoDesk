@@ -14,6 +14,7 @@ if (-not $ProjectRoot) { $ProjectRoot = Get-ProjectRoot }
 if (-not $RunId) { $RunId = [guid]::NewGuid().ToString("N") }
 Set-BuildRunId -RunId $RunId
 $Brand = Get-BrandConfig -Root $ProjectRoot
+$Version = Get-ReleaseVersion -Root $ProjectRoot
 
 if (-not $SkipEnv -and -not $DryRun) {
   $envTimer = Start-Stage -StageId "env"
@@ -32,16 +33,13 @@ if (-not $SkipEnv) {
   & (Join-Path $PSScriptRoot "build-frontend.ps1") -ProjectRoot $ProjectRoot -EntryPoint $EntryPoint -RunId $RunId -SkipEnv
 }
 
-# Keep the version used when starting this build; source files may change while it runs.
-$Version = (Get-Content -LiteralPath (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).version
-
 $OverrideConfig = Get-TauriOverrideConfig -Root $ProjectRoot
 
 $timer = Start-Stage -StageId "bundle"
 Write-Host "==> [stage/bundle] tauri build --bundles nsis (beforeBuildCommand: skipped)"
 Push-Location $ProjectRoot
 try {
-  & cmd.exe /d /s /c ('npm.cmd run tauri build -- --bundles nsis --config "' + $OverrideConfig + '"')
+  & cmd.exe /d /s /c ('npm.cmd run tauri build -- --bundles nsis --ci --config "' + $OverrideConfig + '" -- --locked')
   if ($LASTEXITCODE -ne 0) {
     throw "Tauri build failed. Exit code: $LASTEXITCODE"
   }
@@ -56,6 +54,12 @@ $ExpectedNsis = Join-Path $NsisDir "$($Brand.displayName)_${Version}_x64-setup.e
 if (-not (Test-Path -LiteralPath $ExpectedNsis)) {
   throw "NSIS installer was not found: $ExpectedNsis"
 }
+if (-not (Test-Path -LiteralPath $DesktopExe)) {
+  throw "Desktop executable was not found: $DesktopExe"
+}
+$PublishedInstaller = Export-ReleaseArtifact -Root $ProjectRoot -Installer $ExpectedNsis `
+  -OutputDirectory (Join-Path $ProjectRoot ".build/releases/v$Version/windows-x64") `
+  -Version $Version -Target 'x86_64-pc-windows-msvc'
 
 Complete-Stage -Timer $timer -EntryPoint $EntryPoint -Artifact $ExpectedNsis | Out-Null
 
@@ -63,3 +67,4 @@ Write-Host ""
 Write-Host "==> Build completed"
 Write-Host "App : $DesktopExe"
 Write-Host "NSIS: $ExpectedNsis"
+Write-Host "Release: $PublishedInstaller"
