@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { respondBackgroundAgent } from "../api/agents";
 import { pauseBackgroundAgent, returnToParentTask, startTemporaryTask } from "../api/taskControl";
 import { useTaskSummary } from "../hooks/useTaskSummary";
-import { AlertTriangle, Check, ListTree, LoaderCircle, Minus, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { AlertTriangle, Check, Files, ListTree, LoaderCircle, Minus, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { APP_STORAGE_PREFIX } from "../config/brand";
 import "./TaskSummaryPanel.css";
 import type { AgentTaskPlan, AgentAccessMode } from "../types";
@@ -90,6 +90,11 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
     localStorage.setItem(COLLAPSED_KEY, String(!value));
     return !value;
   });
+  const selectTab = (next: "plan" | "files") => {
+    setTab(next);
+    setCollapsed(false);
+    localStorage.setItem(COLLAPSED_KEY, "false");
+  };
 
   return <aside ref={panelRef} className={`task-summary-panel${collapsed ? " is-collapsed" : ""}${resizing ? " is-resizing" : ""}`}
     style={{ "--task-summary-width": `${actualWidth}px` } as CSSProperties} aria-label="任务规划">
@@ -124,10 +129,10 @@ export default function TaskSummaryPanel({ conversationId, revision, busy, onNav
           : actualWidth + (event.key === "ArrowLeft" ? step : -step));
       }} />}
     <header className="task-summary-header">
-      {!collapsed && <div className="task-summary-tabs" role="tablist" aria-label="任务详情">
-        <button type="button" role="tab" id="task-plan-tab" aria-selected={tab === "plan"} aria-controls="task-plan-panel" onClick={() => setTab("plan")}><ListTree size={15} />任务规划</button>
-        <button type="button" role="tab" id="deliverables-tab" aria-selected={tab === "files"} aria-controls="deliverables-panel" onClick={() => setTab("files")}>交付物{deliverables.length > 0 && <small>{deliverables.length}</small>}</button>
-      </div>}
+      <div className="task-summary-tabs" role="tablist" aria-label="任务详情" aria-orientation={collapsed ? "vertical" : "horizontal"}>
+        <button type="button" role="tab" id="task-plan-tab" aria-label="任务规划" title="任务规划" aria-selected={tab === "plan"} aria-controls="task-plan-panel" onClick={() => selectTab("plan")}><ListTree size={16} aria-hidden="true" /><span className="task-summary-tab-label">任务规划</span></button>
+        <button type="button" role="tab" id="deliverables-tab" aria-label="交付文件" title="交付文件" aria-selected={tab === "files"} aria-controls="deliverables-panel" onClick={() => selectTab("files")}><Files size={16} aria-hidden="true" /><span className="task-summary-tab-label">交付文件</span>{deliverables.length > 0 && <small>{deliverables.length}</small>}</button>
+      </div>
       <button type="button" onClick={toggle} aria-expanded={!collapsed} aria-controls="task-summary-content"
         aria-label={collapsed ? "展开任务规划" : "收起任务规划"} title={collapsed ? "展开任务规划" : "收起任务规划"}>
         {collapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
