@@ -149,6 +149,14 @@
   ],
   "pending_or_native": [
     {
+      "command": "desktop::update_installer::download_app_update",
+      "reason": "native app/events"
+    },
+    {
+      "command": "desktop::update_installer::install_app_update",
+      "reason": "native app/events"
+    },
+    {
       "command": "document_chat::get_document_context_menu",
       "reason": "native app/events"
     },

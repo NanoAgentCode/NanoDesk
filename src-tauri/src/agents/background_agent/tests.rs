@@ -367,7 +367,14 @@ async fn root_search_policy_failure_is_replanned_before_execution() {
     assert_eq!(fixture.state.runtime.lock().await.get_run(&fixture.request.run_id).unwrap().status,"completed");
     assert_eq!(fixture.state.runtime.lock().await.list_steps(&fixture.request.run_id).unwrap().iter().filter(|s|s.kind=="tool_repair").count(),1);
     let requests=model.worker.join().unwrap();
-    assert!(requests[1]["messages"].to_string().contains("必须限定在具体子目录"));
+    let messages = requests[1]["messages"].to_string();
+    assert!(messages.contains("[工具调用修正: execute_command]"));
+    assert!(messages.contains("请修正后重新生成完整工具调用"));
+    assert!(messages.contains(crate::tool_policy::CODE_SEARCH_INSTRUCTION));
+    let tools = fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].status, "skipped");
+    assert_eq!(tools[0].attempt_count, 0);
     fixture.cleanup();
 }
 

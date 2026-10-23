@@ -154,7 +154,9 @@ fn daily_uses_explicit_offset_and_once_runs_only_once() {
 
 #[test]
 fn restart_marks_running_unknown_and_preserves_waiting_retry() {
-    let path = std::env::temp_dir().join(format!("automation-{}.sqlite", Uuid::new_v4()));
+    let root = std::env::temp_dir().join(format!("automation-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("automation.sqlite");
     {
         let mut store = AutomationStore::open(&path).unwrap();
         let job = store.save(draft(&std::env::temp_dir()), 100).unwrap();
@@ -166,7 +168,7 @@ fn restart_marks_running_unknown_and_preserves_waiting_retry() {
         assert_eq!(store.runs(None).unwrap()[0].status, "interrupted");
         assert!(store.claim(200).unwrap().is_none());
     }
-    let _ = std::fs::remove_file(path);
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -190,7 +192,9 @@ fn scanner_ignores_outputs_and_detects_add_modify_delete() {
 
 #[test]
 fn delayed_retry_survives_restart_without_early_execution() {
-    let path = std::env::temp_dir().join(format!("automation-retry-{}.sqlite", Uuid::new_v4()));
+    let root = std::env::temp_dir().join(format!("automation-retry-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("automation.sqlite");
     {
         let mut store = AutomationStore::open(&path).unwrap();
         let job = store.save(draft(&std::env::temp_dir()), 100).unwrap();
@@ -203,7 +207,7 @@ fn delayed_retry_survives_restart_without_early_execution() {
         assert!(store.claim(109).unwrap().is_none());
         assert_eq!(store.claim(110).unwrap().unwrap().attempts, 2);
     }
-    let _ = std::fs::remove_file(path);
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -211,8 +215,8 @@ fn file_snapshot_survives_restart_and_skip_reestablishes_baseline() {
     for policy in [MissedPolicy::Latest, MissedPolicy::Skip] {
         let root = std::env::temp_dir().join(format!("automation-snapshot-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let db_path =
-            std::env::temp_dir().join(format!("automation-snapshot-{}.sqlite", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join(".nanodesk")).unwrap();
+        let db_path = root.join(".nanodesk/automation.sqlite");
         let id;
         {
             let mut store = AutomationStore::open(&db_path).unwrap();
@@ -239,7 +243,6 @@ fn file_snapshot_survives_restart_and_skip_reestablishes_baseline() {
             );
         }
         std::fs::remove_dir_all(root).unwrap();
-        let _ = std::fs::remove_file(db_path);
     }
 }
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="3050" viewBox="0 0 1800 3050" role="img" aria-labelledby="title desc">
 <title id="title">NanoDesk 完整执行流程图</title>
-<desc id="desc">依据 2026-10-17 代码更新：桌面后台执行、普通聊天任务分流、预算化提示词、规划与工具审批、临时任务和主线恢复、失败处理及持久化。CLI 独立共享核心，不接入桌面 Agent 循环。实线为区内执行顺序，虚线为循环或恢复路径，各区按编号衔接。</desc>
+<desc id="desc">依据 2026-10-23 代码更新：桌面后台执行、普通聊天任务分流、预算化提示词、规划与工具审批、临时任务和主线恢复、失败处理及持久化。CLI 通过无窗口宿主共用业务命令与 Agent 循环。实线为区内执行顺序，虚线为循环或恢复路径，各区按编号衔接。</desc>
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#536b89"/></marker>
 <style>
 text {font-family:'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#20324c}
@@ -16,11 +16,11 @@ text {font-family:'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#20324c}
 <g id="section-1" aria-label="启动与恢复"><rect x="30" y="125" width="1740" height="320" rx="20" class="section"/>
 <text x="60" y="163" class="heading">01  启动与恢复</text>
 <text x="60" y="190" class="sub">桌面 UI 订阅后台状态；关闭或切换聊天不会停止后台任务。各区按编号衔接，虚线表示返回或恢复。</text>
-<g><title>桌面入口 / 应用状态 — lib.rs · AppState</title><rect x="60" y="215" width="390" height="120" rx="12" class="card ui"/>
+<g><title>桌面入口 / 应用状态 — lib.rs · app/bootstrap.rs</title><rect x="60" y="215" width="390" height="120" rx="12" class="card ui"/>
 <text x="78" y="244" class="node-title">桌面入口 / 应用状态</text>
 <text x="78" y="270" class="body">Tauri 单实例、托盘与数据目录</text>
 <text x="78" y="292" class="body">领域数据库 / MCP / 插件管理</text>
-<text x="78" y="323" class="code">lib.rs · AppState</text>
+<text x="78" y="323" class="code">lib.rs · app/bootstrap.rs</text>
 </g>
 <g><title>运行记录恢复 — runtime.rs · RuntimeStore</title><rect x="490" y="215" width="390" height="120" rx="12" class="card runtime"/>
 <text x="508" y="244" class="node-title">运行记录恢复</text>
@@ -43,8 +43,8 @@ text {font-family:'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#20324c}
 <path d="M 450 275 H 490" class="edge"/>
 <path d="M 880 275 H 920" class="edge"/>
 <path d="M 1310 275 H 1350" class="edge"/>
-<text x="60" y="375" class="note">CLI 旁路：nano → 解析参数 / 数据库 → 项目检索与历史摘要 → llm 流式响应 → 项目会话落库；临时会话不落库。</text>
-<text x="60" y="410" class="note">CLI 共享 Database、索引、画像与 LLM 核心；不接入本图桌面后台 Agent、临时任务、MCP / RAG 附件与自动化循环。</text>
+<text x="60" y="375" class="note">CLI：nano → 无窗口宿主 → 共用业务命令 / 后台 Agent → 检索、预算、工具与持久化；临时会话退出清理。</text>
+<text x="60" y="410" class="note">CLI 共用 Agent、MCP、附件与自动任务能力；持续任务用 --serve，窗口 / 托盘等桌面交互除外。</text>
 </g>
 <g id="section-2" aria-label="用户输入与任务分流"><rect x="30" y="465" width="1740" height="335" rx="20" class="section"/>
 <text x="60" y="503" class="heading">02  用户输入与任务分流</text>
@@ -241,11 +241,11 @@ text {font-family:'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#20324c}
 <g id="section-7" aria-label="存储、扩展与可观测性"><rect x="30" y="2540" width="1740" height="365" rx="20" class="section"/>
 <text x="60" y="2578" class="heading">07  存储、扩展与可观测性</text>
 <text x="60" y="2605" class="sub">任务记录与业务内容分开保存；持久状态是恢复依据，UI 快照不承担执行所有权。</text>
-<g><title>业务领域数据 — db.rs · domain stores</title><rect x="60" y="2625" width="390" height="120" rx="12" class="card store"/>
+<g><title>业务领域数据 — storage/db · domain stores</title><rect x="60" y="2625" width="390" height="120" rx="12" class="card store"/>
 <text x="78" y="2654" class="node-title">业务领域数据</text>
 <text x="78" y="2680" class="body">配置 / 会话消息 / 记忆与画像</text>
 <text x="78" y="2702" class="body">代码索引 / 项目资料索引 / RAG</text>
-<text x="78" y="2733" class="code">db.rs · domain stores</text>
+<text x="78" y="2733" class="code">storage/db · domain stores</text>
 </g>
 <g><title>Runtime 持久状态 — nanodesk-runtime.sqlite3</title><rect x="490" y="2625" width="390" height="120" rx="12" class="card store"/>
 <text x="508" y="2654" class="node-title">Runtime 持久状态</text>

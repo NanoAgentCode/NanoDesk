@@ -24,7 +24,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 - 长文本输入：默认最多显示 5 行，超出后在输入区内部滚动；右上角可原地展开或收起输入区，编辑共用同一份草稿，操作栏独立位于文字下方。
 - 统一附件上传：聊天输入区用一个回形针按钮选择图片、音频和文档，也支持拖拽或粘贴文件；图片作为附件，音频通过 ASR 转为输入框文字，文档抽取文本并进入轻量 RAG 索引。混合上传按类型处理，单个文件失败会保留其他成功结果。
 - 项目索引中心：为项目构建可插拔索引，当前包含代码实体/关系索引和文档片段索引，代码、配置、说明、数据文件问答会优先召回项目级上下文。
-- 图片附件和 OCR：图片保存到 `.nanodesk/uploads/images/`，消息中渲染缩略图，点击可预览；`ocr_image` 支持在设置 → 环境依赖的下拉菜单选择本地 PaddleOCR、外部 OCR API（OpenAI 兼容视觉接口）或自建 MinerU API，但当前工具策略拒绝 `.nanodesk` 内路径，因此聊天附件不能直接通过该工具识别。项目内其他允许路径的图片可进入 OCR 执行链路，详见 [OCR 工具说明](docs/图片文字识别工具.md)。
+- 图片附件和 OCR：图片保存到 `.nanodesk/uploads/images/`，消息中渲染缩略图，点击可预览；`ocr_image` 支持在设置 → 环境依赖的下拉菜单选择本地 PaddleOCR、外部 OCR API（OpenAI 兼容视觉接口）或自建 MinerU API。工具策略允许受控上传目录和普通项目图片，仍拒绝其他内部控制路径并校验符号链接边界，详见 [OCR 工具说明](docs/图片文字识别工具.md)。
 - 语音转文字：聊天输入区支持麦克风录音，以及附件按钮选择或拖拽音频文件，多段识别结果按顺序追加到草稿供编辑后发送；“系统设置 → 模型路由”中的语音识别模型从供应商选择，复用供应商地址和 API Key，并支持可选语言与音频文件测试。
 - 归档预览：设置页的 Archive 预览复用普通聊天的消息渲染链路，项目会话使用 `project_path`，普通会话回退到 app data 下的 `temp/`。
 - 项目工作区：添加或打开已有项目目录，可从项目条目右键菜单在系统资源管理器中打开目录；支持构建轻量文件索引、浏览文件树、读写/重命名/删除项目文件和执行项目命令。
@@ -124,7 +124,7 @@ nano
 
 `nano` 默认以当前目录作为项目并更新代码/文档索引；聊天改为调用与桌面相同的任务执行器，共用工具、审批、澄清、预算、恢复、交付物和整体完成判定。`--access-mode ask` 为默认值，支持 `auto/full`；`--routing` 提供固定、智能和四维路由，任务关键词与桌面共用一份规则，策略模型通过 `--routing-models` 指定。项目会话持久化，`--temp` 的已完成会话会清理且不收集画像，未完成任务保留以便恢复。
 
-使用 `nano --commands` 查看 145 个与桌面同源的业务命令，`nano --call <命令> --params <JSON>` 执行单次命令，`nano --serve` 提供持久 JSON 行会话、后台任务、自动任务、MCP/SSH 连接和实时事件。托盘、窗口、剪贴板和资源管理器菜单等 11 个桌面交互入口不纳入对齐。详见[CLI 功能对齐与协议](docs/CLI功能对齐.md)。首次模型配置、`/model add`、`--sessions/--show/--continue/--resume/--files` 继续支持。
+使用 `nano --commands` 查看 146 个与桌面同源的业务命令，`nano --call <命令> --params <JSON>` 执行单次命令，`nano --serve` 提供持久 JSON 行会话、后台任务、自动任务、MCP/SSH 连接和实时事件。托盘、窗口、剪贴板和资源管理器菜单等 13 个桌面交互入口不纳入对齐。详见[CLI 功能对齐与协议](docs/CLI功能对齐.md)。首次模型配置、`/model add`、`--sessions/--show/--continue/--resume/--files` 继续支持。
 
 类型检查和前端构建：
 
@@ -169,7 +169,7 @@ nanodesk-project-index.sqlite3   代码与项目文档索引
 nanodesk-runtime.sqlite3         Agent 运行时数据
 nanodesk-automation.sqlite3      自动任务、触发游标、文件快照与执行队列
 nanodesk-observability.sqlite3   观测数据
-settings.json                      Tavily API key 与 ASR 配置
+settings.json                      Tavily API key、ASR 与 OCR 配置
 logs/                              按天滚动的系统操作日志（保留 7 天）
 skills/                            本地 Skills 目录
 temp/                              无项目上下文时的临时工作目录
@@ -194,7 +194,7 @@ src/components/automation/     受控自动任务编辑表单
 src/hooks/useAccessMode.ts     三种应用模式状态与本地持久化
 src/lib/backgroundAgent.ts     后台任务 IPC 类型与会话展示投影
 src/components/                聊天区、侧栏、设置页、运行详情面板、Ops 工作台等 UI
-src/lib/                       系统提示、上下文预算与摘要编排、工具解析、格式化和安全封装
+src/lib/                       系统提示、预算辅助与摘要格式、工具解析、格式化和安全封装
 src-tauri/src/lib.rs           Tauri command 注册与公开入口，保留逻辑模块名
 src-tauri/src/main.rs          桌面二进制入口
 src-tauri/src/app/             应用状态、启动、桌面/文档窗口、设置及 Windows 兼容

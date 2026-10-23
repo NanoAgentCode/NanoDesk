@@ -49,6 +49,6 @@ pub(super) async fn try_repair(
     runtime.finish_run(&request.run_id, "running", None)?;
     drop(runtime);
     state.db.lock().await.append_message(internal_message(&request.conversation_id,
-        format!("[工具执行结果: {}] 执行失败（执行前校验失败，没有产生副作用）：{}\n请修正后重新生成完整工具调用，不要原样重试。优先使用索引，必须限定在具体子目录；复杂 PowerShell 拆为短命令，检查括号和正则表达式。", tool.name, error.chars().take(4000).collect::<String>())))?;
+        format!("[工具调用修正: {}] 执行前校验失败，没有产生副作用：{}\n请修正后重新生成完整工具调用，不要原样重试。{}\n复杂 PowerShell 拆为短命令，检查括号和正则表达式。", tool.name, error.chars().take(4000).collect::<String>(), crate::tool_policy::CODE_SEARCH_INSTRUCTION)))?;
     Ok(true)
 }
