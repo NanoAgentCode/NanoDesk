@@ -328,7 +328,11 @@ pub(crate) async fn resolve_model_output(
             }
         }
     }
-    if crate::background_agent::planning::gate(&runtime, &run_id, task_plan.as_ref())? {
+    // Plain replies and clarification need no execution approval. Keep the gate
+    // for proposed/existing plans and every tool request.
+    let needs_plan_review = parsed_tool_call.is_some() || task_plan.is_some()
+        || runtime.get_run(&run_id)?.plan_json.is_some();
+    if needs_plan_review && crate::background_agent::planning::gate(&runtime, &run_id, task_plan.as_ref())? {
         return Ok(AgentModelOutputResolution { run_id, status: "awaiting_plan".into(), tool_call: None, clarification: None, task_plan });
     }
     if let Some(plan) = &task_plan {

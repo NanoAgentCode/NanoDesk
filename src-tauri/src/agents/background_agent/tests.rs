@@ -1332,7 +1332,7 @@ async fn plan_review_is_persistent_rejects_stale_approval_and_rechecks_scope() {
 }
 
 #[tokio::test]
-async fn ask_mode_cannot_execute_or_finish_without_plan() {
+async fn ask_mode_cannot_execute_tool_without_plan() {
     let fixture = Fixture::new("http://localhost:1/v1", "ask");
     let result = crate::agent_commands::resolve_model_output(&fixture.state,
         fixture.request.run_id.clone(), "message".into(),
@@ -1341,6 +1341,22 @@ async fn ask_mode_cannot_execute_or_finish_without_plan() {
     assert!(result.is_err());
     assert!(fixture.state.runtime.lock().await.list_tool_calls(&fixture.request.run_id).unwrap().is_empty());
     assert!(!fixture.root.join("work/out/report.md").exists());
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn ask_mode_plain_reply_completes_without_plan() {
+    let fixture = Fixture::new("http://localhost:1/v1", "ask");
+    let result = crate::agent_commands::resolve_model_output(&fixture.state,
+        fixture.request.run_id.clone(), "message".into(),
+        "你好！有什么可以帮助你的？".into(), None, None).await.unwrap();
+    assert_eq!(result.status, "completed");
+    let runtime = fixture.state.runtime.lock().await;
+    let run = runtime.get_run(&fixture.request.run_id).unwrap();
+    assert_eq!(run.status, "completed");
+    assert!(run.error.is_none());
+    assert!(runtime.list_tool_calls(&fixture.request.run_id).unwrap().is_empty());
+    drop(runtime);
     fixture.cleanup();
 }
 
