@@ -13,3 +13,4 @@ src-tauri/gen
 __pycache__/
 *.pyc
 output/
+.idea/
