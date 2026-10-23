@@ -485,6 +485,8 @@ mod tests {
             exclude_from_profile: Some(true), deliverables: None, task_control: None,
             web_search: None, context_summary: None, generation_status: None,
             assistant_reasoning: None,
+            question_tokens: None,
+            token_statistics: None,
         });
         let history = vec![message(1, "user", "继续".into()), failed];
         let plan = prepare_context_plan(ContextPreparationRequest {

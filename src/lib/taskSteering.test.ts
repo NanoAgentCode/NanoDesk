@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRun } from "../types";
 import { steerConversationTask, taskSteeringIntent } from "./taskSteering";
+import { estimateTextTokens } from "./tokenStatistics";
 
 const main = {id:"main-run",conversation_id:"main",status:"running"} as AgentRun;
 const child = {id:"child-run",conversation_id:"temporary",status:"running"} as AgentRun;
@@ -16,13 +17,18 @@ function fixture(run = main, links = {parent:null,child:null} as {parent:AgentRu
   return {invoke,send};
 }
 describe("ordinary conversation task steering",()=>{
+  it("counts only the original question when attachment context is appended", async () => {
+    const { invoke } = fixture();
+    await steerConversationTask({conversationId:"main",text:"问题\n附加的图片提示和路径",questionText:"问题",accessMode:"ask",allowCommand:false,invoke});
+    expect(invoke).toHaveBeenCalledWith("start_temporary_task", expect.objectContaining({questionTokens:2}));
+  });
   it.each(["暂停任务","请先暂停。","先停一下","等一下"])("recognizes a normal pause request: %s",text=>expect(taskSteeringIntent(text)).toBe("pause"));
   it.each(["继续任务","请继续之前的任务。","恢复主任务","回到主线","可以继续了"])("recognizes a normal resume request: %s",text=>expect(taskSteeringIntent(text)).toBe("resume"));
   it("inserts an ordinary message while the main task is streaming and preserves current permissions",async()=>{
     const {invoke,send}=fixture();
     const result=await send("先查一下这个报错，再把主线剩余实现改成新的接口");
     expect(result).toEqual({handled:true,conversationId:"temporary"});
-    expect(invoke).toHaveBeenCalledWith("start_temporary_task",{parentRunId:"main-run",content:"先查一下这个报错，再把主线剩余实现改成新的接口",accessMode:"ask",allowCommand:false});
+    expect(invoke).toHaveBeenCalledWith("start_temporary_task",{parentRunId:"main-run",content:"先查一下这个报错，再把主线剩余实现改成新的接口",questionTokens:estimateTextTokens("先查一下这个报错，再把主线剩余实现改成新的接口"),accessMode:"ask",allowCommand:false});
     expect(invoke).not.toHaveBeenCalledWith("create_agent_run",expect.anything());
   });
   it("uses a new message after pausing as a temporary task rather than losing the paused mainline",async()=>{

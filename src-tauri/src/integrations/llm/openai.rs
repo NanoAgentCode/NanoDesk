@@ -1,7 +1,7 @@
 use super::{
     parameters::{ensure_api_key, resolve_generation_params},
     protocol::*,
-    transport::{emit_stream_error, stream_sse_response},
+    transport::{emit_stream_error, stream_sse_response_with_usage_fallback},
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{ChatRequest, ChatResponse, ChatStreamEvent, ChatStreamRequest, ModelConfig};
@@ -24,6 +24,7 @@ pub(super) async fn send_openai_chat_completion(
         messages: request.messages,
         temperature: generation.temperature,
         stream: None,
+        stream_options: None,
         max_tokens: generation.max_tokens,
         top_p: generation.top_p,
         reasoning_effort: generation.reasoning_effort,
@@ -89,6 +90,7 @@ where
         messages: request.messages,
         temperature: generation.temperature,
         stream: Some(true),
+        stream_options: Some(serde_json::json!({"include_usage": true})),
         max_tokens: generation.max_tokens,
         top_p: generation.top_p,
         reasoning_effort: generation.reasoning_effort,
@@ -103,5 +105,8 @@ where
         builder = builder.bearer_auth(config.api_key);
     }
 
-    stream_sse_response(request.request_id, builder, StreamProvider::OpenAi, emit).await
+    let mut fallback_payload = payload;
+    fallback_payload.stream_options = None;
+    let fallback = builder.try_clone().map(|retry| retry.json(&fallback_payload));
+    stream_sse_response_with_usage_fallback(request.request_id, builder, StreamProvider::OpenAi, fallback, emit).await
 }

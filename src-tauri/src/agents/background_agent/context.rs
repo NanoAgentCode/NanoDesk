@@ -186,6 +186,8 @@ pub(super) async fn prepare_model_context(
                     exclude_from_profile: Some(true),
                     generation_status: None,
                     assistant_reasoning: None,
+                    question_tokens: None,
+                    token_statistics: None,
                     context_summary: Some(ContextSummaryMetadata {
                         version: summary_plan.version,
                         covered_through_message_id: summary_plan.covered_through_message_id,

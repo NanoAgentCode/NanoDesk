@@ -152,12 +152,12 @@ pub async fn pause_background_agent(state: State<'_, AppState>, run_id: String) 
 }
 
 #[tauri::command]
-pub async fn start_temporary_task(app: AppHandle, state: State<'_, AppState>, parent_run_id: String, content: String, access_mode: String, allow_command: bool) -> AppResult<crate::models::Conversation> {
+pub async fn start_temporary_task(app: AppHandle, state: State<'_, AppState>, parent_run_id: String, content: String, access_mode: String, allow_command: bool, question_tokens: Option<u64>) -> AppResult<crate::models::Conversation> {
     crate::tool_policy::requires_user_approval(&access_mode,"high")?;
     let parent = state.runtime.lock().await.get_run(&parent_run_id)?;
     let saved: BackgroundAgentRequest = serde_json::from_str(&state.runtime.lock().await.load_execution_request(&parent.id)?)?;
     validate_scope(&app, &saved, &parent)?;
-    let (conversation, mut request) = super::temporary::create_temporary(&state, &parent_run_id, &content).await?;
+    let (conversation, mut request) = super::temporary::create_temporary(&state, &parent_run_id, &content, question_tokens).await?;
     request.access_mode=access_mode.clone();
     request.allow_command=allow_command;
     {

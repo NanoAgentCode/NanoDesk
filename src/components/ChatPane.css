@@ -1355,3 +1355,10 @@
     margin-top: 18px;
   }
 }
+.message-token-statistics {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

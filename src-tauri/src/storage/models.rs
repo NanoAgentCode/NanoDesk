@@ -416,6 +416,8 @@ pub struct ChatResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatStreamEvent {
+    RequestStarted { request_id: String },
+    Usage { request_id: String, input_tokens: Option<u64>, output_tokens: Option<u64> },
     Delta { request_id: String, content: String },
     ReasoningDelta { request_id: String, content: String },
     Done { request_id: String },
@@ -423,8 +425,12 @@ pub enum ChatStreamEvent {
     Error { request_id: String, message: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct MessageMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_statistics: Option<TokenStatistics>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deliverables: Option<Vec<DeliverableFile>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -438,6 +444,19 @@ pub struct MessageMetadata {
     pub generation_status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant_reasoning: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct TokenStatistics {
+    pub estimated_output_tokens: u64,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub generation_ms: u64,
+    pub tokens_per_second: Option<f64>,
+    pub average_tokens_per_second: Option<f64>,
+    pub status: String,
+    pub model: String,
+    pub model_config_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

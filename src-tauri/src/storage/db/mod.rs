@@ -842,6 +842,8 @@ mod tests {
                 context_summary: None,
                 generation_status: Some("interrupted".to_string()),
                 assistant_reasoning: None,
+                question_tokens: None,
+                token_statistics: None,
             }),
         })
         .expect("second message should persist");
@@ -861,6 +863,8 @@ mod tests {
                 }),
                 generation_status: None,
                 assistant_reasoning: None,
+                question_tokens: None,
+                token_statistics: None,
             }),
         })
         .expect("summary should persist");

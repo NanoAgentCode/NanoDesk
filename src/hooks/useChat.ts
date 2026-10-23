@@ -4,6 +4,7 @@ import { useChatHistory } from "./chat/useChatHistory";
 import { createCoalescedRefresh } from "../lib/coalescedRefresh";
 import { createDocumentPreparer } from "../lib/documentPreparation";
 import { submitConversationTask } from "../lib/taskSubmission";
+import { estimateTextTokens } from "../lib/tokenStatistics";
 import { buildDocumentReference } from "../lib/documentChat";
 import {
   type BackgroundAgentDecision,
@@ -289,7 +290,7 @@ export function useChat({
     const originConversationId = conv.activeConversationId;
     if (originConversationId && content.trim()) {
       try {
-        const steering = await steerConversationTask({conversationId:originConversationId,text:content,accessMode,
+        const steering = await steerConversationTask({conversationId:originConversationId,text:content,questionText:textContent,accessMode,
           allowCommand:skills.skills.some(skill=>skill.id==="bash_tool"&&skill.enabled),invoke:(command,args)=>invoke(command,args)});
         if (steering.handled) {
           input.setChatInput("");
@@ -369,6 +370,7 @@ export function useChat({
         role: "user",
         content: firstDocumentMessage ? buildDocumentReference(documentSource.name, content) : content,
         metadata: {
+          question_tokens: estimateTextTokens(textContent),
           ...(memoryRoute.kind === "memory" || firstDocumentMessage ? { exclude_from_profile: true } : {}),
           ...(routingDecision ? { model_routing: routingDecision } : {})
         }

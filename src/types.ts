@@ -250,6 +250,8 @@ export interface MemoryPatch {
 }
 
 export type ChatStreamEvent =
+  | { type: "request_started"; request_id: string }
+  | { type: "usage"; request_id: string; input_tokens: number | null; output_tokens: number | null }
   | { type: "delta"; request_id: string; content: string }
   | { type: "reasoning_delta"; request_id: string; content: string }
   | { type: "done"; request_id: string }
@@ -274,6 +276,8 @@ export interface WebSearchResponse {
 }
 
 export interface MessageMetadata {
+  question_tokens?: number | null;
+  token_statistics?: TokenStatistics | null;
   deliverables?: { path: string; kind: "intermediate" | "final" }[] | null;
   task_control?: boolean | null;
   web_search?: MessageWebSearchMetadata | null;
@@ -281,6 +285,18 @@ export interface MessageMetadata {
   context_summary?: ContextSummaryMetadata | null;
   generation_status?: "interrupted" | null;
   assistant_reasoning?: string | null;
+}
+
+export interface TokenStatistics {
+  estimated_output_tokens: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  generation_ms: number;
+  tokens_per_second: number | null;
+  average_tokens_per_second: number | null;
+  status: "streaming" | "completed" | "interrupted" | "failed";
+  model: string;
+  model_config_id: string;
 }
 
 export interface AvailableModelInfo {

@@ -369,9 +369,11 @@ where
             .start_profile_foreground_lease(&lease, 30)?;
         let mut content = String::new();
         let mut reasoning = String::new();
+        let mut token_tracker = super::token_statistics::TokenTracker::new(model.model.clone(), request.model_config_id.clone());
         let mut publish_gate = super::stream_publish::StreamPublishGate::default();
         let stream_base_ms = budget.elapsed_ms;
         let stream_result = {
+            let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
             let future = super::continuation::stream(
                 state,
                 &request.run_id,
@@ -387,41 +389,62 @@ where
                     reasoning_effort: None,
                 },
                 &mut budget,
-                |event| {
-                    match event {
-                        ChatStreamEvent::Delta { content: delta, .. } => content.push_str(&delta),
-                        ChatStreamEvent::ReasoningDelta { content: delta, .. } => {
-                            reasoning.push_str(&delta)
-                        }
-                        _ => (),
-                    }
-                    if publish_gate.ready(stream_started.elapsed()) {
-                        if let Some(message) = snapshot.stream_message.as_mut() {
-                            message.content = super::deliverables::visible_content(&content);
-                        }
-                        snapshot.reasoning = reasoning.clone();
-                        emit(snapshot.clone());
-                    }
-                    Ok(())
-                },
+                |event| { let _ = events_tx.send((event, stream_started.elapsed())); Ok(()) },
             );
             tokio::pin!(future);
+            let mut accept_event = |event: Option<(ChatStreamEvent, Duration)>| {
+                let now = stream_started.elapsed();
+                match event {
+                    Some((ChatStreamEvent::RequestStarted { .. }, _)) => token_tracker.start_segment(),
+                    Some((ChatStreamEvent::Delta { content: delta, .. }, received)) => {
+                        token_tracker.delta(&delta, false, received);
+                        content.push_str(&delta);
+                    }
+                    Some((ChatStreamEvent::ReasoningDelta { content: delta, .. }, received)) => {
+                        token_tracker.delta(&delta, true, received);
+                        reasoning.push_str(&delta);
+                    }
+                    Some((ChatStreamEvent::Usage { input_tokens, output_tokens, .. }, _)) => token_tracker.usage(input_tokens, output_tokens),
+                    _ => (),
+                }
+                if publish_gate.ready(now) {
+                    if let Some(message) = snapshot.stream_message.as_mut() {
+                        message.content = super::deliverables::visible_content(&content);
+                        let metadata = message.metadata.get_or_insert_with(MessageMetadata::default);
+                        metadata.token_statistics = Some(token_tracker.snapshot(now, "streaming"));
+                    }
+                    snapshot.reasoning = reasoning.clone();
+                    emit(snapshot.clone());
+                }
+            };
             let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
+            let mut statistics_tick = tokio::time::interval(Duration::from_millis(500));
             let timeout = tokio::time::sleep(Duration::from_secs_f64(remaining));
             tokio::pin!(timeout);
-            loop {
+            let result = loop {
                 tokio::select! {
+                    biased;
+                    Some(event)=events_rx.recv()=>accept_event(Some(event)),
                     result=&mut future=>break result,
+                    _=statistics_tick.tick()=>accept_event(None),
                     _=heartbeat.tick()=>{ super::lease::sync(state, &request.run_id, &control)?; if let Err(error)=checkpoint_progress(state, &request.run_id, stream_base_ms + stream_started.elapsed().as_millis() as u64, Some(&lease)){break Err(error);} },
                     _=&mut timeout=>break Err(AppError::from("任务预算已达到时间上限，请调整预算后继续。")),
                     _=control.wake.notified()=>if control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst){break Ok(());}
                 }
-            }
+            };
+            // Completion or cancellation can win in the same poll as queued deltas.
+            while let Ok(event) = events_rx.try_recv() { accept_event(Some(event)); }
+            result
         };
+        let stopped = control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst);
+        let token_statistics = token_tracker.snapshot(stream_started.elapsed(),
+            if stopped { "interrupted" } else if stream_result.is_err() { "failed" } else { "completed" });
         // Flush even on cancellation, timeout or error: the last deltas may have
         // arrived inside the observer interval and must remain visible.
         if let Some(message) = snapshot.stream_message.as_mut() {
             message.content = super::deliverables::visible_content(&content);
+            let metadata = message.metadata.get_or_insert_with(MessageMetadata::default);
+            metadata.token_statistics = Some(token_statistics.clone());
         }
         snapshot.reasoning = reasoning.clone();
         emit(snapshot.clone());
@@ -440,7 +463,6 @@ where
             .lock()
             .await
             .finish_profile_foreground_lease(&lease)?;
-        let stopped = control.stopped.load(Ordering::SeqCst) || control.paused.load(Ordering::SeqCst);
         let file_roles = if stream_result.is_ok() && !stopped && !content.contains("<tool_call") {
             Some(super::deliverables::validated(&content, &request.project_path))
         } else { None };
@@ -451,6 +473,8 @@ where
         }
         if !content.is_empty() || !reasoning.is_empty() {
             let metadata = MessageMetadata {
+                question_tokens: None,
+                token_statistics: Some(token_statistics),
                 deliverables: file_roles,
                 task_control: None,
                 web_search: None,

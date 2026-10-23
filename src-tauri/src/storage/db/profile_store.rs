@@ -1576,6 +1576,8 @@ mod tests {
                 context_summary: None,
                 generation_status: None,
                 assistant_reasoning: None,
+                question_tokens: None,
+                token_statistics: None,
             }),
         })
         .expect("ordinary memory message should be appended");
@@ -1610,6 +1612,8 @@ mod tests {
                 context_summary: None,
                 generation_status: None,
                 assistant_reasoning: None,
+                question_tokens: None,
+                token_statistics: None,
             }),
         })
         .expect("system-generated tool result should be appended");

@@ -1,4 +1,5 @@
 import type { AgentAccessMode, AgentRun } from "../types";
+import { estimateTextTokens } from "./tokenStatistics";
 
 type Invoke = (command: string, args: Record<string, unknown>) => Promise<unknown>;
 type Links = { parent: AgentRun | null; child: AgentRun | null };
@@ -13,10 +14,11 @@ export function taskSteeringIntent(text: string): "pause" | "resume" | "temporar
 
 /** Normal chat messages can steer an active task; no modal or special slash command. */
 export async function steerConversationTask(options: {
-  conversationId: string; text: string; accessMode: AgentAccessMode; allowCommand: boolean; invoke: Invoke;
+  conversationId: string; text: string; questionText?: string; accessMode: AgentAccessMode; allowCommand: boolean; invoke: Invoke;
 }): Promise<SteeringResult> {
   const { conversationId, text, invoke } = options;
-  const recordUserMessage = () => invoke("append_message", {draft:{conversation_id:conversationId,role:"user",content:text,metadata:{exclude_from_profile:true}}});
+  const questionTokens = estimateTextTokens(options.questionText ?? text);
+  const recordUserMessage = () => invoke("append_message", {draft:{conversation_id:conversationId,role:"user",content:text,metadata:{exclude_from_profile:true,question_tokens:questionTokens}}});
   if (!conversationId || !text.trim()) return { handled: false };
   const runs = await invoke("list_agent_runs", { conversationId, limit: 200 }) as AgentRun[];
   const pendingPlan = runs[0];
@@ -60,7 +62,7 @@ export async function steerConversationTask(options: {
     return { handled: true, notice: run.status === "running" ? "任务正在执行，可以直接发送新的调整要求。" : "任务正在等待确认，请先确认当前规划或工具。" };
   }
   const temporary = await invoke("start_temporary_task", {
-    parentRunId: run.id, content: text.trim(), accessMode: options.accessMode, allowCommand: options.allowCommand
+    parentRunId: run.id, content: text.trim(), questionTokens, accessMode: options.accessMode, allowCommand: options.allowCommand
   }) as { id: string };
   return { handled: true, conversationId: temporary.id };
 }

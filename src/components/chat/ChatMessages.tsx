@@ -3,6 +3,7 @@ import { indexToolMessageStatuses } from "../../lib/toolMessageStatus";
 import { Button } from "@mantine/core";
 import MarkdownMessage from "../MarkdownMessage";
 import { splitDocumentMessage } from "../../lib/documentChat";
+import { formatTokenStatistics } from "../../lib/tokenStatistics";
 import AssistantResponseActions from "../AssistantResponseActions";
 import { formatWebSearchBadge, renderMessageContent } from "../../lib/appHelpers";
 import { parseClarificationRequest, parseToolCall, parseToolResult } from "../../lib/messageHelpers";
@@ -91,6 +92,14 @@ const ChatMessageRow = memo(function ChatMessageRow({ message, reasoning, runtim
                 </div>
               )}
               <MessageBody content={message.content} user={message.role === "user"} attachmentProjectPath={attachmentProjectPath} projectFiles={projectFiles} />
+              {message.role === "user" && message.metadata?.question_tokens != null && (
+                <small className="message-token-statistics" title="本次输入文字的估算 Token，不含历史、系统提示和附件正文。">问题 ~{message.metadata.question_tokens} tokens</small>
+              )}
+              {message.role === "assistant" && message.metadata?.token_statistics && (
+                <small className="message-token-statistics" title={formatTokenStatistics(message.metadata.token_statistics).detail}>
+                  {formatTokenStatistics(message.metadata.token_statistics).label}
+                </small>
+              )}
 
               {toolCall && (
                 <div className="tool-call-card">

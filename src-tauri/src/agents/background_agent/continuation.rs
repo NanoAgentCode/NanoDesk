@@ -25,11 +25,20 @@ where
     let original = request.messages.clone();
     let mut content = String::new();
     let mut empty_retries = 0;
+    let mut usage = UsageTotals::default();
     for segment in 0..8 {
+        emit(ChatStreamEvent::RequestStarted { request_id: request.request_id.clone() })?;
+        let mut segment_input = None;
+        let mut segment_output = None;
         let before = content.len();
         let mut generated = 0;
         let result = crate::llm::stream_chat_completion(model.clone(), request.clone(), |event| {
             match &event {
+                ChatStreamEvent::Usage { input_tokens, output_tokens, .. } => {
+                    if input_tokens.is_some() { segment_input = *input_tokens; }
+                    if output_tokens.is_some() { segment_output = *output_tokens; }
+                    return Ok(());
+                }
                 ChatStreamEvent::Delta { content, .. }
                 | ChatStreamEvent::ReasoningDelta { content, .. } => {
                     generated += content.len() as u64
@@ -49,6 +58,12 @@ where
             emit(event)
         })
         .await;
+        if result.as_ref().err().is_some_and(|error| !matches!(error, AppError::OutputTruncated)) {
+            segment_input = None;
+            segment_output = None;
+        }
+        usage.add(segment_input, segment_output);
+        emit(ChatStreamEvent::Usage { request_id: request.request_id.clone(), input_tokens: usage.input, output_tokens: usage.output })?;
         match result {
             Ok(()) => {
                 budget.settle_model(request.max_tokens.unwrap_or(8192), generated);
@@ -123,4 +138,30 @@ where
         state.runtime.lock().await.put_task_budget(run_id, budget)?;
     }
     unreachable!()
+}
+
+struct UsageTotals { input: Option<u64>, output: Option<u64> }
+impl Default for UsageTotals {
+    fn default() -> Self { Self { input: Some(0), output: Some(0) } }
+}
+impl UsageTotals {
+    fn add(&mut self, input: Option<u64>, output: Option<u64>) {
+        self.input = self.input.zip(input).map(|(a, b)| a.saturating_add(b));
+        self.output = self.output.zip(output).map(|(a, b)| a.saturating_add(b));
+    }
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::*;
+    #[test]
+    fn continuation_usage_requires_complete_coverage_per_field() {
+        let mut totals = UsageTotals::default();
+        totals.add(Some(100), Some(20)); totals.add(Some(200), Some(30));
+        assert_eq!((totals.input, totals.output), (Some(300), Some(50)));
+        totals.add(None, Some(10));
+        assert_eq!((totals.input, totals.output), (None, Some(60)));
+        totals.add(Some(1), None);
+        assert_eq!((totals.input, totals.output), (None, None));
+    }
 }

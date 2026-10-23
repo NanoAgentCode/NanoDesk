@@ -70,6 +70,11 @@ impl MockModel {
                 let payload: serde_json::Value =
                     serde_json::from_slice(&request[offset..offset + size]).unwrap();
                 requests.push(payload.clone());
+                if chunks == ["REJECT_USAGE"] {
+                    let body = r#"{"error":{"message":"Unsupported parameter: stream_options"}}"#;
+                    write!(socket, "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                    continue;
+                }
                 if payload["stream"] != true {
                     let content = if chunks.first().map(String::as_str) == Some("DOCUMENT_FACT") {
                         let source = payload["messages"][1]["content"].as_str().unwrap();
@@ -95,6 +100,16 @@ impl MockModel {
                 }
                 let _=write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n");
                 for chunk in chunks {
+                    if let Some(usage) = chunk.strip_prefix("USAGE:") {
+                        let values: Vec<u64> = usage.split(':').map(|v| v.parse().unwrap()).collect();
+                        let event = serde_json::json!({"choices":[],"usage":{"prompt_tokens":values[0],"completion_tokens":values[1]}});
+                        let _ = write!(socket, "data: {event}\n\n");
+                        continue;
+                    }
+                    if chunk == "INVALID_UTF8" {
+                        let _ = socket.write_all(b"data: \xff\n\n");
+                        break;
+                    }
                     if chunk == "FINISH_LENGTH" {
                         let _ = write!(socket, "data: {{\"choices\":[{{\"delta\":{{}},\"finish_reason\":\"length\"}}]}}\n\n");
                         break;
@@ -136,7 +151,82 @@ async fn coalesced_stream_flushes_complete_text_and_reasoning() {
     let reply = messages.iter().rev().find(|message| message.role == "assistant").unwrap();
     assert_eq!(reply.content, final_stream.stream_message.as_ref().unwrap().content);
     assert_eq!(reply.metadata.as_ref().unwrap().assistant_reasoning.as_deref(), Some("完整思考"));
+    let stats = reply.metadata.as_ref().unwrap().token_statistics.as_ref().unwrap();
+    assert_eq!(stats.status, "completed");
+    assert!(stats.estimated_output_tokens > 0);
+    assert_eq!(stats.input_tokens, None);
+    assert_eq!(stats.output_tokens, None);
+    assert_eq!(stats.model_config_id, fixture.request.model_config_id);
+    let reopened = crate::db::Database::open(fixture.root.join("data.sqlite3")).unwrap();
+    let restored = reopened.list_messages(&fixture.request.conversation_id).unwrap();
+    let restored_stats = restored.iter().find(|m| m.id == reply.id).unwrap().metadata.as_ref().unwrap().token_statistics.as_ref().unwrap();
+    assert_eq!(restored_stats.estimated_output_tokens, stats.estimated_output_tokens);
+    drop(reopened);
     assert_eq!(server.worker.join().unwrap().len(), 1);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn stream_usage_tail_is_saved_once_and_requested_from_provider() {
+    let server = MockModel::start(vec![(vec![completed_report(), "USAGE:321:45".into(), "USAGE:321:45".into()], 0)]);
+    let fixture = Fixture::new(&server.url, "full");
+    fixture.start().await.unwrap().unwrap();
+    let messages = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    let stats = messages.iter().rev().find(|m| m.role == "assistant").unwrap().metadata.as_ref().unwrap().token_statistics.as_ref().unwrap();
+    assert_eq!(stats.input_tokens, Some(321));
+    assert_eq!(stats.output_tokens, Some(45));
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests[0]["stream_options"]["include_usage"], true);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn failed_stream_preserves_partial_estimates_and_failure_status() {
+    let server = MockModel::start(vec![(vec!["部分回答".into(), "INVALID_UTF8".into()], 0)]);
+    let fixture = Fixture::new(&server.url, "full");
+    assert!(fixture.start().await.unwrap().is_err());
+    let messages = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    let reply = messages.iter().rev().find(|m| m.role == "assistant").unwrap();
+    assert_eq!(reply.content, "部分回答");
+    let stats = reply.metadata.as_ref().unwrap().token_statistics.as_ref().unwrap();
+    assert_eq!(stats.status, "failed");
+    assert_eq!(stats.estimated_output_tokens, 4);
+    assert!(stats.output_tokens.is_none());
+    server.worker.join().unwrap();
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn unsupported_usage_option_falls_back_to_estimates_without_failing_chat() {
+    let server = MockModel::start(vec![(vec!["REJECT_USAGE".into()], 0), (vec![completed_report()], 0)]);
+    let fixture = Fixture::new(&server.url, "full");
+    fixture.start().await.unwrap().unwrap();
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0]["stream_options"]["include_usage"], true);
+    assert!(requests[1].get("stream_options").is_none());
+    let messages = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    let stats = messages.last().unwrap().metadata.as_ref().unwrap().token_statistics.as_ref().unwrap();
+    assert_eq!(stats.status, "completed");
+    assert!(stats.output_tokens.is_none());
+    assert!(stats.estimated_output_tokens > 0);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn live_statistics_refresh_while_the_model_is_idle() {
+    let server = MockModel::start(vec![(vec!["你好".into(), completed_report()], 3000)]);
+    let fixture = Fixture::new(&server.url, "full");
+    let task = fixture.start();
+    wait_until(|| async {
+        fixture.state.background_agents.list().iter().any(|snapshot| {
+            snapshot.stream_message.as_ref().and_then(|m| m.metadata.as_ref())
+                .and_then(|m| m.token_statistics.as_ref()).is_some_and(|stats|
+                    stats.status == "streaming" && stats.estimated_output_tokens == 2 && stats.tokens_per_second == Some(0.0))
+        })
+    }).await;
+    task.await.unwrap().unwrap();
+    server.worker.join().unwrap();
     fixture.cleanup();
 }
 
@@ -315,7 +405,8 @@ async fn temporary_task_updates_remaining_mainline_without_replaying_completed_o
         runtime.approve_tool_call(&old.id).unwrap();
         runtime.finish_run(main,"awaiting_tool",None).unwrap();
     }
-    let (conversation, temporary) = temporary::create_temporary(&fixture.state,main,"Change the remaining implementation requirement; inspect temporary report first").await.unwrap();
+    let (conversation, temporary) = temporary::create_temporary(&fixture.state,main,"Change the remaining implementation requirement; inspect temporary report first", Some(23)).await.unwrap();
+    assert_eq!(fixture.state.db.lock().await.list_messages(&conversation.id).unwrap()[0].metadata.as_ref().unwrap().question_tokens, Some(23));
     assert_ne!(conversation.id, fixture.request.conversation_id);
     assert_eq!(fixture.state.runtime.lock().await.get_run(main).unwrap().status,"paused");
     let control=fixture.state.background_agents.register(&temporary.run_id,&temporary.conversation_id).unwrap();
@@ -438,7 +529,7 @@ async fn changed_mainline_requires_new_approval_and_keeps_completed_steps() {
         runtime.update_run_plan(main,old).unwrap();
         runtime.record_step(crate::runtime::AgentStepDraft{run_id:main.clone(),kind:"plan_approval".into(),status:"approved".into(),input_summary:None,output_summary:Some(planning::signature(&crate::agent_runner::parse_task_plan_json(old).unwrap()).unwrap()),metadata_json:None}).unwrap();
     }
-    let (_,child)=temporary::create_temporary(&fixture.state,main,"Change original implementation to updated implementation").await.unwrap();
+    let (_,child)=temporary::create_temporary(&fixture.state,main,"Change original implementation to updated implementation", None).await.unwrap();
     fixture.state.runtime.lock().await.finish_run(&child.run_id,"failed",Some("temporary failure".into())).unwrap();
     assert!(temporary::restore_parent(&fixture.state,&child.run_id).await.unwrap().is_none(),"a failed temporary task must not silently resume its parent");
     assert_eq!(fixture.state.runtime.lock().await.get_run(main).unwrap().status,"paused");
@@ -482,7 +573,7 @@ async fn temporary_completion_with_exhausted_parent_budget_can_resume_after_adju
         let mut record=runtime.ensure_task_budget(id,Some(&fixture.request.model_config_id),None).unwrap();
         record.limits.max_steps=1;record.steps=1;runtime.put_task_budget(id,&record).unwrap();
     }
-    let (_,child)=temporary::create_temporary(&fixture.state,id,"Handle a temporary question before continuing").await.unwrap();
+    let (_,child)=temporary::create_temporary(&fixture.state,id,"Handle a temporary question before continuing", None).await.unwrap();
     let control=fixture.state.background_agents.register(&child.run_id,&child.conversation_id).unwrap();
     drive(&fixture.state,child.clone(),control,None,|_|{}).await.unwrap();
     fixture.state.background_agents.remove(&child.run_id);
@@ -1257,9 +1348,9 @@ async fn ask_mode_cannot_execute_or_finish_without_plan() {
 async fn truncated_tool_is_assembled_before_execution_without_user_continue() {
     let prefix = "<tool_call name=\"write_file\"><path>out/report.md</path><content>First ";
     let server = MockModel::start(vec![
-        (vec![prefix.into(), "FINISH_LENGTH".into()], 0),
-        (vec!["second ".into(), "FINISH_LENGTH".into()], 0),
-        (vec!["third</content></tool_call>".into()], 0),
+        (vec![prefix.into(), "USAGE:100:10".into(), "FINISH_LENGTH".into()], 0),
+        (vec!["second ".into(), "USAGE:200:20".into(), "FINISH_LENGTH".into()], 0),
+        (vec!["third</content></tool_call>".into(), "USAGE:300:30".into()], 0),
         (vec!["Finished".into()], 0),
     ]);
     let fixture = Fixture::new(&server.url, "full");
@@ -1269,6 +1360,9 @@ async fn truncated_tool_is_assembled_before_execution_without_user_continue() {
     assert_eq!(requests.len(), 4);
     let messages = requests[2]["messages"].as_array().unwrap();
     assert_eq!(messages[messages.len()-2]["content"], format!("{prefix}second "));
+    let history = fixture.state.db.lock().await.list_messages(&fixture.request.conversation_id).unwrap();
+    let stats = history.iter().find(|m| m.role == "assistant" && m.content.starts_with(prefix)).unwrap().metadata.as_ref().unwrap().token_statistics.as_ref().unwrap();
+    assert_eq!((stats.input_tokens, stats.output_tokens), (Some(600), Some(60)));
     let runtime = fixture.state.runtime.lock().await;
     assert_eq!(runtime.get_run(&fixture.request.run_id).unwrap().status, "completed");
     assert_eq!(runtime.list_tool_calls(&fixture.request.run_id).unwrap().len(), 1);
@@ -1577,6 +1671,11 @@ async fn unobserved_task_finishes_tool_loop_in_original_scope_after_conversation
     {
         let db = fixture.state.db.lock().await;
         assert_eq!(db.list_messages(&b.id).unwrap().len(), 1);
+        for message in db.list_messages(&fixture.request.conversation_id).unwrap().iter().filter(|m| m.role == "assistant") {
+            let stats = message.metadata.as_ref().unwrap().token_statistics.as_ref().unwrap();
+            assert_eq!(stats.model, "original-model");
+            assert_eq!(stats.model_config_id, fixture.request.model_config_id);
+        }
         assert!(db
             .list_messages(&fixture.request.conversation_id)
             .unwrap()
@@ -1709,6 +1808,10 @@ async fn stopping_stream_preserves_partial_reply_in_original_conversation() {
         Some("Preserved reasoning")
     );
     assert_eq!(metadata.generation_status.as_deref(), Some("interrupted"));
+    let stats = metadata.token_statistics.as_ref().unwrap();
+    assert_eq!(stats.status, "interrupted");
+    assert!(stats.estimated_output_tokens > 0);
+    assert!(stats.output_tokens.is_none());
     assert_eq!(
         fixture
             .state
@@ -1900,6 +2003,9 @@ async fn regeneration_replaces_old_reply_atomically_and_keeps_it_on_error() {
         1
     );
     assert_eq!(history.last().unwrap().content, "Replacement reply.");
+    let stats = history.last().unwrap().metadata.as_ref().unwrap().token_statistics.as_ref().unwrap();
+    assert_eq!(stats.estimated_output_tokens, 5);
+    assert_eq!(stats.status, "completed");
     let error = fixture.state.db.lock().await.append_background_response(
         MessageDraft {
             conversation_id: fixture.request.conversation_id.clone(),

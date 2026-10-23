@@ -41,6 +41,7 @@ pub(super) async fn create_temporary(
     state: &AppState,
     parent_id: &str,
     content: &str,
+    question_tokens: Option<u64>,
 ) -> AppResult<(Conversation, BackgroundAgentRequest)> {
     if content.trim().is_empty() || content.len() > 65536 {
         return Err("请填写有效的临时任务（不超过 64KB）。".into());
@@ -74,6 +75,7 @@ pub(super) async fn create_temporary(
         let mut draft = internal_message(&conversation.id, content.trim().into());
         if let Some(metadata) = draft.metadata.as_mut() {
             metadata.task_control = None;
+            metadata.question_tokens = question_tokens;
         }
         let message = db.append_message(draft)?;
         (conversation, message)

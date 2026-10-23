@@ -131,6 +131,8 @@ pub(super) fn internal_message(conversation_id: &str, content: String) -> Messag
             context_summary: None,
             generation_status: None,
             assistant_reasoning: None,
+            question_tokens: None,
+            token_statistics: None,
         }),
     }
 }
