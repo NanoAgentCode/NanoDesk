@@ -43,5 +43,21 @@ function Export-ReleaseArtifact {
     builtAtUtc = [DateTime]::UtcNow.ToString('o')
   } | ConvertTo-Json
   [IO.File]::WriteAllText((Join-Path $OutputDirectory 'BUILD-INFO.json'), $info, $utf8)
+  $notes = ''
+  $changelog = Join-Path $Root 'CHANGELOG.md'
+  if (Test-Path -LiteralPath $changelog) {
+    $content = [IO.File]::ReadAllText($changelog)
+    $section = [regex]::Match($content, ('(?ms)^## v' + [regex]::Escape($Version) + '(?:[ \t][^\r\n]*)?\r?\n(.*?)(?=^## |\z)'))
+    if ($section.Success) { $notes = $section.Groups[1].Value.Trim() }
+  }
+  # Same release shape as the legacy API; no API call is needed to read this file.
+  $manifest = @{
+    tag_name = "v$Version"; body = $notes; draft = $false; prerelease = $false
+    assets = @(@{
+      name = $file.Name
+      browser_download_url = "https://github.com/NanoAgentCode/NanoDesk/releases/download/v$Version/$($file.Name)"
+    })
+  } | ConvertTo-Json -Depth 5
+  [IO.File]::WriteAllText((Join-Path $OutputDirectory 'latest.json'), $manifest, $utf8)
   return $destination
 }

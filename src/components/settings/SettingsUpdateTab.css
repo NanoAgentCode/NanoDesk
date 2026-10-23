@@ -22,3 +22,18 @@
 .update-tab-content .mantine-Button-root {
   flex-shrink: 0;
 }
+
+.update-history {
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.update-history h1 { margin: 0 0 20px; font-size: 18px; }
+.update-history h2 { margin: 24px 0 10px; font-size: 16px; }
+.update-history p, .update-history ul { margin: 8px 0; }
+.update-history ul { padding-left: 22px; }
+.update-history li + li { margin-top: 6px; }
+.update-history code { font-size: 0.9em; }

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Alert, Button, Divider, Group, Stack, Text } from "@mantine/core";
 import { FileText, RefreshCw } from "lucide-react";
-import { checkAppUpdate, RELEASE_HISTORY_URL, showAppUpdate } from "../../api/updates";
-import { openExternalUrl } from "../../api/desktop";
+import ReactMarkdown from "react-markdown";
+import changelog from "../../../CHANGELOG.md?raw";
+import { checkAppUpdate, showAppUpdate } from "../../api/updates";
 import SettingsSectionHeader from "./SettingsSectionHeader";
 import "./SettingsUpdateTab.css";
 
@@ -12,6 +13,7 @@ export default function SettingsUpdateTab() {
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
   const active = useRef(false);
   const pending = useRef(false);
   useEffect(() => {
@@ -36,11 +38,6 @@ export default function SettingsUpdateTab() {
       if (active.current) setChecking(false);
     }
   };
-  const openHistory = async () => {
-    setError("");
-    try { await openExternalUrl(RELEASE_HISTORY_URL); }
-    catch { if (active.current) setError("无法打开更新日志，请重试。"); }
-  };
   return <div className="settings-tab-content update-tab-content">
     <SettingsSectionHeader title="更新应用" />
     <Text size="sm" c="dimmed">查看当前版本、更新日志并检查应用更新</Text>
@@ -52,8 +49,8 @@ export default function SettingsUpdateTab() {
       </Stack>
       <Divider />
       <Group justify="space-between" wrap="nowrap" gap="lg">
-        <Stack gap={4}><Text fw={600}>更新日志</Text><Text size="sm" c="dimmed">查看 GitHub 上的历史版本与更新说明</Text></Stack>
-        <Button variant="default" leftSection={<FileText size={16} />} onClick={() => { void openHistory(); }}>更新日志</Button>
+        <Stack gap={4}><Text fw={600}>更新日志</Text><Text size="sm" c="dimmed">查看本版本内置的历史更新记录，支持离线阅读</Text></Stack>
+        <Button variant="default" leftSection={<FileText size={16} />} aria-expanded={historyOpen} aria-controls="app-update-history" onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? "收起日志" : "更新日志"}</Button>
       </Group>
       <Divider />
       <Group justify="space-between" wrap="nowrap" gap="lg">
@@ -62,6 +59,9 @@ export default function SettingsUpdateTab() {
       </Group>
       {message && <Text size="sm" role="status">{message}</Text>}
       {error && <Alert color="red" role="alert">{error}</Alert>}
+      {historyOpen && <section id="app-update-history" className="update-history" aria-label="更新日志">
+        <ReactMarkdown skipHtml components={{ a: ({ children }) => <span>{children}</span> }}>{changelog}</ReactMarkdown>
+      </section>}
     </Stack>
   </div>;
 }

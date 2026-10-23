@@ -20,13 +20,23 @@ try {
   $installer = Join-Path $fixture 'NanoDesk_1.2.3_x64-setup.exe'
   Set-Content $installer 'installer bytes'
   $output = Join-Path $fixture 'release'
+  [IO.File]::WriteAllText((Join-Path $fixture 'CHANGELOG.md'), "# Changes`n`n## v1.2.3 - today`n`n- Fix update checks.`n`n## v1.2.2`n`n- Older changes.")
   Export-ReleaseArtifact -Root $fixture -Installer $installer -OutputDirectory $output -Version '1.2.3' -Target 'x86_64-pc-windows-msvc' | Out-Null
   $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
   $name = Split-Path $installer -Leaf
+  $manifest = Get-Content (Join-Path $output 'latest.json') -Raw | ConvertFrom-Json
+  if ($manifest.tag_name -ne 'v1.2.3' -or $manifest.draft -or $manifest.prerelease) { throw 'Update manifest must describe the stable release' }
+  if ($manifest.body -ne '- Fix update checks.') { throw 'Update notes must contain only this version changelog' }
+  if (@($manifest.assets).Count -ne 1 -or $manifest.assets[0].name -ne $name -or
+      $manifest.assets[0].browser_download_url -ne "https://github.com/NanoAgentCode/NanoDesk/releases/download/v1.2.3/$name") { throw 'Update manifest must link the exported installer' }
   if ((Get-Content (Join-Path $output "$name.sha256") -Raw).Trim() -ne "$hash  $name") { throw 'Checksum must match copied bytes' }
   $info = Get-Content (Join-Path $output 'BUILD-INFO.json') -Raw | ConvertFrom-Json
   if ($info.version -ne '1.2.3' -or $info.sha256 -ne $hash -or $info.target -ne 'x86_64-pc-windows-msvc') { throw 'Build metadata must identify artifact' }
   if ($info.sourceCommit -or $info.sourceHasChanges -ne $null) { throw 'Non-repository fixtures must not inherit parent repository provenance' }
+  [IO.File]::WriteAllText((Join-Path $fixture 'CHANGELOG.md'), "## v1.2.3`n`n- Notes without a date.`n")
+  Export-ReleaseArtifact -Root $fixture -Installer $installer -OutputDirectory $output -Version '1.2.3' -Target 'x86_64-pc-windows-msvc' | Out-Null
+  $manifest = Get-Content (Join-Path $output 'latest.json') -Raw | ConvertFrom-Json
+  if ($manifest.body -ne '- Notes without a date.') { throw 'Version headings without dates must preserve their notes' }
   $rejected = $false
   try { Export-ReleaseArtifact -Root $fixture -Installer (Join-Path $fixture 'missing.exe') -OutputDirectory $output -Version '1.2.3' -Target 'x64' } catch { $rejected = $true }
   if (-not $rejected) { throw 'Missing installer must not be exported' }
@@ -35,7 +45,7 @@ try {
   $rejected = $false
   try { Export-ReleaseArtifact -Root $fixture -Installer $empty -OutputDirectory $output -Version '1.2.3' -Target 'x64' } catch { $rejected = $true }
   if (-not $rejected) { throw 'Empty installer must not be exported' }
-  Write-Host 'PASS: release version validation, checksums, metadata and missing artifacts.'
+  Write-Host 'PASS: release version validation, checksums, metadata, update manifest and missing artifacts.'
 } finally {
   $resolved = [IO.Path]::GetFullPath($fixture)
   if (-not $resolved.StartsWith((Join-Path $workspace '.build/release-test-'), [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe fixture cleanup' }

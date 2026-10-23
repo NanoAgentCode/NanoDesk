@@ -6,7 +6,7 @@ import SettingsUpdateTab from "./SettingsUpdateTab";
 const mocks = vi.hoisted(() => ({ version: vi.fn(), check: vi.fn(), show: vi.fn(), open: vi.fn(),
   values: [] as unknown[], setters: [] as ReturnType<typeof vi.fn>[], effects: [] as (() => (() => void))[] }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.version }));
-vi.mock("../../api/updates", () => ({ checkAppUpdate: mocks.check, showAppUpdate: mocks.show, RELEASE_HISTORY_URL: "https://github.com/NanoAgentCode/NanoDesk/releases" }));
+vi.mock("../../api/updates", () => ({ checkAppUpdate: mocks.check, showAppUpdate: mocks.show }));
 vi.mock("../../api/desktop", () => ({ openExternalUrl: mocks.open }));
 vi.mock("react", async original => {
   const react = await original<typeof import("react")>();
@@ -81,11 +81,25 @@ describe("update settings", () => {
     const { check } = mount(); check(); check();
     expect(mocks.check).toHaveBeenCalledTimes(1);
   });
-  it("opens official release history and reports browser errors", async () => {
-    mocks.open.mockRejectedValueOnce(new Error("no browser"));
-    mount().history(); await flush();
-    expect(mocks.open).toHaveBeenCalledWith("https://github.com/NanoAgentCode/NanoDesk/releases");
-    expect(mocks.setters[3]).toHaveBeenCalledWith("无法打开更新日志，请重试。");
+  it("opens bundled release history without a browser or network request", () => {
+    mount().history();
+    expect(mocks.setters[4]).toHaveBeenCalledWith(true);
+    expect(mocks.open).not.toHaveBeenCalled();
+    expect(mocks.check).not.toHaveBeenCalled();
+  });
+  it("renders bundled Markdown history and allows collapsing it", () => {
+    mocks.values = ["0.2.5", false, "", "", true];
+    const { tree, history } = mount();
+    history();
+    expect(mocks.setters[4]).toHaveBeenCalledWith(false);
+    rendering = true;
+    const html = renderToStaticMarkup(<MantineProvider>{tree}</MantineProvider>);
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('aria-label="更新日志"');
+    expect(html).toContain("收起日志");
+    expect(html).toContain("<h2>v0.2.7");
+    expect(html).toContain("<li>");
+    expect(html).not.toContain("查看 GitHub 上的历史版本");
   });
   it("ignores completed checks after leaving the page", async () => {
     const { check } = mount(); check(); cleanup?.(); await flush();

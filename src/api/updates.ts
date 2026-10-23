@@ -1,7 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { selectAppUpdate, type AppUpdate, type GithubRelease } from "../lib/appUpdate";
 
-export const RELEASE_HISTORY_URL = "https://github.com/NanoAgentCode/NanoDesk/releases";
 const listeners = new Set<(update: AppUpdate) => void>();
 
 export interface DownloadProgress { downloaded: number; total: number | null }
