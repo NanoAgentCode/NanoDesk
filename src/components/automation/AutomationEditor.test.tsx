@@ -1,40 +1,22 @@
-import { Children, isValidElement } from "react";
-import type { ReactNode } from "react";
-import { Select } from "@mantine/core";
-import { describe, expect, it } from "vitest";
+import { Children, isValidElement, type ReactNode } from "react";
+import { describe, expect, it, vi } from "vitest";
 import AutomationEditor, { type AutomationEditorProps } from "./AutomationEditor";
-import ConfiguredModelSelect from "../ConfiguredModelSelect";
+import NaturalAutomationCreator from "./NaturalAutomationCreator";
 
-function findModelSelect(node: ReactNode): Record<string, unknown> | undefined {
-  for (const child of Children.toArray(node)) {
-    if (!isValidElement<{ label?: string; children?: ReactNode }>(child)) continue;
-    if (child.type === ConfiguredModelSelect) {
-      return findModelSelect(ConfiguredModelSelect(child.props as Parameters<typeof ConfiguredModelSelect>[0]));
-    }
-    if (child.type === Select && child.props.label === "模型") return child.props;
-    const found = findModelSelect(child.props.children);
-    if (found) return found;
-  }
+function elements(node: ReactNode): any[] {
+  return Children.toArray(node).flatMap(child => isValidElement<{ children?: ReactNode }>(child) ? [child, ...elements(child.props.children)] : []);
 }
-
-describe("automation model selector", () => {
-  it("shows model - supplier for each option and resolves the selected configuration by ID", () => {
-    const props = {
-      draft: {
-        action: { kind: "ai", model_config_id: "qwen", prompt: "", context_files: [] },
-        trigger: { kind: "interval", seconds: 3600 }
-      },
-      models: [
-        { id: "deepseek", model: "deepseek-ai/DeepSeek-V3", name: "硅基流动", model_kind: "chat" },
-        { id: "qwen", model: "Qwen/Qwen3", name: "硅基流动", model_kind: "both" },
-        { id: "embedding", model: "bge-m3", name: "硅基流动", model_kind: "embedding" }
-      ]
-    } as unknown as AutomationEditorProps;
-    const select = findModelSelect(AutomationEditor(props));
-    expect(select?.data).toEqual([
-      { value: "deepseek", label: "deepseek-ai/DeepSeek-V3 - 硅基流动" },
-      { value: "qwen", label: "Qwen/Qwen3 - 硅基流动" }
-    ]);
-    expect(select?.value).toBe("qwen");
+describe("AI-only automation editor", () => {
+  const props = { editing: true, close: vi.fn(), draft: { id: null, action: { kind: "ai" }, trigger: { kind: "interval" } } } as unknown as AutomationEditorProps;
+  it.each([null, "existing"])("uses AI for new and existing task %s", id => {
+    const nodes = elements(AutomationEditor({ ...props, draft: { ...props.draft, id } }));
+    expect(nodes.some(node => node.type === NaturalAutomationCreator)).toBe(true);
+    expect(nodes.some(node => node.props.label === "触发方式")).toBe(false);
+  });
+  it("keeps unsupported legacy jobs intact rather than silently converting them", () => {
+    const tree = AutomationEditor({ ...props, draft: { ...props.draft, action: { kind: "command", command: "echo test" } } });
+    const nodes = elements(tree);
+    expect(nodes.some(node => node.type === NaturalAutomationCreator)).toBe(false);
+    expect(nodes.find(node => node.props.role === "alert")?.props.children).toContain("不会自动转换");
   });
 });

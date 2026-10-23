@@ -31,10 +31,10 @@ function find(node: ReactNode, key: string, value: string): Record<string, any> 
 
 describe("natural language creation flow", () => {
   beforeEach(() => { hooks.values = []; hooks.cursor = 0; vi.clearAllMocks(); });
-  function setup() {
+  function setup(existing = false) {
     const save = vi.fn();
-    const draft = { name: "", missed_policy: "latest", retry_delay_seconds: 60, id: null, project_path: "D:/project", action: { kind: "ai", model_config_id: "model", prompt: "", context_files: [] }, trigger: { kind: "interval", seconds: 3600 }, enabled: true, max_retries: 0 } as AutomationEditorProps["draft"];
-    const render = () => { hooks.cursor = 0; return NaturalAutomationCreator({ draft, models: [], busy: false, error: "", patch: vi.fn(), save, close: vi.fn(), manual: vi.fn() }); };
+    const draft = { name: "", missed_policy: "latest", retry_delay_seconds: 60, id: existing ? "existing" : null, project_path: "D:/project", action: { kind: "ai", model_config_id: "model", prompt: existing ? "原任务要求" : "", context_files: existing ? ["notes.md"] : [] }, trigger: { kind: "interval", seconds: 3600 }, enabled: true, max_retries: 0 } as AutomationEditorProps["draft"];
+    const render = () => { hooks.cursor = 0; return NaturalAutomationCreator({ draft, models: [], busy: false, error: "", patch: vi.fn(), save, close: vi.fn() }); };
     const describeTask = () => find(render(), "label", "描述你想定时完成的任务").onChange({ currentTarget: { value: "每天上午九点总结项目" } });
     return { render, save, describeTask };
   }
@@ -51,6 +51,17 @@ describe("natural language creation flow", () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ name: "日报", project_path: "D:/project", trigger: result.trigger, action: { kind: "ai", model_config_id: "model", prompt: "总结项目", context_files: [] } }));
     describeTask();
     expect(find(render(), "children", "保存任务").disabled).toBe(true);
+  });
+  it("prefills existing tasks and preserves identity, files and execution settings", async () => {
+    const { render, save } = setup(true);
+    expect(find(render(), "label", "描述你想定时完成的任务").value).toContain("原任务要求");
+    expect(find(render(), "label", "描述你想定时完成的任务").value).toContain("每 3600 秒");
+    expect(() => find(render(), "children", "手动配置")).toThrow();
+    vi.mocked(interpretAutomation).mockResolvedValue(result);
+    find(render(), "children", "识别时间和任务").onClick();
+    await vi.waitFor(() => expect(find(render(), "children", "保存任务").disabled).toBe(false));
+    find(render(), "children", "保存任务").onClick();
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ id: "existing", missed_policy: "latest", retry_delay_seconds: 60, action: expect.objectContaining({ context_files: ["notes.md"] }) }));
   });
   it("discards a pending response after the description changes", async () => {
     const { render, save, describeTask } = setup();

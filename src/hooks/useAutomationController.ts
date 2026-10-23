@@ -9,7 +9,7 @@ import {
 } from "../api/automation";
 import { listModelConfigs } from "../api/models";
 import type { ModelConfig } from "../types";
-import { type Automation, type AutomationDraft, type AutomationRun, parseOnceTime } from "../lib/automation";
+import { type Automation, type AutomationDraft, type AutomationRun } from "../lib/automation";
 import { confirmAction } from "../lib/dialogs";
 
 const freshDraft = (): AutomationDraft => ({
@@ -29,9 +29,7 @@ export function useAutomationController(setNotice: (message: string) => void) {
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [editing, setEditing] = useState(false);
-  const [naturalCreation, setNaturalCreation] = useState(false);
   const [draft, setDraft] = useState<AutomationDraft>(freshDraft);
-  const [onceTime, setOnceTime] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -79,37 +77,19 @@ export function useAutomationController(setNotice: (message: string) => void) {
     }
   }
   function edit(job?: Automation) {
-    setNaturalCreation(!job);
     setDraft(job ? structuredClone(job.config) : freshDraft());
-    setOnceTime(job?.config.trigger.kind === "once" ? localInput(job.config.trigger.at) : "");
     setError("");
     setEditing(true);
   }
-  async function save(interpreted?: AutomationDraft) {
-    const source = interpreted ?? draft;
-    let next: AutomationDraft =
-      source.action.kind === "ai"
-        ? {
-            ...source,
-            action: {
-              ...source.action,
-              context_files: source.action.context_files.map((s) => s.trim()).filter(Boolean)
-            }
-          }
-        : source;
-    try {
-      if (!interpreted && draft.trigger.kind === "once")
-        next = { ...next, trigger: { kind: "once", at: parseOnceTime(onceTime) } };
-    } catch (e) {
-      setError(String(e));
+  async function save(source: AutomationDraft) {
+    if (source.action.kind !== "ai" || source.trigger.kind === "files") {
+      setError("当前 AI 配置暂不支持脚本或文件监听任务。");
       return;
     }
-    if (next.action.kind === "command") {
-      const accepted = await confirmAction(
-        `授权后台脚本执行：保存后，此命令将在指定目录按触发规则自动执行。${next.max_retries > 0 ? `失败后最多重试 ${next.max_retries} 次；脚本应能安全重复执行。` : "不自动重试。"}\n\n${next.project_path}\n${next.action.command}`
-      );
-      if (!accepted) return;
-    }
+    const next: AutomationDraft = {
+      ...source,
+      action: { ...source.action, context_files: source.action.context_files.map((s) => s.trim()).filter(Boolean) }
+    };
     setBusy(true);
     try {
       await saveAutomation(next);
@@ -150,22 +130,13 @@ export function useAutomationController(setNotice: (message: string) => void) {
     act,
     editor: {
       editing,
-      naturalCreation,
-      useManualCreation: () => setNaturalCreation(false),
       draft,
       models,
-      onceTime,
-      setOnceTime,
       busy,
       error,
-      setError,
       patch,
       save,
       close: closeEditor
     }
   };
-}
-function localInput(seconds: number) {
-  const date = new Date(seconds * 1000);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }

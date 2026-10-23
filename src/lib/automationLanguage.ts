@@ -18,14 +18,14 @@ trigger 仅支持 {"kind":"once","at":未来的Unix秒时间戳}、{"kind":"inte
 每天固定时间用 daily，每隔一段时间用 interval，多久后或指定日期时间用 once，均按本机时区理解。
 缺少时间、任务内容或存在歧义（如未明确上午下午的十二小时制时间），返回 {"clarification":"需要用户补充的信息"}，不得猜测。
 每周、工作日、每月、多时间点、时区转换、带起止日期的重复任务或任何无法精确表示的规则，返回 clarification 说明暂不支持，绝不能近似为 daily 或 interval。
-只生成 AI 文本任务，不生成或执行脚本命令；脚本、工具操作请求需提示使用手动配置。` },
+只生成 AI 文本任务，不生成或执行脚本命令；脚本、工具操作或文件监听请求需返回 clarification 说明当前 AI 配置暂不支持，不得声称能够执行。` },
     { role: "user", content: description.trim() }
   ], undefined, 1200);
   let value;
   try {
     value = JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
   } catch {
-    throw new Error("模型未返回有效配置，请重新识别或使用手动配置。");
+    throw new Error("模型未返回有效配置，请补充描述后重新识别。");
   }
   if (!value || typeof value !== "object") throw new Error("模型返回的任务配置不完整。");
   if (typeof value.clarification === "string" && value.clarification.trim()) throw new Error(value.clarification);
@@ -41,7 +41,7 @@ trigger 仅支持 {"kind":"once","at":未来的Unix秒时间戳}、{"kind":"inte
   } else if (t?.kind === "once" && bounded(t.at, Math.floor(now.getTime() / 1000) + 1, 253402300799)) {
     trigger = { kind: "once", at: t.at };
   } else {
-    throw new Error("未识别出有效的未来时间或受支持的频率，请补充描述或使用手动配置。");
+    throw new Error("未识别出有效的未来时间或受支持的频率，请补充描述后重新识别。");
   }
   return { name: value.name.trim(), prompt: value.prompt.trim(), trigger };
 }

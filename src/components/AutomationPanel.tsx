@@ -50,7 +50,7 @@ export default function AutomationPanel({ setNotice }: { setNotice: (message: st
           </Group>
           {jobs.length === 0 && (
             <div className="automation-empty">
-              创建第一个任务，例如每天生成摘要，或在文件变化后运行整理脚本。
+              用自然语言创建第一个任务，例如每天上午九点生成一份日报模板。
             </div>
           )}
           {jobs.map((job) => (
