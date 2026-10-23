@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AppUpdatePrompt from "./AppUpdatePrompt";
+import { showAppUpdate } from "../api/updates";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn(), update: null as unknown, setters: [] as ReturnType<typeof vi.fn>[], effects: [] as (() => (() => void))[] }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
@@ -21,6 +22,14 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup?.(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe("automatic update scheduling", () => {
+  it("shows manually requested updates even after the automatic prompt was dismissed", async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+    showAppUpdate({ version: "v0.3.0", notes: "更新说明", downloadUrl: release.assets[0].browser_download_url });
+    expect(mocks.setters[0]).toHaveBeenCalledTimes(2);
+    cleanup?.();
+    showAppUpdate({ version: "v0.3.0", notes: "更新说明", downloadUrl: release.assets[0].browser_download_url });
+    expect(mocks.setters[0]).toHaveBeenCalledTimes(2);
+  });
   it("checks after startup and suppresses repeat prompts for the same version", async () => {
     expect(mocks.invoke).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(5000);

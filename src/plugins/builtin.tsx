@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import { Archive, BarChart3, Bot, Brain, CalendarClock, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
+import { Archive, ArrowUpCircle, BarChart3, Bot, Brain, CalendarClock, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
 import { AppPluginRegistry, type FrontendPlugin } from "../core/plugins";
 import { APP_PLUGIN_NAMESPACE } from "../config/brand";
 
@@ -15,6 +15,7 @@ const SettingsUsageTab = lazy(() => import("../components/settings/SettingsUsage
 const SettingsMcpTab = lazy(() => import("../components/settings/SettingsMcpTab"));
 const SettingsEnvironmentTab = lazy(() => import("../components/settings/SettingsEnvironmentTab"));
 const SettingsRoutingTab = lazy(() => import("../components/settings/SettingsRoutingTab"));
+const SettingsUpdateTab = lazy(() => import("../components/settings/SettingsUpdateTab"));
 
 const coreUiPlugin: FrontendPlugin = {
   manifest: {
@@ -56,6 +57,12 @@ const coreUiPlugin: FrontendPlugin = {
       label: "模型路由",
       icon: Route,
       render: ({ model }) => <SettingsRoutingTab model={model} />
+    },
+    {
+      id: "updates",
+      label: "更新应用",
+      icon: ArrowUpCircle,
+      render: () => <SettingsUpdateTab />
     },
     {
       id: "archive",

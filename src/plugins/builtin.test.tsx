@@ -19,6 +19,9 @@ vi.mock("../components/settings/SettingsUsageTab", () => {
 import { appPlugins } from "./builtin";
 
 describe("settings contributions", () => {
+  it("provides an update settings page", () => {
+    expect(appPlugins.findSettings("updates")?.label).toBe("更新应用");
+  });
   it("removes tracing while preserving usage analysis", () => {
     expect(appPlugins.findSettings("observability")).toBeUndefined();
     expect(appPlugins.settings.some((tab) => tab.label === "链路追踪")).toBe(false);

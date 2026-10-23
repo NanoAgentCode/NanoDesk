@@ -8,7 +8,7 @@ NanoDesk 是一个本地优先的桌面 AI 工作台，使用 Tauri v2、Rust、
 
 ## 核心能力
 
-- 自动检查更新：主窗口启动后及每 6 小时检查 GitHub 最新稳定版，发现新版本提示更新说明，通过系统浏览器下载对应架构的安装包。详见[自动更新](docs/自动更新.md)。
+- 自动检查更新：主窗口启动后及每 6 小时检查 GitHub 最新稳定版，发现新版本提示更新说明，通过系统浏览器下载对应架构的安装包；「系统设置 → 更新应用」可查看当前版本、打开更新日志和手动检查更新。详见[自动更新](docs/自动更新.md)。
 
 - 桌面助手粘贴：输入框支持 Ctrl+V 粘贴文本、资源管理器复制的文件和截图；附件可移除，发送时复用现有图片、音频和文档处理流程。
 - 桌面助手附件状态：文件名前的灰点表示待发送，黄色动态圆点表示处理中，绿点表示成功，红点表示失败；悬停可查看失败原因。
@@ -149,7 +149,7 @@ Windows 打包：
 npm.cmd run package:win
 ```
 
-`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，并只生成标准 NSIS 安装包：`src-tauri\target\release\bundle\nsis\NanoDesk_0.2.5_x64-setup.exe`。默认跳过独立 CLI、CLI 安装器、离线 NSIS 和 MSI，以减少重复编译与打包时间。
+`package:win` 会调用 `scripts/build-installer.ps1`，加载 Visual Studio x64 构建环境，修正 Windows 下 Git `link.exe` 抢占 MSVC `link.exe` 的 PATH 问题，并只生成标准 NSIS 安装包：`src-tauri\target\release\bundle\nsis\NanoDesk_0.2.6_x64-setup.exe`。默认跳过独立 CLI、CLI 安装器、离线 NSIS 和 MSI，以减少重复编译与打包时间。
 
 版本变更见 [CHANGELOG](CHANGELOG.md)，安装包从 [GitHub Releases](https://github.com/NanoAgentCode/NanoDesk/releases) 下载。
 

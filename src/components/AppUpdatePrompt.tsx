@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Alert, Button, Group, Modal, Stack, Text } from "@mantine/core";
 import { openExternalUrl } from "../api/desktop";
-import { selectAppUpdate, type AppUpdate, type GithubRelease } from "../lib/appUpdate";
+import { type AppUpdate } from "../lib/appUpdate";
+import { checkAppUpdate, subscribeAppUpdate } from "../api/updates";
 
 // One checker in the main window; auxiliary windows must not duplicate prompts.
 export default function AppUpdatePrompt() {
@@ -13,12 +13,16 @@ export default function AppUpdatePrompt() {
     let active = true;
     let checking = false;
     const prompted = new Set<string>();
+    const unsubscribe = subscribeAppUpdate(next => {
+      prompted.add(next.version);
+      setError("");
+      setUpdate(next);
+    });
     const check = async () => {
       if (checking) return;
       checking = true;
       try {
-        const result = await invoke<{ currentVersion: string; arch: string; release: GithubRelease | null }>("check_app_update");
-        const next = selectAppUpdate(result.currentVersion, result.release, result.arch);
+        const next = await checkAppUpdate();
         if (active && next && !prompted.has(next.version)) {
           prompted.add(next.version);
           setError("");
@@ -30,7 +34,7 @@ export default function AppUpdatePrompt() {
     };
     const startup = window.setTimeout(() => { void check(); }, 5000);
     const interval = window.setInterval(() => { void check(); }, 6 * 60 * 60 * 1000);
-    return () => { active = false; window.clearTimeout(startup); window.clearInterval(interval); };
+    return () => { active = false; unsubscribe(); window.clearTimeout(startup); window.clearInterval(interval); };
   }, []);
   const download = async () => {
     if (!update) return;

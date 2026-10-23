@@ -1,0 +1,24 @@
+.settings-tab-content.update-tab-content {
+  display: block;
+  padding: 28px;
+  overflow-y: auto;
+}
+
+.update-tab-content .update-settings-card {
+  margin-top: 28px;
+  padding: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  background: var(--bg-card);
+}
+
+.update-tab-content .update-version {
+  margin-top: 8px;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.update-tab-content .mantine-Button-root {
+  flex-shrink: 0;
+}
