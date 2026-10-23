@@ -9,6 +9,7 @@ fn arg<T: DeserializeOwned>(params: &Value, name: &str) -> AppResult<T> {
 }
 
 pub(super) const COMMANDS: &[(&str, &[&str])] = &[
+    ("check_app_update", &[]),
     ("read_document_chat_file", &["path"]),
     ("get_task_settings", &[]),
     ("save_task_settings", &["settings"]),
@@ -165,6 +166,7 @@ pub(crate) async fn dispatch(host: &CommandHost, command: &str, params: &Value) 
         if !parameters.contains(&key.as_str()) { return Err(format!("unknown argument: {key}").into()); }
     }
     match command {
+        "check_app_update" => Ok(serde_json::to_value(crate::commands::updates::check_app_update().await?)?),
         "read_document_chat_file" => Ok(serde_json::to_value(crate::file_content::read_document_chat_file(arg(params, "path")?).await?)?),
         "get_task_settings" => Ok(serde_json::to_value(crate::commands::task_budget::get_task_settings(State::new(&state)).await?)?),
         "save_task_settings" => Ok(serde_json::to_value(crate::commands::task_budget::save_task_settings(State::new(&state), arg(params, "settings")?).await?)?),

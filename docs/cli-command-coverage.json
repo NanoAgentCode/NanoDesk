@@ -1,5 +1,6 @@
 {
   "shared": [
+    "commands::updates::check_app_update",
     "file_content::read_document_chat_file",
     "commands::task_budget::get_task_settings",
     "commands::task_budget::save_task_settings",

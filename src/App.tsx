@@ -30,6 +30,7 @@ import TaskSummaryPanel from "./components/TaskSummaryPanel";
 import { collectDeliverables } from "./lib/deliverables";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import NotificationToast from "./components/NotificationToast";
+import AppUpdatePrompt from "./components/AppUpdatePrompt";
 import { nanoTheme } from "./theme";
 import { appPlugins } from "./plugins/builtin";
 import { confirmAction } from "./lib/dialogs";
@@ -330,6 +331,7 @@ function App() {
 
   return (
     <MantineProvider theme={nanoTheme} forceColorScheme={resolvedTheme}>
+      <AppUpdatePrompt />
       <main
       className={sidebarCollapsed ? "app-shell sidebar-collapsed" : "app-shell"}
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}

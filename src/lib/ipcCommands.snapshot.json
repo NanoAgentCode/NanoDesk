@@ -6,6 +6,7 @@
   "call_mcp_tool",
   "chat",
   "chat_stream",
+  "check_app_update",
   "check_env",
   "clear_user_profile",
   "connect_mcp_server",
