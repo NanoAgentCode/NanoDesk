@@ -29,12 +29,27 @@ pub fn plan_context_preparation(
 
 #[tauri::command]
 pub fn fit_context_messages(messages: Vec<Message>, budget: u32) -> Vec<Message> {
+    let messages = without_failed_tool_results(messages);
     fit_messages_to_budget(&messages, budget)
 }
 
+fn is_failed_tool_result(message: &Message) -> bool {
+    // Only generated tool messages; user quotations and successful file contents stay intact.
+    message.role == "user"
+        && message.metadata.as_ref().and_then(|metadata| metadata.exclude_from_profile) == Some(true)
+        && message.content.strip_prefix("[工具执行结果: ")
+            .and_then(|text| text.split_once(']'))
+            .is_some_and(|(_, body)| body.trim_start().starts_with("执行失败"))
+}
+
+fn without_failed_tool_results(messages: Vec<Message>) -> Vec<Message> {
+    messages.into_iter().filter(|message| !is_failed_tool_result(message)).collect()
+}
+
 pub(crate) fn prepare_context_plan(
-    request: ContextPreparationRequest,
+    mut request: ContextPreparationRequest,
 ) -> AppResult<ContextPreparationPlan> {
+    request.history = without_failed_tool_results(request.history);
     let mut budget = resolve_token_budget(
         request.context_window,
         request.max_tokens,
@@ -94,6 +109,7 @@ pub(crate) fn prepare_context_plan(
 pub(crate) fn build_summary_prompt(messages: &[Message]) -> String {
     let transcript = messages
         .iter()
+        .filter(|message| !is_failed_tool_result(message))
         .enumerate()
         .map(|(index, message)| {
             let role = match message.role.as_str() {
@@ -460,6 +476,37 @@ mod tests {
             metadata: None,
             created_at: Utc::now(),
         }
+    }
+
+    #[test]
+    fn failed_tool_results_are_excluded_before_budgeting_and_summary() {
+        let mut failed = message(2, "user", format!("[工具执行结果: run_command] 执行失败: {}", "错误".repeat(10000)));
+        failed.metadata = Some(crate::models::MessageMetadata {
+            exclude_from_profile: Some(true), deliverables: None, task_control: None,
+            web_search: None, context_summary: None, generation_status: None,
+            assistant_reasoning: None,
+        });
+        let history = vec![message(1, "user", "继续".into()), failed];
+        let plan = prepare_context_plan(ContextPreparationRequest {
+            history: history.clone(),
+            system_message: ChatMessage { role: "system".into(), content: "规则".into() },
+            context_window: 4096, max_tokens: None, latest_user_content: "继续".into(),
+        }).unwrap();
+        assert_eq!(plan.context_messages.len(), 1);
+        assert!(plan.summary_plan.is_none());
+        assert_eq!(fit_context_messages(history.clone(), 4096).len(), 1);
+        assert!(!build_summary_prompt(&history).contains("执行失败"));
+        assert_eq!(history.len(), 2, "stored history stays intact");
+    }
+
+    #[test]
+    fn successful_results_and_user_discussion_of_errors_are_preserved() {
+        let history = vec![
+            message(1, "user", "[工具执行结果: read_file] 文件内容：执行失败".into()),
+            message(2, "user", "为什么执行失败？".into()),
+            message(3, "user", "[工具执行结果: read_file] 执行失败: quoted example".into()),
+        ];
+        assert_eq!(fit_context_messages(history, 4096).len(), 3);
     }
 
     #[test]
