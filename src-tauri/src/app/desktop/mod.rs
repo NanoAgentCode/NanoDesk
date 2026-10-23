@@ -1,3 +1,4 @@
+pub(crate) mod update_installer;
 mod assistant_layout;
 pub(crate) mod clipboard;
 use assistant_layout::{assistant_bounds, Bounds, ICON_SIZE};

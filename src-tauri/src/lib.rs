@@ -151,6 +151,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::updates::check_app_update,
+            desktop::update_installer::download_app_update,
+            desktop::update_installer::install_app_update,
             document_chat::get_document_context_menu,
             document_chat::set_document_context_menu,
             document_chat::open_document_conversation,

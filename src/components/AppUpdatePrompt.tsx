@@ -1,19 +1,25 @@
-import { useEffect, useState } from "react";
-import { Alert, Button, Group, Modal, Stack, Text } from "@mantine/core";
-import { openExternalUrl } from "../api/desktop";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Button, Group, Modal, Progress, Stack, Text } from "@mantine/core";
 import { type AppUpdate } from "../lib/appUpdate";
-import { checkAppUpdate, subscribeAppUpdate } from "../api/updates";
+import { checkAppUpdate, subscribeAppUpdate, downloadAppUpdate, installAppUpdate, type DownloadProgress } from "../api/updates";
 
 // One checker in the main window; auxiliary windows must not duplicate prompts.
 export default function AppUpdatePrompt() {
   const [update, setUpdate] = useState<AppUpdate | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [progress, setProgress] = useState<DownloadProgress | null>(null);
+  const pending = useRef(false);
+  const currentVersion = useRef("");
   useEffect(() => {
     let active = true;
     let checking = false;
     const prompted = new Set<string>();
     const unsubscribe = subscribeAppUpdate(next => {
+      if (pending.current) return;
+      if (currentVersion.current !== next.version) { setReady(false); setProgress(null); }
+      currentVersion.current = next.version;
       prompted.add(next.version);
       setError("");
       setUpdate(next);
@@ -23,7 +29,9 @@ export default function AppUpdatePrompt() {
       checking = true;
       try {
         const next = await checkAppUpdate();
-        if (active && next && !prompted.has(next.version)) {
+        if (active && next && !pending.current && !prompted.has(next.version)) {
+          if (currentVersion.current !== next.version) { setReady(false); setProgress(null); }
+          currentVersion.current = next.version;
           prompted.add(next.version);
           setError("");
           setUpdate(next);
@@ -37,22 +45,36 @@ export default function AppUpdatePrompt() {
     return () => { active = false; unsubscribe(); window.clearTimeout(startup); window.clearInterval(interval); };
   }, []);
   const download = async () => {
-    if (!update) return;
+    if (!update || pending.current) return;
+    pending.current = true;
     setBusy(true);
     setError("");
-    try { await openExternalUrl(update.downloadUrl); }
-    catch { setError("无法打开下载链接，请重试。"); }
-    finally { setBusy(false); }
+    setProgress(null);
+    try { await downloadAppUpdate(update.downloadUrl, setProgress); setReady(true); }
+    catch { setError("下载失败，请检查网络后重试。"); }
+    finally { pending.current = false; setBusy(false); }
   };
-  return <Modal opened={update !== null} onClose={() => setUpdate(null)} title="发现新版本" centered>
+  const install = async () => {
+    if (pending.current || !ready) return;
+    pending.current = true; setBusy(true); setError("");
+    try { await installAppUpdate(); }
+    catch { setError("无法启动安装程序，请重试。"); }
+    finally { pending.current = false; setBusy(false); }
+  };
+  const close = () => { if (!pending.current) setUpdate(null); };
+  return <Modal opened={update !== null} onClose={close} closeOnClickOutside={!busy} closeOnEscape={!busy} withCloseButton={!busy} title="发现新版本" centered>
     <Stack>
       <Text fw={600}>NanoDesk {update?.version}</Text>
       <Text size="sm" style={{ whiteSpace: "pre-wrap", maxHeight: 260, overflowY: "auto" }}>{update?.notes}</Text>
-      <Text size="sm" c="dimmed">通过系统浏览器从 GitHub 下载安装包，下载完成后运行安装。</Text>
+      <Text size="sm" c="dimmed">{ready ? "下载完成。点击立即安装将退出 NanoDesk 并启动安装程序，请先保存工作。" : "在应用内下载安装包，完成后由你选择立即安装。"}</Text>
+      {!ready && progress && <Stack gap={4}>
+        <Progress aria-label="更新下载进度" value={progress.total ? Math.min(100, progress.downloaded / progress.total * 100) : 0} animated={busy} />
+        <Text size="sm" role="status">已下载 {(progress.downloaded / 1048576).toFixed(1)} MB{progress.total ? ` / ${(progress.total / 1048576).toFixed(1)} MB` : ""}</Text>
+      </Stack>}
       {error && <Alert color="red">{error}</Alert>}
       <Group justify="flex-end">
-        <Button variant="default" onClick={() => setUpdate(null)}>稍后再说</Button>
-        <Button loading={busy} onClick={() => { void download(); }}>从 GitHub 下载</Button>
+        <Button variant="default" disabled={busy} onClick={close}>稍后再说</Button>
+        <Button loading={busy} onClick={() => { void (ready ? install() : download()); }}>{ready ? "立即安装" : "下载更新"}</Button>
       </Group>
     </Stack>
   </Modal>;

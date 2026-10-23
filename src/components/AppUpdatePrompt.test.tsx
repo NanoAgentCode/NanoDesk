@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AppUpdatePrompt from "./AppUpdatePrompt";
 import { showAppUpdate } from "../api/updates";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn(), update: null as unknown, setters: [] as ReturnType<typeof vi.fn>[], effects: [] as (() => (() => void))[] }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), ready: false, open: vi.fn(), update: null as unknown, setters: [] as ReturnType<typeof vi.fn>[], effects: [] as (() => (() => void))[] }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, Channel: class { onmessage = undefined; } }));
 vi.mock("../api/desktop", () => ({ openExternalUrl: mocks.open }));
 vi.mock("react", async original => ({ ...await original<typeof import("react")>(),
-  useState: (value: unknown) => { const setter = vi.fn(); mocks.setters.push(setter); return [mocks.setters.length === 1 ? mocks.update : value, setter]; },
+  useRef: (value: unknown) => ({ current: value }),
+  useState: (value: unknown) => { const setter = vi.fn(); mocks.setters.push(setter); return [mocks.setters.length === 1 ? mocks.update : mocks.setters.length === 4 ? mocks.ready : value, setter]; },
   useEffect: (effect: () => (() => void)) => { mocks.effects.push(effect); },
 }));
 const release = { tag_name: "v0.3.0", body: "更新说明", assets: [{ name: "NanoDesk_0.3.0_x64-setup.exe", browser_download_url: "https://github.com/NanoAgentCode/NanoDesk/releases/download/v0.3.0/setup.exe" }] };
@@ -15,7 +16,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("window", globalThis);
   mocks.setters.length = 0; mocks.effects.length = 0;
-  mocks.update = null; mocks.open.mockReset().mockResolvedValue(undefined);
+  mocks.ready = false; mocks.update = null; mocks.open.mockReset().mockResolvedValue(undefined);
   mocks.invoke.mockReset().mockResolvedValue({ currentVersion: "0.2.5", arch: "x64", release });
   AppUpdatePrompt();
   cleanup = mocks.effects[0]();
@@ -60,21 +61,53 @@ describe("automatic update scheduling", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(mocks.setters[0]).not.toHaveBeenCalled();
   });
-  it("opens the selected GitHub download and allows retry after failure", async () => {
+  it("downloads inside the app and allows retry after failure", async () => {
     mocks.setters.length = 0;
     mocks.update = { version: "v0.3.0", notes: "更新说明", downloadUrl: release.assets[0].browser_download_url };
     const modal = AppUpdatePrompt();
-    const buttons = modal.props.children.props.children[4].props.children;
-    mocks.open.mockRejectedValueOnce(new Error("browser unavailable"));
+    const buttons = modal.props.children.props.children[5].props.children;
+    mocks.invoke.mockRejectedValueOnce(new Error("offline"));
     buttons[1].props.onClick();
     await vi.advanceTimersByTimeAsync(0);
-    expect(mocks.open).toHaveBeenCalledWith(release.assets[0].browser_download_url);
-    expect(mocks.setters[1]).toHaveBeenCalledWith("无法打开下载链接，请重试。");
-    expect(mocks.setters[2]).toHaveBeenLastCalledWith(false);
+    expect(mocks.invoke).toHaveBeenCalledWith("download_app_update", expect.objectContaining({ url: release.assets[0].browser_download_url }));
+    expect(mocks.setters[1]).toHaveBeenCalledWith("下载失败，请检查网络后重试。");
+    mocks.invoke.mockResolvedValueOnce(undefined);
     buttons[1].props.onClick();
     await vi.advanceTimersByTimeAsync(0);
-    expect(mocks.open).toHaveBeenCalledTimes(2);
+    expect(mocks.setters[3]).toHaveBeenCalledWith(true);
+    expect(mocks.invoke).not.toHaveBeenCalledWith("install_app_update");
+  });
+  it("starts installation only when the user clicks after download and permits retry", async () => {
+    mocks.setters.length = 0; mocks.ready = true;
+    mocks.update = { version: "v0.3.0", notes: "更新说明", downloadUrl: release.assets[0].browser_download_url };
+    const modal = AppUpdatePrompt();
+    const button = modal.props.children.props.children[5].props.children[1];
+    expect(button.props.children).toBe("立即安装");
+    mocks.invoke.mockRejectedValueOnce(new Error("denied"));
+    button.props.onClick();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.setters[1]).toHaveBeenCalledWith("无法启动安装程序，请重试。");
+    button.props.onClick();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.invoke).toHaveBeenCalledWith("install_app_update");
+  });
+  it("reports progress and blocks duplicate downloads and dismissal while downloading", async () => {
+    mocks.setters.length = 0;
+    mocks.update = { version: "v0.3.0", notes: "更新说明", downloadUrl: release.assets[0].browser_download_url };
+    const modal = AppUpdatePrompt();
+    const buttons = modal.props.children.props.children[5].props.children;
+    let finish!: () => void;
+    mocks.invoke.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    buttons[1].props.onClick();
+    buttons[1].props.onClick();
     buttons[0].props.onClick();
-    expect(mocks.setters[0]).toHaveBeenCalledWith(null);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.setters[0]).not.toHaveBeenCalled();
+    const channel = mocks.invoke.mock.calls[0][1].onProgress;
+    channel.onmessage({ downloaded: 512, total: 1024 });
+    expect(mocks.setters[4]).toHaveBeenCalledWith({ downloaded: 512, total: 1024 });
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.setters[3]).toHaveBeenCalledWith(true);
   });
 });

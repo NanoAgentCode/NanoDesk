@@ -1,8 +1,18 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { selectAppUpdate, type AppUpdate, type GithubRelease } from "../lib/appUpdate";
 
 export const RELEASE_HISTORY_URL = "https://github.com/NanoAgentCode/NanoDesk/releases";
 const listeners = new Set<(update: AppUpdate) => void>();
+
+export interface DownloadProgress { downloaded: number; total: number | null }
+export function downloadAppUpdate(url: string, onProgress: (progress: DownloadProgress) => void) {
+  const channel = new Channel<DownloadProgress>();
+  channel.onmessage = onProgress;
+  return invoke<void>("download_app_update", { url, onProgress: channel });
+}
+export function installAppUpdate() {
+  return invoke<void>("install_app_update");
+}
 
 export async function checkAppUpdate() {
   const result = await invoke<{ currentVersion: string; arch: string; release: GithubRelease | null }>("check_app_update");
