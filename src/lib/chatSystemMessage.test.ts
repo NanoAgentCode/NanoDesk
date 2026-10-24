@@ -38,7 +38,9 @@ describe("buildSystemMessage structured agent protocols", () => {
     expect(deferred.content).not.toContain("代码定位优先");
     expect(deferred.content).toContain("<clarification>");
     expect(deferred.content).toContain("C:/p");
-    expect(standalone.content.length - deferred.content.length).toBeGreaterThan(800);
+    expect(standalone.content).toContain("2 到 12 步");
+    expect(deferred.content).not.toContain("2 到 12 步");
+    expect(deferred.content.length).toBeLessThan(standalone.content.length);
   });
 
   it("keeps all tool wire formats in a compact protocol", () => {
