@@ -1968,7 +1968,14 @@
   display: flex;
   align-items: flex-end;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.profile-extraction-controls > .profile-extraction-toggle {
+  align-self: center;
+  margin-top: 18px;
 }
 
 .profile-extraction-card .profile-extraction-model {
@@ -2049,6 +2056,18 @@
 
   .profile-extraction-card .profile-extraction-model {
     flex-basis: 100%;
+  }
+
+  .profile-extraction-controls > .profile-extraction-toggle {
+    margin-top: 0;
+  }
+
+  .profile-extraction-card .user-profile-header {
+    flex-wrap: wrap;
+  }
+
+  .profile-extraction-card .user-profile-header > .profile-header-actions {
+    margin-left: auto;
   }
 
   .profile-extraction-card .profile-settings-actions {

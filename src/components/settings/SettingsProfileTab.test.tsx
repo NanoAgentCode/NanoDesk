@@ -28,3 +28,14 @@ it("uses default scheduling and budgets instead of previously customized values"
     rolling_day_candidate_character_limit: 30000
   });
 });
+
+it("integrates configuration and profile content in one card", () => {
+  const html = renderToStaticMarkup(<SettingsProfileTab />);
+  const sections = html.match(/<section\b[\s\S]*?<\/section>/g) || [];
+  expect(sections).toHaveLength(1);
+  expect(sections[0]).toContain('id="user-profile-title"');
+  expect(sections[0]).toContain('aria-label="画像配置"');
+  expect(sections[0]).toContain("画像模型");
+  expect(sections[0]).toContain("保存设置");
+  expect(sections[0]).toContain("尚未形成画像");
+});
