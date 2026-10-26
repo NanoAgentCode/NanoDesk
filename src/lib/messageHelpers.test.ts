@@ -7,11 +7,10 @@ import {
   getLastResponseRegenerationContext,
   parseClarificationRequest,
   parseTaskPlan,
-  resolveUserMemoryRoute,
   stripClarificationRequest
 } from "./messageHelpers";
 
-describe("resolveUserMemoryRoute", () => {
+describe("clarification supersession", () => {
   it("invalidates old clarification only when a trusted mainline update supersedes it",()=>{
     const clarification={id:"old",role:"assistant",content:'<clarification>{"questions":[{"id":"q","prompt":"Old question?","options":[{"id":"a","label":"A","description":"A","recommended":true},{"id":"b","label":"B","description":"B","recommended":false}],"allow_custom":true}]}</clarification>'} as import("../types").PersistedMessage;
     expect(findPendingClarification([clarification])?.messageId).toBe("old");
@@ -20,30 +19,7 @@ describe("resolveUserMemoryRoute", () => {
     expect(findPendingClarification([clarification,{...boundary,metadata:undefined}])?.messageId).toBe("old");
     expect(findPendingClarification([clarification,boundary,{...clarification,id:"new"}])?.messageId).toBe("new");
   });
-  it("routes an explicit profile preference only to profile analysis", () => {
-    expect(resolveUserMemoryRoute("请记住我的回答偏好是简洁中文")).toEqual({
-      kind: "profile",
-      memoryDraft: null
-    });
-  });
 
-  it("routes an explicit ordinary-memory request only to memory", () => {
-    expect(resolveUserMemoryRoute("记住：项目发布前运行 cargo test")).toMatchObject({
-      kind: "memory",
-      memoryDraft: {
-        content: "项目发布前运行 cargo test",
-        tags: ["chat"],
-        enabled: true
-      }
-    });
-  });
-
-  it("leaves ordinary chat on automatic profile-candidate handling", () => {
-    expect(resolveUserMemoryRoute("帮我检查这段代码")).toEqual({
-      kind: "auto",
-      memoryDraft: null
-    });
-  });
 });
 
 describe("task plans", () => {

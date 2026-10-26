@@ -17,8 +17,8 @@ export function searchMemories(query: string) {
   return invoke<Memory[]>("search_memories", { query });
 }
 
-export function createMemory(draft: MemoryDraft) {
-  return invoke<Memory>("create_memory", { draft });
+export function createMemory(draft: MemoryDraft, fromChat = false) {
+  return invoke<Memory>("create_memory", { draft, fromChat });
 }
 
 export function updateMemory(patch: MemoryPatch) {

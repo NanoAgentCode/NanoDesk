@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Switch, Tooltip } from "@mantine/core";
 import { getGlobalMemoryEnabled, setGlobalMemoryEnabled } from "../../api/memory";
 import SettingsProfileTab from "./SettingsProfileTab";
-import { CircleAlert } from "lucide-react";
+import { ChevronDown, CircleAlert } from "lucide-react";
 import WorkspaceGrid from "../WorkspaceGrid";
 import type { UseWorkspaceReturn } from "../../hooks/useWorkspace";
 import type { UseMemoryReturn } from "../../hooks/useMemory";
@@ -40,17 +40,22 @@ export default function SettingsMemoryTab({ workspace, memory, workspaceRef, act
         </div>
         {error && <p role="alert">{error}</p>}
       </section>
-      <SettingsProfileTab activeModelId={activeModelId} globalMemoryEnabled={enabled === true} embedded />
-      <div className="memory-title-row">
-        <h4>手工记忆</h4>
-        <Tooltip label={MEMORY_DATA_FLOW_TIP} multiline w={420} position="bottom-start">
-          <button type="button" className="memory-data-flow-tip" aria-label="查看记忆语义索引说明">
-            <CircleAlert size={17} aria-hidden="true" />
-          </button>
-        </Tooltip>
-      </div>
-      <p className="description">普通手工记忆支持创建、编辑、启用和删除，并参与后续对话的相关内容召回。</p>
-      <WorkspaceGrid workspace={workspace} memory={memory} workspaceRef={workspaceRef} />
+      <details className="memory-section" open>
+        <summary className="memory-section-toggle"><h4>用户画像</h4><ChevronDown size={17} aria-hidden="true" /></summary>
+        <SettingsProfileTab activeModelId={activeModelId} globalMemoryEnabled={enabled === true} embedded />
+      </details>
+      <details className="memory-section" open>
+        <summary className="memory-section-toggle"><h4>手工记忆</h4><ChevronDown size={17} aria-hidden="true" /></summary>
+        <div className="memory-title-row">
+          <p className="description">由当前聊天模型理解并提炼需要长期保存的知识与约定，与用户画像互补；也可手动创建、编辑、启用和删除。</p>
+          <Tooltip label={MEMORY_DATA_FLOW_TIP} multiline w={420} position="bottom-start">
+            <button type="button" className="memory-data-flow-tip" aria-label="查看记忆语义索引说明">
+              <CircleAlert size={17} aria-hidden="true" />
+            </button>
+          </Tooltip>
+        </div>
+        <WorkspaceGrid workspace={workspace} memory={memory} workspaceRef={workspaceRef} />
+      </details>
     </div>
   );
 }

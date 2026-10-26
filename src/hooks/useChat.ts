@@ -1,3 +1,4 @@
+import { resolveUserMemoryRoute, type UserMemoryRoute } from "../lib/memoryLanguage";
 import { applyBackgroundSnapshot } from "./chat/snapshotProjection";
 import { useBackgroundAgents } from "./chat/useBackgroundAgents";
 import { useChatHistory } from "./chat/useChatHistory";
@@ -36,7 +37,6 @@ import { processAttachmentBatch } from "./chat/attachmentBatch";
 import { findPendingToolApproval, resolveChatDecisionState } from "../lib/chatDecisionState";
 import { useSpeechInput } from "./useSpeechInput";
 import {
-  resolveUserMemoryRoute,
   findPendingClarification,
   formatClarificationAnswerMessage,
   getLastResponseRegenerationContext,
@@ -313,9 +313,6 @@ export function useChat({
         return;
       }
     }
-    const memoryRoute = resolveUserMemoryRoute(textContent, content);
-    const explicitProfileInstruction = memoryRoute.kind === "profile";
-    const memoryDraft = memoryRoute.memoryDraft;
     const conversationModelId = conv.resolveConversationModelId(conv.activeConversationId);
     const effectiveModelId = model.routing.enabled
       ? conversationModelId
@@ -323,14 +320,14 @@ export function useChat({
         ? conversationModelId
         : model.routing.fixedModelIds[0] || "";
     const routingDecision =
-      model.routing.enabled && !memoryDraft
+      model.routing.enabled
         ? model.routing.resolve(textContent || content, attachments.pendingImageAttachments.length > 0)
         : null;
     const activeModelId = routingDecision?.modelId || effectiveModelId;
 
     if (
       (!textContent && attachments.pendingImageAttachments.length === 0) ||
-      (!activeModelId && !memoryDraft)
+      !activeModelId
     ) {
       setNotice(activeModelId ? "" : "请先保存并选择一个模型");
       if (typeof assistantText === "string") throw new Error(!textContent && !attachments.pendingImageAttachments.length ? "消息不能为空。" : "请先保存并选择一个模型");
@@ -344,6 +341,10 @@ export function useChat({
     let agentRun: AgentRun | null = null;
 
     try {
+      let memoryRoute: UserMemoryRoute = { kind: "auto", memoryDraft: null };
+      try { memoryRoute = await resolveUserMemoryRoute(activeModelId, textContent); }
+      catch (error) { setNotice(`记忆识别未完成，继续聊天：${String(error)}`); }
+      const memoryDraft = memoryRoute.memoryDraft;
       const projectHint = documentSource ? null : conv.getConversationProjectHint();
       const conversationId = await conv.ensureConversation(projectHint);
       if (activeModelId && activeModelId !== conversationModelId) {
@@ -396,28 +397,17 @@ export function useChat({
       if (activeConversationIdRef.current === conversationId) setMessages(nextMessages);
 
       if (memoryDraft) {
-        const savedMemory = await createMemory(memoryDraft);
-        onMemoryCreated(savedMemory);
-        setNotice("已保存");
-        if (agentRun) {
-          void safeRecordAgentStep({
-            run_id: agentRun.id,
-            kind: "memory",
-            status: "completed",
-            input_summary: savedMemory.title,
-            output_summary: `memory_id=${savedMemory.id}`
+        try {
+          const savedMemory = await createMemory(memoryDraft, true);
+          onMemoryCreated(savedMemory);
+          setNotice("已提炼并保存记忆");
+          if (agentRun) void safeRecordAgentStep({
+            run_id: agentRun.id, kind: "memory", status: "completed",
+            input_summary: savedMemory.title, output_summary: `memory_id=${savedMemory.id}`
           });
-          void safeFinishAgentRun(agentRun.id, "completed");
+        } catch (error) {
+          setNotice(`记忆未保存，继续聊天：${String(error)}`);
         }
-        if (projectForRequest) {
-          await projects.refreshProjectConversationMap();
-        } else {
-          await refreshConversationLists();
-        }
-        return;
-      }
-      if (explicitProfileInstruction) {
-        setNotice("已加入画像分析，将在后台按预算异步处理");
       }
       if (attachments.pendingImageAttachments.length > 0) {
         attachments.clearPendingImageAttachments();

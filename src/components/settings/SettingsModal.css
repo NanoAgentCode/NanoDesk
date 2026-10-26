@@ -194,5 +194,20 @@
 }
 
 .memory-settings-content > * { flex-shrink: 0; }
-.memory-settings-content > .settings-workspace-grid { min-height: 380px; }
-.memory-settings-content > .profile-tab-content { margin: 16px 0; }
+.memory-section { margin-top: 16px; }
+.memory-section > .settings-workspace-grid { min-height: 380px; }
+.memory-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-primary);
+}
+.memory-section-toggle::-webkit-details-marker { display: none; }
+.memory-section-toggle h4 { margin: 0; }
+.memory-section-toggle svg { transition: transform 160ms ease; }
+.memory-section[open] > .memory-section-toggle svg { transform: rotate(180deg); }
+.memory-section-toggle:focus-visible { outline: 2px solid var(--accent-indigo); outline-offset: 3px; }

@@ -51,10 +51,20 @@ pub async fn search_memories(state: State<'_, AppState>, query: String) -> AppRe
 }
 
 #[tauri::command]
-pub async fn create_memory(state: State<'_, AppState>, draft: MemoryDraft) -> AppResult<Memory> {
-    let memory = state.db.lock().await.create_memory(draft)?;
+pub async fn create_memory(state: State<'_, AppState>, draft: MemoryDraft, from_chat: Option<bool>) -> AppResult<Memory> {
+    let memory = {
+        let db = state.db.lock().await;
+        save_memory_draft(&db, draft, from_chat.unwrap_or(false))?
+    };
     index_memory_embedding(&state, &memory).await;
     Ok(memory)
+}
+
+fn save_memory_draft(db: &crate::db::Database, draft: MemoryDraft, from_chat: bool) -> AppResult<Memory> {
+    if from_chat && !db.global_memory_enabled()? {
+        return Err(AppError::Message("全局记忆已关闭".into()));
+    }
+    db.create_memory(draft)
 }
 
 #[tauri::command]
@@ -263,6 +273,18 @@ fn embedding_model(config: &ModelConfig) -> &str {
 #[cfg(test)]
 mod global_memory_tests {
     use super::*;
+    #[test]
+    fn global_switch_rechecks_chat_writes_but_allows_manual_management() {
+        let db = crate::db::Database::open(std::path::PathBuf::from(":memory:")).unwrap();
+        db.set_global_memory_enabled(false).unwrap();
+        let draft = || MemoryDraft { title: "发布约定".into(), content: "发布前运行测试".into(), tags: vec![], enabled: Some(true) };
+        assert!(save_memory_draft(&db, draft(), true).is_err());
+        assert!(db.list_memories().unwrap().is_empty());
+        assert!(save_memory_draft(&db, draft(), false).is_ok());
+        db.set_global_memory_enabled(true).unwrap();
+        assert!(save_memory_draft(&db, draft(), true).is_ok());
+    }
+
     #[tokio::test]
     async fn disabled_memory_skips_retrieval_and_rechecks_in_flight_results() {
         let db = crate::db::Database::open(std::path::PathBuf::from(":memory:")).unwrap();

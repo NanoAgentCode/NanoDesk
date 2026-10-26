@@ -5,62 +5,6 @@ export function parseTags(value: string) {
     .filter(Boolean);
 }
 
-export function extractMemoryDraft(content: string) {
-  const normalized = content.trim();
-  const memoryIntent =
-    /(记住|记一下|记到记忆|保存到记忆|加入记忆|更新(?:一下)?(?:我的)?记忆|修改(?:一下)?(?:我的)?记忆|以后记得)/.test(normalized);
-
-  if (!memoryIntent) {
-    return null;
-  }
-
-  const memoryContent = normalized
-    .replace(/^(请|帮我|麻烦你|你)?\s*/, "")
-    .replace(/^(记住|记一下|记到记忆|保存到记忆|加入记忆|以后记得)[：:\s]*/i, "")
-    .replace(/^更新(?:一下)?(?:我的)?记忆[：:\s]*/i, "")
-    .replace(/^修改(?:一下)?(?:我的)?记忆[：:\s]*/i, "")
-    .trim();
-
-  if (!memoryContent) {
-    return null;
-  }
-
-  const title = memoryContent
-    .replace(/[。.!！?？\n\r].*$/s, "")
-    .slice(0, 24)
-    .trim() || "聊天记忆";
-
-  return {
-    title,
-    content: memoryContent,
-    tags: ["chat"],
-    enabled: true
-  };
-}
-
-export function isExplicitProfileInstruction(content: string) {
-  const normalized = content.replace(/\s+/g, " ").trim();
-  const explicit = /(记住我|请记住我的|以后都|从现在起)|\b(remember that i|please remember my|from now on)\b/i.test(normalized);
-  const profileSignal = /(我|我的).*(偏好|喜欢|习惯|默认|身份|角色|工作|使用|项目|环境|语言|格式|语气|简洁|详细)|\b(i|my)\b.*\b(prefer|like|usually|always|role|work|use|project|language|format|tone)\b/i.test(normalized);
-  return explicit && profileSignal;
-}
-
-export type UserMemoryRoute =
-  | { kind: "profile"; memoryDraft: null }
-  | { kind: "memory"; memoryDraft: NonNullable<ReturnType<typeof extractMemoryDraft>> }
-  | { kind: "auto"; memoryDraft: null };
-
-export function resolveUserMemoryRoute(content: string, memoryContent = content): UserMemoryRoute {
-  if (isExplicitProfileInstruction(content)) {
-    return { kind: "profile", memoryDraft: null };
-  }
-
-  const memoryDraft = extractMemoryDraft(memoryContent);
-  return memoryDraft
-    ? { kind: "memory", memoryDraft }
-    : { kind: "auto", memoryDraft: null };
-}
-
 export interface ParsedToolCall {
   name: string;
   args: Record<string, string>;
