@@ -15,6 +15,10 @@ describe("semantic memory routing", () => {
     vi.mocked(chat).mockResolvedValue({ content: JSON.stringify({ kind }) });
     expect(await resolveUserMemoryRoute("m", "输入")).toEqual({ kind, memoryDraft: null });
   });
+  it("never creates manual memory from a profile response even if it contains draft fields", async () => {
+    vi.mocked(chat).mockResolvedValue({ content: JSON.stringify({ kind: "profile", title: "偏好", content: "默认中文回答", tags: ["语言"] }) });
+    expect(await resolveUserMemoryRoute("m", "请记住我默认使用中文回答")).toEqual({ kind: "profile", memoryDraft: null });
+  });
   it("does not call the model while global memory is disabled", async () => {
     vi.mocked(getGlobalMemoryEnabled).mockResolvedValue(false);
     expect(await resolveUserMemoryRoute("m", "记住这个约定")).toEqual({ kind: "auto", memoryDraft: null });

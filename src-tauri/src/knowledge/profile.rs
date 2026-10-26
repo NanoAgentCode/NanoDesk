@@ -17,7 +17,7 @@ use crate::models::{
 };
 use crate::AppState;
 
-const CLEANER_VERSION: &str = "profile-candidate-v1";
+const CLEANER_VERSION: &str = "profile-candidate-v2";
 const LONG_SCAN_EDGE_CHARACTERS: usize = 65_536;
 const MAX_CANDIDATE_CHARACTERS: usize = 12_000;
 const WORKER_IDLE_SECONDS: u64 = 15;
@@ -360,7 +360,11 @@ fn prepare_observation(
     work: &ProfileObservationWork,
     long_input_threshold: i64,
 ) -> PreparedProfileObservation {
-    let extracted = extract_candidates(&work.content, long_input_threshold.max(2_000) as usize);
+    let mut extracted = extract_candidates(&work.content, long_input_threshold.max(2_000) as usize);
+    if extracted.text.is_empty() {
+        extracted.text = crate::db::profile_store::normalize_manual_profile_candidate(&work.content);
+        extracted.kind = "automatic".to_string();
+    }
     let candidate_count = extracted.text.chars().count();
     let raw_count = work.content.chars().count();
     let is_long = raw_count > long_input_threshold.max(2_000) as usize
@@ -394,7 +398,7 @@ fn build_extraction_request(work: &ProfileBatchWork) -> AppResult<ChatRequest> {
         if candidates.contains_key(&observation.index) {
             continue;
         }
-        let candidate = if observation.candidate_kind == "manual" {
+        let candidate = if matches!(observation.candidate_kind.as_str(), "manual" | "automatic") {
             crate::db::profile_store::normalize_manual_profile_candidate(&observation.content)
         } else {
             extract_candidates(&observation.content, 8_000).text
@@ -684,11 +688,12 @@ mod tests {
     }
 
     #[test]
-    fn error_dump_does_not_become_a_profile_candidate() {
+    fn filtered_error_dump_is_automatically_sent_for_model_judgment() {
         let content = "Traceback (most recent call last):\n  at main.py:42\nError: I prefer connection reset\nCaused by: timeout";
         let prepared = prepare_observation(&work(content), 8_000);
-        assert_eq!(prepared.status, "skipped");
-        assert_eq!(prepared.candidate_character_count, 0);
+        assert_eq!(prepared.status, "ready_long");
+        assert!(prepared.candidate_character_count > 0);
+        assert_eq!(prepared.candidate_kind, "automatic");
     }
 
     #[test]
@@ -702,13 +707,13 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_task_request_is_not_sent_to_the_profile_model() {
+    fn ordinary_task_request_is_automatically_sent_to_the_profile_model() {
         let prepared = prepare_observation(&work("帮我修复这个按钮的边距问题"), 8_000);
-        assert_eq!(prepared.status, "skipped");
+        assert_eq!(prepared.status, "ready_normal");
     }
 
     #[test]
-    fn user_included_filtered_input_is_sent_as_a_manual_candidate() {
+    fn automatically_included_filtered_input_is_sent_to_the_model() {
         let content = "帮我修复这个按钮的边距问题";
         let candidate = crate::db::profile_store::normalize_manual_profile_candidate(content);
         let work = ProfileBatchWork {
@@ -723,7 +728,7 @@ mod tests {
                 source_message_id: "message".to_string(),
                 content: content.to_string(),
                 candidate_hash: crate::db::profile_store::stable_hash(&candidate),
-                candidate_kind: "manual".to_string(),
+                candidate_kind: "automatic".to_string(),
                 observation_revision: 1,
             }],
         };

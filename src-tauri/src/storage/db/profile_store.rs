@@ -418,6 +418,13 @@ impl Database {
         let now = Utc::now();
         let expires = (now + Duration::seconds(PROFILE_LEASE_SECONDS)).to_rfc3339();
         self.with_savepoint("profile_preprocess_claim", || {
+            // Reprocess legacy review items once under automatic model judgment.
+            self.conn.execute(
+                "UPDATE profile_observations SET status = 'pending_preprocess'
+                 WHERE status = 'skipped' AND COALESCE(cleaner_version, '') != 'profile-candidate-v2'
+                   AND profile_generation = (SELECT profile_generation FROM profile_state WHERE id = 1)",
+                [],
+            )?;
             self.conn.execute(
                 "UPDATE profile_observations SET
                     status = 'pending_preprocess', preprocess_lease_owner = NULL,
@@ -1626,6 +1633,24 @@ mod tests {
             })
             .expect("count should load");
         assert_eq!(enabled_count, 1);
+    }
+
+    #[test]
+    fn legacy_review_items_are_automatically_reclaimed() {
+        let db = enabled_database();
+        append_user_message(&db, "帮我修复按钮");
+        db.conn.execute(
+            "UPDATE profile_observations SET status = 'skipped', cleaner_version = 'profile-candidate-v1'",
+            [],
+        ).unwrap();
+        let work = db.claim_profile_observation("worker").unwrap().unwrap();
+        assert_eq!(work.content, "帮我修复按钮");
+        // Empty inputs already judged by the new cleaner must not loop forever.
+        db.conn.execute(
+            "UPDATE profile_observations SET status = 'skipped', cleaner_version = 'profile-candidate-v2'",
+            [],
+        ).unwrap();
+        assert!(db.claim_profile_observation("worker").unwrap().is_none());
     }
 
     #[test]
