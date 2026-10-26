@@ -36,6 +36,21 @@ struct ProfileFactAssertion<'a> {
 }
 
 impl Database {
+    pub fn global_memory_enabled(&self) -> AppResult<bool> {
+        self.conn.query_row("SELECT enabled FROM global_memory_settings WHERE id = 1", [], |row| row.get(0)).map_err(AppError::from)
+    }
+
+    pub fn set_global_memory_enabled(&self, enabled: bool) -> AppResult<bool> {
+        self.with_savepoint("global_memory_save", || {
+            self.conn.execute("UPDATE global_memory_settings SET enabled = ?1 WHERE id = 1", params![enabled])?;
+            // Invalidate in-flight extraction even if memory is re-enabled before it returns.
+            if !enabled {
+                self.invalidate_profile_work(false)?;
+            }
+            Ok(enabled)
+        })
+    }
+
     pub fn get_profile_settings(&self) -> AppResult<ProfileSettings> {
         self.conn
             .query_row(
@@ -198,7 +213,7 @@ impl Database {
 
     pub fn retry_profile_failures(&self) -> AppResult<i64> {
         let settings = self.get_profile_settings()?;
-        if !settings.enabled {
+        if !settings.enabled || !self.global_memory_enabled()? {
             return Err(AppError::Message("请先启用用户画像".to_string()));
         }
         let model_id = settings
@@ -337,7 +352,7 @@ impl Database {
 
     pub fn include_filtered_profile_observation(&self, id: &str) -> AppResult<()> {
         let settings = self.get_profile_settings()?;
-        if !settings.enabled {
+        if !settings.enabled || !self.global_memory_enabled()? {
             return Err(AppError::Message("请先启用用户画像".to_string()));
         }
         let content = self
@@ -517,7 +532,7 @@ impl Database {
 
     fn create_profile_batch_internal(&self, force: bool) -> AppResult<Option<String>> {
         let settings = self.get_profile_settings()?;
-        if !settings.enabled {
+        if !settings.enabled || !self.global_memory_enabled()? {
             return Ok(None);
         }
         let model_id = match settings.model_config_id.as_deref() {
@@ -633,6 +648,9 @@ impl Database {
     }
 
     pub(crate) fn claim_profile_batch(&self, owner: &str) -> AppResult<Option<ProfileBatchWork>> {
+        if !self.global_memory_enabled()? {
+            return Ok(None);
+        }
         let now = Utc::now();
         let now_text = now.to_rfc3339();
         self.with_savepoint("profile_batch_claim", || {
@@ -1153,6 +1171,9 @@ impl Database {
     }
 
     fn profile_batch_can_commit(&self, work: &ProfileBatchWork) -> AppResult<bool> {
+        if !self.global_memory_enabled()? {
+            return Ok(false);
+        }
         let current_generation = self.current_profile_generation()?;
         if current_generation != work.profile_generation {
             return Ok(false);
@@ -1438,6 +1459,52 @@ mod tests {
     use super::*;
     use crate::models::{MessageDraft, ModelConfigDraft, ProfileSettingsDraft};
     use std::path::PathBuf;
+
+    #[test]
+    fn global_memory_switch_preserves_facts_and_rejects_in_flight_extraction() {
+        let db = enabled_database();
+        let operation = ProfileOperation {
+            action: "assert".into(), dimension: "response-language".into(),
+            value: "中文".into(), source_indexes: vec![1], confidence: 0.99,
+        };
+        append_user_message(&db, "请记住我默认使用中文回答");
+        mark_ready(&db, "preprocessor", "explicit");
+        db.create_profile_batch().unwrap().unwrap();
+        let initial = db.claim_profile_batch("worker").unwrap().unwrap();
+        assert!(db.apply_profile_operations(&initial, std::slice::from_ref(&operation)).unwrap());
+        append_user_message(&db, "请记住我默认使用英文回答");
+        mark_ready(&db, "preprocessor", "explicit");
+        db.create_profile_batch().unwrap().unwrap();
+        let stale = db.claim_profile_batch("worker").unwrap().unwrap();
+        db.set_global_memory_enabled(false).unwrap();
+        assert!(crate::profile::load_profile_context(&db).unwrap().is_none());
+        assert_eq!(db.get_user_profile().unwrap().facts.len(), 1);
+        db.set_global_memory_enabled(true).unwrap();
+        assert!(!db.apply_profile_operations(&stale, &[ProfileOperation { value: "英文".into(), ..operation }]).unwrap());
+        assert_eq!(db.get_user_profile().unwrap().facts[0].value, "中文");
+        assert!(crate::profile::load_profile_context(&db).unwrap().is_some());
+    }
+
+    #[test]
+    fn global_memory_switch_blocks_collection_and_preserves_saved_content() {
+        let db = enabled_database();
+        let memory = db.create_memory(crate::models::MemoryDraft {
+            title: "Preference".into(), content: "Use Rust".into(), tags: vec![], enabled: Some(true),
+        }).unwrap();
+        assert!(db.global_memory_enabled().unwrap());
+        append_user_message(&db, "我主要使用 Rust");
+        let stale = db.claim_profile_observation("old-worker").unwrap().unwrap();
+        db.set_global_memory_enabled(false).unwrap();
+        append_user_message(&db, "我主要使用 Python");
+        assert!(db.claim_profile_observation("new-worker").unwrap().is_none());
+        assert!(crate::profile::load_profile_context(&db).unwrap().is_none());
+        assert_eq!(db.list_memories().unwrap()[0].id, memory.id);
+        assert!(db.get_profile_settings().unwrap().enabled);
+        db.set_global_memory_enabled(true).unwrap();
+        assert_ne!(db.current_profile_generation().unwrap(), stale.profile_generation);
+        append_user_message(&db, "我主要使用 TypeScript");
+        assert!(db.claim_profile_observation("new-worker").unwrap().is_some());
+    }
 
     fn enabled_database() -> Database {
         let db = Database::open(PathBuf::from(":memory:")).expect("database should open");

@@ -9,6 +9,16 @@ const DEFAULT_MEMORY_LIMIT: i64 = 8;
 const MAX_LAZY_BACKFILL: i64 = 128;
 
 #[tauri::command]
+pub async fn get_global_memory_enabled(state: State<'_, AppState>) -> AppResult<bool> {
+    state.db.lock().await.global_memory_enabled()
+}
+
+#[tauri::command]
+pub async fn set_global_memory_enabled(state: State<'_, AppState>, enabled: bool) -> AppResult<bool> {
+    state.db.lock().await.set_global_memory_enabled(enabled)
+}
+
+#[tauri::command]
 pub async fn list_memories(state: State<'_, AppState>) -> AppResult<Vec<Memory>> {
     state.db.lock().await.list_memories()
 }
@@ -84,7 +94,7 @@ pub(crate) fn plan_memory_retrieval(
     query: &str,
     limit: i64,
 ) -> AppResult<MemoryRetrievalPlan> {
-    let has_memories = !db.list_enabled_memories()?.is_empty();
+    let has_memories = db.global_memory_enabled()? && !db.list_enabled_memories()?.is_empty();
     let config = if has_memories && !query.is_empty() {
         db.get_model_config("embedding-config").ok()
     } else {
@@ -135,7 +145,7 @@ pub(crate) fn finish_memory_retrieval(
         missing_embeddings,
         query_embedding,
     } = prepared;
-    if !plan.has_memories {
+    if !db.global_memory_enabled()? || !plan.has_memories {
         return Ok(Vec::new());
     }
     if plan.query.is_empty() {
@@ -166,6 +176,9 @@ pub(crate) fn finish_memory_retrieval(
 
 async fn index_memory_embedding(state: &State<'_, AppState>, memory: &Memory) {
     if !memory.enabled {
+        return;
+    }
+    if !state.db.lock().await.global_memory_enabled().unwrap_or(false) {
         return;
     }
     let config = state
@@ -244,5 +257,24 @@ fn embedding_model(config: &ModelConfig) -> &str {
         "text-embedding-3-small"
     } else {
         model
+    }
+}
+
+#[cfg(test)]
+mod global_memory_tests {
+    use super::*;
+    #[tokio::test]
+    async fn disabled_memory_skips_retrieval_and_rechecks_in_flight_results() {
+        let db = crate::db::Database::open(std::path::PathBuf::from(":memory:")).unwrap();
+        db.create_memory(MemoryDraft { title: "Rust".into(), content: "Use Rust".into(), tags: vec![], enabled: Some(true) }).unwrap();
+        let prepared = prepare_memory_retrieval(plan_memory_retrieval(&db, "", 8).unwrap()).await;
+        db.set_global_memory_enabled(false).unwrap();
+        assert!(finish_memory_retrieval(&db, prepared).unwrap().is_empty());
+        let disabled = plan_memory_retrieval(&db, "Rust", 8).unwrap();
+        assert!(!disabled.has_memories);
+        assert!(disabled.config.is_none());
+        db.set_global_memory_enabled(true).unwrap();
+        let prepared = prepare_memory_retrieval(plan_memory_retrieval(&db, "", 8).unwrap()).await;
+        assert_eq!(finish_memory_retrieval(&db, prepared).unwrap().len(), 1);
     }
 }

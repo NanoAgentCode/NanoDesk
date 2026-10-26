@@ -231,6 +231,8 @@ pub fn run() {
             context::load_base_context,
             context_budget::plan_context_preparation,
             context_budget::fit_context_messages,
+            memory::get_global_memory_enabled,
+            memory::set_global_memory_enabled,
             memory::list_memories,
             memory::list_enabled_memories,
             profile::get_user_profile,

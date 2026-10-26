@@ -182,7 +182,7 @@ async fn run_worker_cycle_internal(
         let claimed = {
             let db = state.db.lock().await;
             let settings = db.get_profile_settings()?;
-            if !settings.enabled {
+            if !settings.enabled || !db.global_memory_enabled()? {
                 return Ok(outcome);
             }
             db.claim_profile_observation(&owner)?
@@ -276,7 +276,7 @@ pub(crate) async fn run_database_worker_cycle(db: &Database) -> AppResult<bool> 
     db.cleanup_profile_history()?;
     for _ in 0..16 {
         let settings = db.get_profile_settings()?;
-        if !settings.enabled {
+        if !settings.enabled || !db.global_memory_enabled()? {
             return Ok(progressed);
         }
         let Some(work) = db.claim_profile_observation(&owner)? else {
@@ -662,7 +662,7 @@ pub(crate) fn format_profile_context(profile: &UserProfile) -> Option<String> {
 }
 
 pub(crate) fn load_profile_context(db: &Database) -> AppResult<Option<String>> {
-    if !db.get_profile_settings()?.enabled {
+    if !db.global_memory_enabled()? || !db.get_profile_settings()?.enabled {
         return Ok(None);
     }
     Ok(format_profile_context(&db.get_user_profile()?))

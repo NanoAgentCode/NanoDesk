@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import { Archive, ArrowUpCircle, BarChart3, Bot, Brain, CalendarClock, Fingerprint, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
+import { Archive, ArrowUpCircle, BarChart3, Bot, Brain, CalendarClock, Monitor, Route, Server, Settings, Sparkles, Sun } from "lucide-react";
 import { AppPluginRegistry, type FrontendPlugin } from "../core/plugins";
 import { APP_PLUGIN_NAMESPACE } from "../config/brand";
 
@@ -7,7 +7,6 @@ const OpsPanel = lazy(() => import("../components/OpsPanel"));
 const AutomationPanel = lazy(() => import("../components/AutomationPanel"));
 const SettingsThemeTab = lazy(() => import("../components/settings/SettingsThemeTab"));
 const SettingsMemoryTab = lazy(() => import("../components/settings/SettingsMemoryTab"));
-const SettingsProfileTab = lazy(() => import("../components/settings/SettingsProfileTab"));
 const SettingsArchiveTab = lazy(() => import("../components/settings/SettingsArchiveTab"));
 const SettingsModelTab = lazy(() => import("../components/settings/SettingsModelTab"));
 const SettingsSkillsTab = lazy(() => import("../components/settings/SettingsSkillsTab"));
@@ -33,18 +32,12 @@ const coreUiPlugin: FrontendPlugin = {
     },
     {
       id: "memory",
-      label: "记忆库",
+      label: "记忆",
       icon: Brain,
       onActivate: ({ workspace }) => workspace.handleKindChange("memory"),
-      render: ({ workspace, memory, workspaceRef }) => (
-        <SettingsMemoryTab workspace={workspace} memory={memory} workspaceRef={workspaceRef as React.Ref<HTMLElement>} />
+      render: ({ workspace, memory, workspaceRef, model }) => (
+        <SettingsMemoryTab activeModelId={model.activeModelId} workspace={workspace} memory={memory} workspaceRef={workspaceRef as React.Ref<HTMLElement>} />
       )
-    },
-    {
-      id: "profile",
-      label: "用户画像",
-      icon: Fingerprint,
-      render: ({ model }) => <SettingsProfileTab activeModelId={model.activeModelId} />
     },
     {
       id: "model",

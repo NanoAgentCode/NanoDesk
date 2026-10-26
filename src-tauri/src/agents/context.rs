@@ -154,7 +154,7 @@ fn finish_base_context(
         },
     };
     Ok(BaseContextBundle {
-        profile_context: prepared.profile_context,
+        profile_context: if db.global_memory_enabled()? { prepared.profile_context } else { None },
         memories,
         project_files: prepared.project_files,
         code_matches: retrieval.code_matches,

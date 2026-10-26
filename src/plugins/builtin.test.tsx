@@ -19,6 +19,10 @@ vi.mock("../components/settings/SettingsUsageTab", () => {
 import { appPlugins } from "./builtin";
 
 describe("settings contributions", () => {
+  it("combines manual memory and profile into one settings entry", () => {
+    expect(appPlugins.findSettings("memory")?.label).toBe("记忆");
+    expect(appPlugins.findSettings("profile")).toBeUndefined();
+  });
   it("provides an update settings page", () => {
     expect(appPlugins.findSettings("updates")?.label).toBe("更新应用");
   });

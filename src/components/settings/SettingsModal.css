@@ -192,3 +192,7 @@
 .archived-list-column .archived-list {
   gap: 10px;
 }
+
+.memory-settings-content > * { flex-shrink: 0; }
+.memory-settings-content > .settings-workspace-grid { min-height: 380px; }
+.memory-settings-content > .profile-tab-content { margin: 16px 0; }

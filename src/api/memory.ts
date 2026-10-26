@@ -28,3 +28,11 @@ export function updateMemory(patch: MemoryPatch) {
 export function deleteMemory(id: string) {
   return invoke<void>("delete_memory", { id });
 }
+
+export function getGlobalMemoryEnabled() {
+  return invoke<boolean>("get_global_memory_enabled");
+}
+
+export function setGlobalMemoryEnabled(enabled: boolean) {
+  return invoke<boolean>("set_global_memory_enabled", { enabled });
+}

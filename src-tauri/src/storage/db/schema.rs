@@ -215,6 +215,12 @@ impl Database {
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS global_memory_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT OR IGNORE INTO global_memory_settings (id, enabled) VALUES (1, 1);
+
             CREATE TABLE IF NOT EXISTS profile_settings (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 enabled INTEGER NOT NULL DEFAULT 0,

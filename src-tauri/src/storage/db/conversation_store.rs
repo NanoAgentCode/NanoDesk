@@ -382,7 +382,7 @@ impl Database {
             [],
             |row| row.get::<_, bool>(0),
         )?;
-        if !enabled {
+        if !enabled || !self.global_memory_enabled()? {
             return Ok(());
         }
 
