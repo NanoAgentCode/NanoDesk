@@ -32,7 +32,7 @@ const coreUiPlugin: FrontendPlugin = {
     },
     {
       id: "memory",
-      label: "记忆",
+      label: "全局记忆",
       icon: Brain,
       onActivate: ({ workspace }) => workspace.handleKindChange("memory"),
       render: ({ workspace, memory, workspaceRef, model }) => (

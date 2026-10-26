@@ -2487,3 +2487,12 @@
     opacity: 1;
   }
 }
+
+.memory-content-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.memory-content-tabs > [role="tabpanel"] {
+  min-width: 0;
+}
