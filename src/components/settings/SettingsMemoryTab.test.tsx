@@ -18,7 +18,7 @@ it("shows horizontal memory and profile tabs with global memory selected by defa
   expect(html).toContain('aria-label="记忆类型"');
   const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>[\s\S]*?<\/button>/g)].map(match => match[0]);
   expect(tabs).toHaveLength(2);
-  expect(tabs[0]).toContain("全局记忆");
+  expect(tabs[0]).toContain("长期记忆");
   expect(tabs[0]).toContain('aria-selected="true"');
   expect(tabs[1]).toContain("用户画像");
   expect(tabs[1]).toContain('aria-selected="false"');

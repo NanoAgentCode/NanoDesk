@@ -42,7 +42,7 @@ export default function SettingsMemoryTab({ workspace, memory, workspaceRef, act
       </section>
       <Tabs defaultValue="memory" className="memory-content-tabs">
         <Tabs.List aria-label="记忆类型">
-          <Tabs.Tab value="memory" leftSection={<Brain size={16} />}>全局记忆</Tabs.Tab>
+          <Tabs.Tab value="memory" leftSection={<Brain size={16} />}>长期记忆</Tabs.Tab>
           <Tabs.Tab value="profile" leftSection={<Fingerprint size={16} />}>用户画像</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="memory" pt="md">
