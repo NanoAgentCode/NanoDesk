@@ -1,3 +1,4 @@
+import { createPendingUserMessage, visibleUserMessages } from "./chat/pendingUserMessage";
 import { resolveUserMemoryRoute, type UserMemoryRoute } from "../lib/memoryLanguage";
 import { applyBackgroundSnapshot } from "./chat/snapshotProjection";
 import { useBackgroundAgents } from "./chat/useBackgroundAgents";
@@ -47,7 +48,7 @@ import { useConversations } from "./useConversations";
 import { useRagFiles } from "./useRagFiles";
 import { useChatInput } from "./useChatInput";
 import { buildMessageContentWithImageAttachments, useChatAttachments } from "./useChatAttachments";
-import type { AgentClarificationAnswer, AgentClarificationRequest, AgentRun, ProjectEntry, ProjectFileEntry } from "../types";
+import type { AgentClarificationAnswer, AgentClarificationRequest, AgentRun, PersistedMessage, ProjectEntry, ProjectFileEntry } from "../types";
 
 const EMPTY_PROJECT_FILES: ProjectFileEntry[] = [];
 
@@ -110,6 +111,7 @@ export function useChat({
 
   // ── State owned by useChat ──
   const [localBusy, setBusy] = useState(false);
+  const [pendingUserMessage, setPendingUserMessage] = useState<PersistedMessage | null>(null);
   const [documentPreparationError, setDocumentPreparationError] = useState("");
   useEffect(() => {
     let disposed = false;
@@ -133,7 +135,7 @@ export function useChat({
   const executingToolMessageId = background.current?.executing_tool_message_id || fallbackExecutingId;
   const backgroundRunId = background.current?.run_id || null;
   const activeStreamRequestId = background.current?.stream_message?.id || null;
-  const scopedMessages = messages.filter((message) => message.conversation_id === conv.activeConversationId);
+  const scopedMessages = visibleUserMessages(messages, pendingUserMessage, conv.activeConversationId);
 
   const attachmentScopeKey = `${conv.activeConversationId}:${getAttachmentProjectPath()}`;
   attachmentScopeRef.current = attachmentScopeKey;
@@ -334,6 +336,8 @@ export function useChat({
       return;
     }
 
+    const pendingMessage = createPendingUserMessage(originConversationId, content, textContent);
+    setPendingUserMessage(pendingMessage);
     input.setChatInput("");
     setBusy(true);
     setDocumentPreparationError("");
@@ -341,12 +345,13 @@ export function useChat({
     let agentRun: AgentRun | null = null;
 
     try {
+      const projectHint = documentSource ? null : conv.getConversationProjectHint();
+      const conversationId = await conv.ensureConversation(projectHint);
+      setPendingUserMessage(current => current?.id === pendingMessage.id ? { ...current, conversation_id: conversationId } : current);
       let memoryRoute: UserMemoryRoute = { kind: "auto", memoryDraft: null };
       try { memoryRoute = await resolveUserMemoryRoute(activeModelId, textContent); }
       catch (error) { setNotice(`记忆识别未完成，继续聊天：${String(error)}`); }
       const memoryDraft = memoryRoute.memoryDraft;
-      const projectHint = documentSource ? null : conv.getConversationProjectHint();
-      const conversationId = await conv.ensureConversation(projectHint);
       if (activeModelId && activeModelId !== conversationModelId) {
         await updateConversationModel(conversationId, activeModelId);
         if (activeConversationIdRef.current === conversationId) model.setActiveModelId(activeModelId);
@@ -376,6 +381,9 @@ export function useChat({
           ...(routingDecision ? { model_routing: routingDecision } : {})
         }
       });
+      const nextMessages = [...persistedMessages, userMessage];
+      if (activeConversationIdRef.current === conversationId) setMessages(nextMessages);
+      setPendingUserMessage(current => current?.id === pendingMessage.id ? null : current);
       agentRun = await safeCreateAgentRun({
         conversation_id: conversationId,
         project_path: projectForRequest?.path || null,
@@ -393,9 +401,6 @@ export function useChat({
           output_summary: `message_id=${userMessage.id}`
         });
       }
-      const nextMessages = [...persistedMessages, userMessage];
-      if (activeConversationIdRef.current === conversationId) setMessages(nextMessages);
-
       if (memoryDraft) {
         try {
           const savedMemory = await createMemory(memoryDraft, true);
@@ -433,6 +438,7 @@ export function useChat({
       setNotice(formatUserFacingError(error));
       if (typeof assistantText === "string") throw error;
     } finally {
+      setPendingUserMessage(current => current?.id === pendingMessage.id ? null : current);
       setBusy(false);
     }
   }
