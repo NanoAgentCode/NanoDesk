@@ -1966,7 +1966,8 @@
 
 .profile-extraction-card .profile-extraction-controls {
   display: flex;
-  align-items: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
   margin-top: 14px;
   padding-bottom: 14px;
@@ -1979,7 +1980,7 @@
 }
 
 .profile-extraction-card .profile-model-location {
-  flex: 1;
+  flex: 1 1 200px;
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -1989,6 +1990,28 @@
 .profile-extraction-card .profile-settings-actions {
   flex: 0 0 auto;
   margin: 0;
+}
+
+.profile-extraction-card .user-profile-header {
+  flex-wrap: wrap;
+}
+
+.profile-extraction-card .profile-enable-actions {
+  margin-left: auto;
+  gap: 16px;
+}
+
+.profile-content-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.profile-extraction-card .profile-labeled-action {
+  width: auto;
+  padding: 0 10px;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .profile-extraction-card .profile-save-button {

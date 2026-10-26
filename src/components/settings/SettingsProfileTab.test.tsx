@@ -41,3 +41,10 @@ it("integrates configuration and profile content in one card", () => {
   expect(sections[0]).toContain("保存设置");
   expect(sections[0]).toContain("尚未形成画像");
 });
+
+it("groups profile operations and distinguishes generation from worker wake-up", () => {
+  const html = renderToStaticMarkup(<SettingsProfileTab />);
+  expect(html).toContain('role="group" aria-label="画像操作"');
+  expect(html).toContain("<span>立即生成</span>");
+  expect(html).toContain("<span>立即唤醒</span>");
+});
