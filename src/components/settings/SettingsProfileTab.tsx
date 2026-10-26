@@ -1,6 +1,7 @@
+import { Tooltip } from "@mantine/core";
 import { DEFAULT_DRAFT, createProfileSettingsDraft } from "../../lib/profileSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, Fingerprint, Loader2, Play, RefreshCw, RotateCcw, Save, Trash2, Zap } from "lucide-react";
+import { ChevronDown, Fingerprint, Loader2, Play, RefreshCw, RotateCcw, Power, PowerOff, Trash2, Zap } from "lucide-react";
 import IconTooltipButton from "../IconTooltipButton";
 import {
   clearUserProfile, deleteProfileFact, generateProfileNow,
@@ -16,13 +17,18 @@ interface SettingsProfileTabProps {
   embedded?: boolean;
 }
 
+export async function saveProfileEnabled(enabled: boolean) {
+  const current = await getProfileSettings();
+  return saveProfileSettings(createProfileSettingsDraft({ ...current, enabled }));
+}
+
 const GENERATE_PROFILE_TIP = "立即生成用户画像";
 
 export default function SettingsProfileTab({ globalMemoryEnabled = true, embedded = false }: SettingsProfileTabProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [settings, setSettings] = useState<ProfileSettingsDraft>(DEFAULT_DRAFT);
   const [status, setStatus] = useState<ProfileProcessingStatus | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [savedEnabled, setSavedEnabled] = useState(false);
@@ -68,12 +74,13 @@ export default function SettingsProfileTab({ globalMemoryEnabled = true, embedde
     }, 3200);
   }
 
-  async function handleSaveSettings() {
+  async function handleToggleEnabled(enabled: boolean) {
+    if (saving || loading) return;
     setSaving(true); setError(""); setNotice("");
     try {
-      const current = await getProfileSettings();
-      const saved = await saveProfileSettings(createProfileSettingsDraft({ ...current, enabled: settings.enabled }));
+      const saved = await saveProfileEnabled(enabled);
       setSettings(saved);
+      setSavedEnabled(saved.enabled);
       setNotice(saved.enabled ? "用户画像已启用，后续消息将在后台低频分析" : "用户画像已关闭，未处理任务已清理");
       await loadProfile();
     } catch (saveError) {
@@ -134,11 +141,19 @@ export default function SettingsProfileTab({ globalMemoryEnabled = true, embedde
       <section className="user-profile-card profile-extraction-card" aria-labelledby="user-profile-title">
         <header className="user-profile-header">
           <div className="user-profile-heading"><span className="user-profile-mark" aria-hidden="true"><Fingerprint size={20} /></span><div><h4 id="user-profile-title">用户画像</h4><p>自动归纳长期偏好，无需逐条审核；长期记忆不会重复进入画像。</p></div></div>
-          <div className="profile-settings-actions profile-enable-actions">          <label className="profile-toggle profile-extraction-toggle"><input type="checkbox" role="switch" aria-label="异步画像提取" checked={settings.enabled} onChange={(event) => { setSettings({ ...settings, enabled: event.currentTarget.checked }); }} /><span className="profile-switch-track" aria-hidden="true" /><span>{settings.enabled ? "已启用" : "已关闭"}</span></label>            <button type="button" className="profile-save-button" onClick={() => void handleSaveSettings()} disabled={saving || (settings.enabled && !settings.model_config_id)}>{saving ? <Loader2 size={16} className="svg-spin" /> : <Save size={16} />}<span>{saving ? "保存中…" : "保存设置"}</span></button></div>
+          <div className="profile-settings-actions profile-enable-actions">
+            <Tooltip label={saving ? "正在保存画像开关" : settings.enabled ? "已启用，点击关闭画像提取" : "已关闭，点击开启画像提取"}>
+            <label className="profile-toggle profile-extraction-toggle">
+              <input type="checkbox" role="switch" aria-label="异步画像提取" checked={settings.enabled} disabled={saving || loading} onChange={(event) => void handleToggleEnabled(event.currentTarget.checked)} />
+              <span className="profile-switch-track" aria-hidden="true" />
+              {saving ? <Loader2 size={16} className="svg-spin" aria-hidden="true" /> : settings.enabled ? <Power size={16} aria-hidden="true" /> : <PowerOff size={16} aria-hidden="true" />}
+            </label>
+            </Tooltip>
+          </div>
         </header>
         <div id="profile-settings-content" className="profile-extraction-controls" aria-label="画像配置">
           <p className="profile-model-location">画像模型在“模型路由”中配置。{!settings.model_config_id && "请先选择画像模型后再启用。"}</p>
-          <div className="profile-header-actions profile-content-actions" role="group" aria-label="画像操作"><IconTooltipButton className="profile-labeled-action" label={generating ? "正在生成用户画像" : generateTip} tooltipOpened={generateTipOpened ? true : undefined} onClick={() => void handleGenerateNow()} disabled={!canProcess || loading || generating}>{generating ? <Loader2 size={16} className="svg-spin" /> : <Play size={16} />}<span>{generating ? "生成中…" : "立即生成"}</span></IconTooltipButton>{status && status.failed_batches + status.blocked_batches > 0 && <IconTooltipButton label="重试异常批次" onClick={() => void handleRetryFailures()} disabled={!canProcess}><RotateCcw size={16} /></IconTooltipButton>}<IconTooltipButton className="profile-labeled-action" label="立即唤醒" onClick={() => void handleRunNow()} disabled={!canProcess || loading}><Zap size={16} /><span>立即唤醒</span></IconTooltipButton><IconTooltipButton label={loading ? "刷新中" : "刷新画像"} onClick={() => void loadProfile()} disabled={loading}><RefreshCw size={16} className={loading ? "svg-spin" : undefined} /></IconTooltipButton><IconTooltipButton label="清空画像" tone="danger" onClick={() => void handleClearProfile()} disabled={!profile?.facts.length}><Trash2 size={16} /></IconTooltipButton><IconTooltipButton className="profile-settings-expand" label={factsExpanded ? "收起条目" : "展开条目"} aria-expanded={factsExpanded} aria-controls="user-profile-facts-content" onClick={() => setFactsExpanded((expanded) => !expanded)} disabled={!profile?.facts.length}><ChevronDown size={17} className={factsExpanded ? "is-expanded" : undefined} aria-hidden="true" /></IconTooltipButton></div>
+          <div className="profile-header-actions profile-content-actions" role="group" aria-label="画像操作"><IconTooltipButton label={generating ? "正在生成用户画像" : generateTip} tooltipOpened={generateTipOpened ? true : undefined} onClick={() => void handleGenerateNow()} disabled={!canProcess || loading || generating}>{generating ? <Loader2 size={16} className="svg-spin" /> : <Play size={16} />}</IconTooltipButton>{status && status.failed_batches + status.blocked_batches > 0 && <IconTooltipButton label="重试异常批次" onClick={() => void handleRetryFailures()} disabled={!canProcess}><RotateCcw size={16} /></IconTooltipButton>}<IconTooltipButton label="立即唤醒" onClick={() => void handleRunNow()} disabled={!canProcess || loading}><Zap size={16} /></IconTooltipButton><IconTooltipButton label={loading ? "刷新中" : "刷新画像"} onClick={() => void loadProfile()} disabled={loading}><RefreshCw size={16} className={loading ? "svg-spin" : undefined} /></IconTooltipButton><IconTooltipButton label="清空画像" tone="danger" onClick={() => void handleClearProfile()} disabled={!profile?.facts.length}><Trash2 size={16} /></IconTooltipButton><IconTooltipButton className="profile-settings-expand" label={factsExpanded ? "收起条目" : "展开条目"} aria-expanded={factsExpanded} aria-controls="user-profile-facts-content" onClick={() => setFactsExpanded((expanded) => !expanded)} disabled={!profile?.facts.length}><ChevronDown size={17} className={factsExpanded ? "is-expanded" : undefined} aria-hidden="true" /></IconTooltipButton></div>
         </div>
         {notice && <p className="profile-notice" role="status">{notice}</p>}
         {error && <p className="user-profile-state user-profile-state--error">{error}</p>}

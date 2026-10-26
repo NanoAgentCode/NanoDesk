@@ -2007,25 +2007,6 @@
   gap: 6px;
 }
 
-.profile-extraction-card .profile-labeled-action {
-  width: auto;
-  padding: 0 10px;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.profile-extraction-card .profile-save-button {
-  padding: 0 12px;
-  border-color: var(--control-primary-border);
-  color: var(--control-primary-text);
-  background: var(--control-primary-bg);
-  white-space: nowrap;
-}
-
-.profile-extraction-card .profile-save-button:hover:not(:disabled) {
-  box-shadow: var(--control-primary-shadow);
-}
-
 .profile-extraction-toggle {
   position: relative;
   flex-shrink: 0;

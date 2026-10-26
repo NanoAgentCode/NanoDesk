@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 vi.mock("@mantine/core", () => ({ Tooltip: ({ children }: any) => children }));
-import SettingsProfileTab from "./SettingsProfileTab";
+import SettingsProfileTab, { saveProfileEnabled } from "./SettingsProfileTab";
 import { createProfileSettingsDraft } from "../../lib/profileSettings";
 
 it("explains automatic profile processing without a review queue", () => {
@@ -38,13 +38,42 @@ it("integrates configuration and profile content in one card", () => {
   expect(sections[0]).toContain('id="user-profile-title"');
   expect(sections[0]).toContain('aria-label="画像配置"');
   expect(sections[0]).toContain("画像模型");
-  expect(sections[0]).toContain("保存设置");
-  expect(sections[0]).toContain("尚未形成画像");
+  expect(sections[0]).not.toContain("保存设置");
+  expect(sections[0]).toContain("正在读取画像");
 });
 
 it("groups profile operations and distinguishes generation from worker wake-up", () => {
   const html = renderToStaticMarkup(<SettingsProfileTab />);
   expect(html).toContain('role="group" aria-label="画像操作"');
-  expect(html).toContain("<span>立即生成</span>");
-  expect(html).toContain("<span>立即唤醒</span>");
+  expect(html).toContain('aria-label="立即生成用户画像"');
+  expect(html).not.toContain("<span>立即生成</span>");
+  expect(html).toContain('aria-label="立即唤醒"');
+  expect(html).not.toContain("<span>立即唤醒</span>");
+});
+
+vi.mock("../../api", async importOriginal => ({
+  ...await importOriginal<typeof import("../../api")>(),
+  getProfileSettings: vi.fn(), saveProfileSettings: vi.fn()
+}));
+import { getProfileSettings, saveProfileSettings } from "../../api";
+import { DEFAULT_DRAFT } from "../../lib/profileSettings";
+
+it.each([true, false])("automatically persists the switch value (%s) with the latest model", async enabled => {
+  vi.mocked(getProfileSettings).mockResolvedValue({ ...DEFAULT_DRAFT, enabled: !enabled, model_config_id: "latest-model" } as Awaited<ReturnType<typeof getProfileSettings>>);
+  vi.mocked(saveProfileSettings).mockResolvedValue({ ...DEFAULT_DRAFT, enabled, model_config_id: "latest-model" } as Awaited<ReturnType<typeof saveProfileSettings>>);
+  expect((await saveProfileEnabled(enabled)).enabled).toBe(enabled);
+  expect(saveProfileSettings).toHaveBeenLastCalledWith({ ...DEFAULT_DRAFT, enabled, model_config_id: "latest-model" });
+});
+
+it("propagates save errors so the switch keeps its last saved state", async () => {
+  vi.mocked(saveProfileSettings).mockRejectedValueOnce(new Error("save failed"));
+  await expect(saveProfileEnabled(true)).rejects.toThrow("save failed");
+});
+
+it("uses a status icon beside the switch instead of a text label", () => {
+  const html = renderToStaticMarkup(<SettingsProfileTab />);
+  expect(html).toContain("lucide-power-off");
+  expect(html).toContain('role="switch"');
+  expect(html).not.toContain("<span>已关闭</span>");
+  expect(html).not.toContain("<span>已启用</span>");
 });
