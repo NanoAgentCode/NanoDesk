@@ -1964,6 +1964,98 @@
   background: var(--bg-pane);
 }
 
+.profile-extraction-card .profile-extraction-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.profile-extraction-card .profile-extraction-model {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.profile-extraction-card .profile-settings-actions {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.profile-extraction-card .profile-save-button {
+  padding: 0 12px;
+  border-color: var(--control-primary-border);
+  color: var(--control-primary-text);
+  background: var(--control-primary-bg);
+  white-space: nowrap;
+}
+
+.profile-extraction-card .profile-save-button:hover:not(:disabled) {
+  box-shadow: var(--control-primary-shadow);
+}
+
+.profile-extraction-toggle {
+  position: relative;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.profile-extraction-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.profile-switch-track {
+  display: inline-flex;
+  align-items: center;
+  width: 32px;
+  height: 19px;
+  padding: 2px;
+  border-radius: 12px;
+  background: var(--border-color);
+  transition: background 160ms ease;
+}
+
+.profile-switch-track::after {
+  content: "";
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  box-shadow: 0 1px 3px #0002;
+  transition: transform 160ms ease;
+}
+
+.profile-extraction-toggle input:checked + .profile-switch-track {
+  background: var(--accent-blue);
+}
+
+.profile-extraction-toggle input:checked + .profile-switch-track::after {
+  transform: translateX(13px);
+}
+
+.profile-extraction-toggle input:focus-visible + .profile-switch-track {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 3px;
+}
+
+@media (max-width: 520px) {
+  .profile-extraction-card .profile-extraction-controls {
+    flex-wrap: wrap;
+  }
+
+  .profile-extraction-card .profile-extraction-model {
+    flex-basis: 100%;
+  }
+
+  .profile-extraction-card .profile-settings-actions {
+    margin-left: auto;
+  }
+}
+
 .profile-data-flow-notice {
   margin-top: 12px;
   padding: 10px 12px;

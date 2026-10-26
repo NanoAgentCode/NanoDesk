@@ -145,25 +145,25 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
       {!embedded && <h3>用户画像</h3>}
       <p className="description">用户画像由后台自动归纳。全局记忆与异步提取均开启时，才会读取和更新画像。</p>
 
-      <section className="profile-settings-card" aria-labelledby="profile-settings-title">
+      <section className="profile-settings-card profile-extraction-card" aria-labelledby="profile-settings-title">
         <div className="profile-settings-title-row">
           <div className="profile-settings-summary">
-            <div><h4 id="profile-settings-title">异步画像提取</h4><p>按字符、观察数或时间批量交给模型判断并自动更新，无需逐条审核；长期记忆不会重复进入画像。</p></div>
+            <div><h4 id="profile-settings-title">异步画像提取</h4><p>自动归纳长期偏好，无需逐条审核；长期记忆不会重复进入画像。</p></div>
           </div>
-          <div className="profile-header-actions"><label className="profile-toggle"><input type="checkbox" checked={settings.enabled} onChange={(event) => { setSettings({ ...settings, enabled: event.currentTarget.checked }); }} /><span>{settings.enabled ? "启用" : "关闭"}</span></label></div>
+          <div className="profile-header-actions"><label className="profile-toggle profile-extraction-toggle"><input type="checkbox" role="switch" aria-label="异步画像提取" checked={settings.enabled} onChange={(event) => { setSettings({ ...settings, enabled: event.currentTarget.checked }); }} /><span className="profile-switch-track" aria-hidden="true" /><span>{settings.enabled ? "已启用" : "已关闭"}</span></label></div>
         </div>
 
-        <div id="profile-settings-content">
-          <div className="profile-settings-grid">
+        <div id="profile-settings-content" className="profile-extraction-controls">
+          <div className="profile-settings-grid profile-extraction-model">
             <label><span>画像模型</span><select value={settings.model_config_id || ""} onChange={(event) => setSettings({ ...settings, model_config_id: event.currentTarget.value || null })}><option value="">请选择聊天模型</option>{models.map((model) => <option key={model.id} value={model.id}>{model.name} · {model.model}</option>)}</select></label>
           </div>
           <div className="profile-settings-actions">
             {status && status.failed_batches + status.blocked_batches > 0 && <IconTooltipButton label="重试异常批次" onClick={() => void handleRetryFailures()} disabled={!canProcess}><RotateCcw size={16} /></IconTooltipButton>}
             <IconTooltipButton label="立即唤醒" onClick={() => void handleRunNow()} disabled={!canProcess || loading}><Play size={16} /></IconTooltipButton>
-            <IconTooltipButton label={saving ? "保存中" : "保存设置"} tone="success" onClick={() => void handleSaveSettings()} disabled={saving || (settings.enabled && !settings.model_config_id)}>{saving ? <Loader2 size={16} className="svg-spin" /> : <Save size={16} />}</IconTooltipButton>
+            <button type="button" className="profile-save-button" onClick={() => void handleSaveSettings()} disabled={saving || (settings.enabled && !settings.model_config_id)}>{saving ? <Loader2 size={16} className="svg-spin" /> : <Save size={16} />}<span>{saving ? "保存中…" : "保存设置"}</span></button>
           </div>
-          {notice && <p className="profile-notice">{notice}</p>}
         </div>
+        {notice && <p className="profile-notice" role="status">{notice}</p>}
         {error && <p className="user-profile-state user-profile-state--error">{error}</p>}
       </section>
 
