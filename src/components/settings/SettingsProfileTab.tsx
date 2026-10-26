@@ -101,7 +101,7 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
   }
 
   async function handleClearProfile() {
-    if (!(await confirmAction("清空全部用户画像及画像来源？普通手工记忆不会被删除。"))) return;
+    if (!(await confirmAction("清空全部用户画像及画像来源？普通长期记忆不会被删除。"))) return;
     await clearUserProfile();
     await loadProfile();
   }
@@ -145,7 +145,7 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
       <section className="profile-settings-card" aria-labelledby="profile-settings-title">
         <div className="profile-settings-title-row">
           <div className="profile-settings-summary">
-            <div><h4 id="profile-settings-title">异步画像提取</h4><p>按字符、观察数或时间批量交给模型判断并自动更新，无需逐条审核；手工记忆不会重复进入画像。</p></div>
+            <div><h4 id="profile-settings-title">异步画像提取</h4><p>按字符、观察数或时间批量交给模型判断并自动更新，无需逐条审核；长期记忆不会重复进入画像。</p></div>
           </div>
           <div className="profile-header-actions"><label className="profile-toggle"><input type="checkbox" checked={settings.enabled} onChange={(event) => { setSettings({ ...settings, enabled: event.currentTarget.checked }); setSettingsExpanded(true); }} /><span>{settings.enabled ? "启用" : "关闭"}</span></label><IconTooltipButton className="profile-settings-expand" label={settingsExpanded ? "折叠配置" : "展开配置"} aria-expanded={settingsExpanded} aria-controls="profile-settings-content" onClick={() => setSettingsExpanded((expanded) => !expanded)}><ChevronDown size={17} className={settingsExpanded ? "is-expanded" : undefined} aria-hidden="true" /></IconTooltipButton></div>
         </div>

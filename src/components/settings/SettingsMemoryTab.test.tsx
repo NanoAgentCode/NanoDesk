@@ -8,7 +8,7 @@ vi.mock("@mantine/core", () => ({
   Tooltip: ({ children }: any) => children
 }));
 vi.mock("./SettingsProfileTab", () => ({ default: () => <div>画像内容</div> }));
-vi.mock("../WorkspaceGrid", () => ({ default: () => <div>手工记忆编辑器</div> }));
+vi.mock("../WorkspaceGrid", () => ({ default: () => <div>长期记忆编辑器</div> }));
 import SettingsMemoryTab from "./SettingsMemoryTab";
 
 it("provides independent native disclosures with mounted content and expanded defaults", () => {
@@ -17,7 +17,7 @@ it("provides independent native disclosures with mounted content and expanded de
   expect(sections).toHaveLength(2);
   expect(sections[0]).toMatch(/<summary[^>]*>[\s\S]*用户画像[\s\S]*<\/summary>/);
   expect(sections[0]).toContain("画像内容");
-  expect(sections[1]).toMatch(/<summary[^>]*>[\s\S]*手工记忆[\s\S]*<\/summary>/);
-  expect(sections[1]).toContain("手工记忆编辑器");
+  expect(sections[1]).toMatch(/<summary[^>]*>[\s\S]*长期记忆[\s\S]*<\/summary>/);
+  expect(sections[1]).toContain("长期记忆编辑器");
   expect(sections[1].split("</summary>")[1]).toContain('aria-label="查看记忆语义索引说明"');
 });
