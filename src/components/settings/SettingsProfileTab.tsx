@@ -1,39 +1,27 @@
+import { DEFAULT_DRAFT, createProfileSettingsDraft } from "../../lib/profileSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, Fingerprint, Loader2, Play, RefreshCw, RotateCcw, Save, Trash2 } from "lucide-react";
 import IconTooltipButton from "../IconTooltipButton";
 import {
   clearUserProfile, deleteProfileFact, generateProfileNow,
   getProfileProcessingStatus, getProfileSettings, getUserProfile,
-  listModelConfigs, retryProfileFailures, runProfileWorkerNow,
+  retryProfileFailures, runProfileWorkerNow,
   saveProfileSettings
 } from "../../api";
 import { confirmAction } from "../../lib/dialogs";
-import { isChatModel } from "../../lib/modelCapabilities";
-import type { ModelConfig, ProfileProcessingStatus, ProfileSettingsDraft, UserProfile } from "../../types";
+import type { ProfileProcessingStatus, ProfileSettingsDraft, UserProfile } from "../../types";
 
 interface SettingsProfileTabProps {
-  activeModelId?: string;
   globalMemoryEnabled?: boolean;
   embedded?: boolean;
 }
 
-const DEFAULT_DRAFT: ProfileSettingsDraft = {
-  enabled: false, model_config_id: null, character_threshold: 3000, idle_seconds: 1800,
-  max_wait_seconds: 86400, long_input_threshold: 8000, rolling_hour_attempt_limit: 2,
-  rolling_day_attempt_limit: 8, rolling_day_candidate_character_limit: 30000
-};
-
-export function createProfileSettingsDraft(settings: Pick<ProfileSettingsDraft, "enabled" | "model_config_id">): ProfileSettingsDraft {
-  return { ...DEFAULT_DRAFT, enabled: settings.enabled, model_config_id: settings.model_config_id };
-}
-
 const GENERATE_PROFILE_TIP = "立即生成用户画像";
 
-export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled = true, embedded = false }: SettingsProfileTabProps) {
+export default function SettingsProfileTab({ globalMemoryEnabled = true, embedded = false }: SettingsProfileTabProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [settings, setSettings] = useState<ProfileSettingsDraft>(DEFAULT_DRAFT);
   const [status, setStatus] = useState<ProfileProcessingStatus | null>(null);
-  const [models, setModels] = useState<ModelConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -50,22 +38,19 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
     setLoading(true);
     setError("");
     try {
-      const [nextProfile, nextSettings, nextStatus, allModels] = await Promise.all([
-        getUserProfile(), getProfileSettings(), getProfileProcessingStatus(),
-        listModelConfigs()
+      const [nextProfile, nextSettings, nextStatus] = await Promise.all([
+        getUserProfile(), getProfileSettings(), getProfileProcessingStatus()
       ]);
-      const chatModels = allModels.filter(isChatModel);
       setProfile(nextProfile);
       setStatus(nextStatus);
       setSavedEnabled(nextSettings.enabled);
-      setModels(chatModels);
-      setSettings({ ...createProfileSettingsDraft(nextSettings), model_config_id: nextSettings.model_config_id || activeModelId || chatModels[0]?.id || null });
+      setSettings(createProfileSettingsDraft(nextSettings));
     } catch (loadError) {
       setError(String(loadError));
     } finally {
       setLoading(false);
     }
-  }, [activeModelId]);
+  }, []);
 
   useEffect(() => { void loadProfile(); }, [loadProfile]);
   useEffect(() => () => {
@@ -86,7 +71,8 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
   async function handleSaveSettings() {
     setSaving(true); setError(""); setNotice("");
     try {
-      const saved = await saveProfileSettings(createProfileSettingsDraft(settings));
+      const current = await getProfileSettings();
+      const saved = await saveProfileSettings(createProfileSettingsDraft({ ...current, enabled: settings.enabled }));
       setSettings(saved);
       setNotice(saved.enabled ? "用户画像已启用，后续消息将在后台低频分析" : "用户画像已关闭，未处理任务已清理");
       await loadProfile();
@@ -152,9 +138,7 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
         </header>
         <div id="profile-settings-content" className="profile-extraction-controls" aria-label="画像配置">
           <label className="profile-toggle profile-extraction-toggle"><input type="checkbox" role="switch" aria-label="异步画像提取" checked={settings.enabled} onChange={(event) => { setSettings({ ...settings, enabled: event.currentTarget.checked }); }} /><span className="profile-switch-track" aria-hidden="true" /><span>{settings.enabled ? "已启用" : "已关闭"}</span></label>
-          <div className="profile-settings-grid profile-extraction-model">
-            <label><span>画像模型</span><select value={settings.model_config_id || ""} onChange={(event) => setSettings({ ...settings, model_config_id: event.currentTarget.value || null })}><option value="">请选择聊天模型</option>{models.map((model) => <option key={model.id} value={model.id}>{model.name} · {model.model}</option>)}</select></label>
-          </div>
+          <p className="profile-model-location">画像模型在“模型路由”中配置。{!settings.model_config_id && "请先选择画像模型后再启用。"}</p>
           <div className="profile-settings-actions">
             {status && status.failed_batches + status.blocked_batches > 0 && <IconTooltipButton label="重试异常批次" onClick={() => void handleRetryFailures()} disabled={!canProcess}><RotateCcw size={16} /></IconTooltipButton>}
             <IconTooltipButton label="立即唤醒" onClick={() => void handleRunNow()} disabled={!canProcess || loading}><Play size={16} /></IconTooltipButton>

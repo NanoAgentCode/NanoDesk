@@ -42,7 +42,7 @@ export default function SettingsMemoryTab({ workspace, memory, workspaceRef, act
       </section>
       <details className="memory-section" open>
         <summary className="memory-section-toggle"><h4>用户画像</h4><ChevronDown size={17} aria-hidden="true" /></summary>
-        <SettingsProfileTab activeModelId={activeModelId} globalMemoryEnabled={enabled === true} embedded />
+        <SettingsProfileTab globalMemoryEnabled={enabled === true} embedded />
       </details>
       <details className="memory-section" open>
         <summary className="memory-section-toggle"><h4>长期记忆</h4><ChevronDown size={17} aria-hidden="true" /></summary>

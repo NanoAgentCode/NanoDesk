@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 vi.mock("@mantine/core", () => ({ Tooltip: ({ children }: any) => children }));
-import SettingsProfileTab, { createProfileSettingsDraft } from "./SettingsProfileTab";
+import SettingsProfileTab from "./SettingsProfileTab";
+import { createProfileSettingsDraft } from "../../lib/profileSettings";
 
 it("explains automatic profile processing without a review queue", () => {
   const html = renderToStaticMarkup(<SettingsProfileTab />);
@@ -11,9 +12,10 @@ it("explains automatic profile processing without a review queue", () => {
   expect(html).not.toContain("加入画像");
 });
 
-it("shows only the enable switch and model configuration", () => {
+it("keeps the enable switch and directs model configuration to routing", () => {
   const html = renderToStaticMarkup(<SettingsProfileTab />);
-  expect(html).toContain("画像模型");
+  expect(html).toContain("画像模型在“模型路由”中配置");
+  expect(html).not.toContain("<select");
   expect(html.match(/type="checkbox"/g)).toHaveLength(1);
   expect(html).not.toContain('type="number"');
   expect(html).not.toContain("展开配置");

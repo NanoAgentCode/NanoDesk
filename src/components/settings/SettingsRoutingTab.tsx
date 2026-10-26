@@ -1,3 +1,4 @@
+import SettingsProfileModelCard from "./SettingsProfileModelCard";
 import { Activity, Loader2 } from "lucide-react";
 import { Paper, SimpleGrid, Text } from "@mantine/core";
 import type { UseModelReturn } from "../../hooks/useModel";
@@ -27,7 +28,7 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
       <div className="model-header-row">
         <div>
           <h3>模型路由</h3>
-          <p className="description description--tight">统一分配供应商模型的固定、智能、兜底、嵌入和语音识别用途。</p>
+          <p className="description description--tight">统一分配供应商模型的固定、智能、兜底、嵌入、语音识别和用户画像用途。</p>
         </div>
         <ModelRoutingSelector routing={model.routing} disabled={chatModels.length === 0} />
       </div>
@@ -105,9 +106,10 @@ export default function SettingsRoutingTab({ model }: SettingsRoutingTabProps) {
         </Paper>
       </SimpleGrid>
 
-      <div style={{ order: 4, marginBottom: 16 }}>
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="md" style={{ order: 4 }}>
         <SettingsAsrModelCard model={model} />
-      </div>
+        <SettingsProfileModelCard model={model} />
+      </SimpleGrid>
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="lg" style={{ order: 1 }}>
         {ROUTING_STRATEGY_OPTIONS.map((option) => {
