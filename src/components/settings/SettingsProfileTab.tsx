@@ -23,6 +23,10 @@ const DEFAULT_DRAFT: ProfileSettingsDraft = {
   rolling_day_attempt_limit: 8, rolling_day_candidate_character_limit: 30000
 };
 
+export function createProfileSettingsDraft(settings: Pick<ProfileSettingsDraft, "enabled" | "model_config_id">): ProfileSettingsDraft {
+  return { ...DEFAULT_DRAFT, enabled: settings.enabled, model_config_id: settings.model_config_id };
+}
+
 const GENERATE_PROFILE_TIP = "立即生成用户画像";
 
 export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled = true, embedded = false }: SettingsProfileTabProps) {
@@ -35,7 +39,6 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
   const [generating, setGenerating] = useState(false);
   const [savedEnabled, setSavedEnabled] = useState(false);
   const canProcess = savedEnabled && globalMemoryEnabled;
-  const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [factsExpanded, setFactsExpanded] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -56,7 +59,7 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
       setStatus(nextStatus);
       setSavedEnabled(nextSettings.enabled);
       setModels(chatModels);
-      setSettings({ ...nextSettings, model_config_id: nextSettings.model_config_id || activeModelId || chatModels[0]?.id || null });
+      setSettings({ ...createProfileSettingsDraft(nextSettings), model_config_id: nextSettings.model_config_id || activeModelId || chatModels[0]?.id || null });
     } catch (loadError) {
       setError(String(loadError));
     } finally {
@@ -83,7 +86,7 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
   async function handleSaveSettings() {
     setSaving(true); setError(""); setNotice("");
     try {
-      const saved = await saveProfileSettings(settings);
+      const saved = await saveProfileSettings(createProfileSettingsDraft(settings));
       setSettings(saved);
       setNotice(saved.enabled ? "用户画像已启用，后续消息将在后台低频分析" : "用户画像已关闭，未处理任务已清理");
       await loadProfile();
@@ -147,19 +150,12 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
           <div className="profile-settings-summary">
             <div><h4 id="profile-settings-title">异步画像提取</h4><p>按字符、观察数或时间批量交给模型判断并自动更新，无需逐条审核；长期记忆不会重复进入画像。</p></div>
           </div>
-          <div className="profile-header-actions"><label className="profile-toggle"><input type="checkbox" checked={settings.enabled} onChange={(event) => { setSettings({ ...settings, enabled: event.currentTarget.checked }); setSettingsExpanded(true); }} /><span>{settings.enabled ? "启用" : "关闭"}</span></label><IconTooltipButton className="profile-settings-expand" label={settingsExpanded ? "折叠配置" : "展开配置"} aria-expanded={settingsExpanded} aria-controls="profile-settings-content" onClick={() => setSettingsExpanded((expanded) => !expanded)}><ChevronDown size={17} className={settingsExpanded ? "is-expanded" : undefined} aria-hidden="true" /></IconTooltipButton></div>
+          <div className="profile-header-actions"><label className="profile-toggle"><input type="checkbox" checked={settings.enabled} onChange={(event) => { setSettings({ ...settings, enabled: event.currentTarget.checked }); }} /><span>{settings.enabled ? "启用" : "关闭"}</span></label></div>
         </div>
 
-        {settingsExpanded && <div id="profile-settings-content">
+        <div id="profile-settings-content">
           <div className="profile-settings-grid">
             <label><span>画像模型</span><select value={settings.model_config_id || ""} onChange={(event) => setSettings({ ...settings, model_config_id: event.currentTarget.value || null })}><option value="">请选择聊天模型</option>{models.map((model) => <option key={model.id} value={model.id}>{model.name} · {model.model}</option>)}</select></label>
-            <label><span>候选字符触发</span><input type="number" min={500} max={50000} value={settings.character_threshold} onChange={(event) => setSettings({ ...settings, character_threshold: Number(event.currentTarget.value) })} /></label>
-            <label><span>空闲触发（分钟）</span><input type="number" min={1} max={1440} value={Math.round(settings.idle_seconds / 60)} onChange={(event) => setSettings({ ...settings, idle_seconds: Number(event.currentTarget.value) * 60 })} /></label>
-            <label><span>最长等待（小时）</span><input type="number" min={1} max={168} value={Math.round(settings.max_wait_seconds / 3600)} onChange={(event) => setSettings({ ...settings, max_wait_seconds: Number(event.currentTarget.value) * 3600 })} /></label>
-            <label><span>超长输入阈值</span><input type="number" min={2000} max={100000} value={settings.long_input_threshold} onChange={(event) => setSettings({ ...settings, long_input_threshold: Number(event.currentTarget.value) })} /></label>
-            <label><span>每小时最多调用</span><input type="number" min={1} max={60} value={settings.rolling_hour_attempt_limit} onChange={(event) => setSettings({ ...settings, rolling_hour_attempt_limit: Number(event.currentTarget.value) })} /></label>
-            <label><span>每天最多调用</span><input type="number" min={1} max={500} value={settings.rolling_day_attempt_limit} onChange={(event) => setSettings({ ...settings, rolling_day_attempt_limit: Number(event.currentTarget.value) })} /></label>
-            <label><span>每天候选字符预算</span><input type="number" min={12000} max={2000000} value={settings.rolling_day_candidate_character_limit} onChange={(event) => setSettings({ ...settings, rolling_day_candidate_character_limit: Number(event.currentTarget.value) })} /></label>
           </div>
           <div className="profile-settings-actions">
             {status && status.failed_batches + status.blocked_batches > 0 && <IconTooltipButton label="重试异常批次" onClick={() => void handleRetryFailures()} disabled={!canProcess}><RotateCcw size={16} /></IconTooltipButton>}
@@ -167,7 +163,7 @@ export default function SettingsProfileTab({ activeModelId, globalMemoryEnabled 
             <IconTooltipButton label={saving ? "保存中" : "保存设置"} tone="success" onClick={() => void handleSaveSettings()} disabled={saving || (settings.enabled && !settings.model_config_id)}>{saving ? <Loader2 size={16} className="svg-spin" /> : <Save size={16} />}</IconTooltipButton>
           </div>
           {notice && <p className="profile-notice">{notice}</p>}
-        </div>}
+        </div>
         {error && <p className="user-profile-state user-profile-state--error">{error}</p>}
       </section>
 
