@@ -74,5 +74,5 @@ for path,name,params,args,async_,fallible in entries:
  header+=f'        "{name}" => Ok(serde_json::to_value(crate::{path}({", ".join(args)})'+('.await' if async_ else '')+('?' if fallible else '')+')?),\n'
 header+='        _ => unreachable!(),\n    }\n}\n\n#[cfg(test)]\n#[path = "business_tests.rs"]\nmod tests;\n'
 (root/'cli/business.rs').write_text(header,encoding='utf-8')
-Path('docs/cli-command-coverage.json').write_text(__import__('json').dumps({'shared':[p for p,*_ in entries],'pending_or_native':[{'command':p,'reason':reason} for p,reason in excluded]},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+Path('docs/05-开发运维/cli-command-coverage.json').write_text(__import__('json').dumps({'shared':[p for p,*_ in entries],'pending_or_native':[{'command':p,'reason':reason} for p,reason in excluded]},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 print(f'{len(entries)} shared commands, {len(excluded)} require native/event adapters or exclusion.')
