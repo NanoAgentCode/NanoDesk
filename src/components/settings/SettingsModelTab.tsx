@@ -9,8 +9,8 @@ interface Props { model: UseModelReturn; setShowModelConfig: (show: boolean) => 
 const emptySupplier = { name: "OpenAI", provider: "openai-compatible", base_url: "https://api.openai.com/v1", api_key: "" };
 
 export function shouldAutoSaveSupplierApiKey(draft: ModelSupplierDraft, suppliers: ModelSupplier[]) {
-  if (!draft.name.trim() || !draft.provider.trim() || !draft.base_url.trim() || !draft.api_key.trim()) return false;
-  if (!draft.id) return true;
+  if (!draft.name.trim() || !draft.provider.trim() || !draft.base_url.trim()) return false;
+  if (!draft.id) return Boolean(draft.api_key.trim());
   const saved = suppliers.find((supplier) => supplier.id === draft.id);
   return Boolean(saved && saved.api_key !== draft.api_key);
 }
@@ -70,7 +70,7 @@ export default function SettingsModelTab({ model }: Props) {
       <TextInput label="供应商名称" value={model.supplierDraft.name} onChange={(e) => model.setSupplierDraft({ ...model.supplierDraft, name: e.currentTarget.value })} />
       <Select label="协议类型" value={model.supplierDraft.provider} data={[{ value: "openai-compatible", label: "OpenAI 兼容协议" }, { value: "anthropic", label: "Anthropic 兼容协议" }]} allowDeselect={false} onChange={(provider) => provider && model.setSupplierDraft({ ...model.supplierDraft, provider })} />
       <TextInput className="model-field--wide" label="接口地址" value={model.supplierDraft.base_url} onChange={(e) => model.setSupplierDraft({ ...model.supplierDraft, base_url: e.currentTarget.value })} />
-      <PasswordInput className="model-field--wide" label="API Key" value={model.supplierDraft.api_key} onChange={(e) => model.setSupplierDraft({ ...model.supplierDraft, api_key: e.currentTarget.value })} />
+      <PasswordInput className="model-field--wide" label="API Key（可选）" value={model.supplierDraft.api_key} onChange={(e) => model.setSupplierDraft({ ...model.supplierDraft, api_key: e.currentTarget.value })} />
     </div><div className="modal-actions icon-actions icon-actions-bar"><div className="status-spacer" />
       <Tooltip label={model.supplierDraft.id ? supplierModelsTooltip(model.supplierDraft.id) : "请先保存供应商"} multiline w={420} position="top">
         <span className="icon-tooltip-target">

@@ -13,9 +13,23 @@ const saved: ModelSupplier = {
 };
 
 describe("supplier API key auto save", () => {
-  it("does not save an unchanged or empty key", () => {
+  it("does not save an unchanged key", () => {
     expect(shouldAutoSaveSupplierApiKey(saved, [saved])).toBe(false);
-    expect(shouldAutoSaveSupplierApiKey({ ...saved, api_key: "" }, [saved])).toBe(false);
+    expect(shouldAutoSaveSupplierApiKey({ ...saved, api_key: "" }, [{ ...saved, api_key: "" }])).toBe(false);
+  });
+
+  it("saves when an existing supplier key is cleared", () => {
+    expect(shouldAutoSaveSupplierApiKey({ ...saved, api_key: "" }, [saved])).toBe(true);
+  });
+
+  it("does not automatically create a supplier from an empty key form", () => {
+    expect(shouldAutoSaveSupplierApiKey({ ...saved, id: undefined, api_key: "" }, [])).toBe(false);
+  });
+
+  it("still requires the other connection fields for auto save", () => {
+    for (const field of ["name", "provider", "base_url"] as const) {
+      expect(shouldAutoSaveSupplierApiKey({ ...saved, [field]: " ", api_key: "" }, [saved])).toBe(false);
+    }
   });
 
   it("saves a changed key and a complete new supplier", () => {

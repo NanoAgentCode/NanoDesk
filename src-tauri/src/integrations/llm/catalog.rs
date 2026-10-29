@@ -5,15 +5,59 @@ use super::{
 use crate::error::{AppError, AppResult};
 use crate::models::{AvailableModelInfo, ModelConfigDraft};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    #[tokio::test]
+    async fn lists_models_without_api_key_on_ip_address() {
+        for provider in ["openai-compatible", "anthropic"] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline, "no model list request received");
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("{error}"),
+                    }
+                };
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                }
+                let request = String::from_utf8(request).unwrap().to_ascii_lowercase();
+                assert!(request.starts_with("get /v1/models"));
+                assert!(!request.contains("authorization:"));
+                assert!(!request.contains("x-api-key:"));
+                let body = r#"{"data":[{"id":"test-model"}]}"#;
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            });
+            let draft = serde_json::from_value(serde_json::json!({
+                "name": "No authentication", "provider": provider,
+                "base_url": format!("http://{address}/v1"), "model": "test-model", "api_key": ""
+            })).unwrap();
+            let models = list_available_models(&draft).await.unwrap();
+            server.join().unwrap();
+            assert_eq!(models[0].id, "test-model");
+        }
+    }
+}
+
 pub async fn list_available_models(draft: &ModelConfigDraft) -> AppResult<Vec<AvailableModelInfo>> {
     let base_url = draft.base_url.trim();
     if base_url.is_empty() {
         return Err(AppError::Message("模型接口地址不能为空".to_string()));
     }
-    if draft.api_key.trim().is_empty() && !base_url.contains("localhost") {
-        return Err(AppError::Message("请先填写 API Key".to_string()));
-    }
-
     let endpoint = model_list_endpoint(&draft.provider, base_url);
     let client = reqwest::Client::new();
     let mut builder = client.get(endpoint).header("accept", "application/json");
