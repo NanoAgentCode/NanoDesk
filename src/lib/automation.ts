@@ -4,6 +4,7 @@ export type AutomationTrigger =
   | { kind: "daily"; hour: number; minute: number; utc_offset_minutes: number }
   | { kind: "files"; recursive: boolean; debounce_seconds: number };
 export type AutomationAction =
+  | { kind: "goal"; model_config_id: string; objective: string; completion_criteria: string }
   | { kind: "ai"; model_config_id: string; prompt: string; context_files: string[] }
   | { kind: "command"; command: string };
 export interface AutomationDraft {
@@ -19,6 +20,7 @@ export interface AutomationDraft {
   budget?: import("./taskBudget").TaskBudget | null;
 }
 export interface Automation {
+  goal?: { conversation_id: string | null; status: "active" | "blocked" | "completed"; summary: string; next_step: string; evidence: string; rounds: number; stalled_rounds: number } | null;
   id: string;
   config: AutomationDraft;
   next_due: number | null;

@@ -133,6 +133,15 @@ impl AutomationStore {
             .to_string_lossy()
             .into();
         let previous = config.id.as_deref().map(|id| self.get(id)).transpose()?;
+        if let Some(previous) = &previous {
+            if previous.goal.as_ref().is_some_and(|g| g.status == "completed") {
+                return Err("目标已完成，请创建新目标。".into());
+            }
+            if previous.goal.as_ref().is_some_and(|g| g.conversation_id.is_some())
+                && (previous.config.project_path != config.project_path || !matches!(config.action, Action::Goal { .. })) {
+                return Err("已有执行进度的长期目标不能变更工作目录或任务类型。".into());
+            }
+        }
         if previous
             .as_ref()
             .is_some_and(|job| self.active(&job.id).unwrap_or(true))
@@ -153,6 +162,9 @@ impl AutomationStore {
             _ => None,
         };
         let job = Automation {
+            goal: if matches!(config.action, Action::Goal { .. }) {
+                previous.as_ref().and_then(|j| j.goal.clone()).or_else(|| Some(GoalProgress { status: "active".into(), ..Default::default() }))
+            } else { None },
             id,
             next_due: initial_due(&config.trigger, now)?,
             config,
@@ -167,6 +179,10 @@ impl AutomationStore {
     }
     pub fn set_enabled(&mut self, id: &str, enabled: bool) -> AppResult<()> {
         let mut job = self.get(id)?;
+        if enabled && job.goal.as_ref().is_some_and(|g| g.status == "completed") {
+            return Err("目标已完成；如需继续工作，请创建新目标。".into());
+        }
+        if enabled { if let Some(goal) = &mut job.goal { goal.status = "active".into(); goal.stalled_rounds = 0; } }
         job.config.enabled = enabled;
         if enabled
             && job.config.missed_policy == MissedPolicy::Skip
@@ -229,6 +245,9 @@ impl AutomationStore {
         if !job.config.enabled {
             return Err("请先启用任务。".into());
         }
+        if job.goal.as_ref().is_some_and(|g| g.status != "active") {
+            return Err("请先恢复长期目标。".into());
+        }
         if self.active(id)? {
             return Err("此任务已有待执行、执行中或待恢复记录。".into());
         }
@@ -268,7 +287,7 @@ impl AutomationStore {
         snapshot: Option<BTreeMap<String, FileStamp>>,
     ) -> AppResult<()> {
         let mut job = self.get(id)?;
-        if !job.config.enabled {
+        if !job.config.enabled || job.goal.as_ref().is_some_and(|g| g.status != "active") {
             return Ok(());
         }
         let previous_state = serde_json::to_string(&job)?;
@@ -395,6 +414,25 @@ impl AutomationStore {
         if run.status != "running" {
             return Err("任务记录不在执行状态。".into());
         }
+        let mut job = self.get(&run.automation_id)?;
+        let result = if matches!(run.config.action, Action::Goal { .. }) {
+            result.and_then(|output| {
+                let checkpoint = super::goal::parse_checkpoint(&output).map_err(|e| e.to_string())?;
+                let goal = job.goal.as_mut().ok_or("长期目标缺少进度记录")?;
+                if checkpoint.status == "active" && goal.summary == checkpoint.summary && goal.next_step == checkpoint.next_step && goal.evidence == checkpoint.evidence {
+                    goal.stalled_rounds += 1;
+                } else { goal.stalled_rounds = 0; }
+                goal.status = if goal.stalled_rounds >= 3 { "blocked".into() } else { checkpoint.status };
+                goal.summary = checkpoint.summary;
+                goal.next_step = checkpoint.next_step;
+                if goal.stalled_rounds >= 3 { goal.next_step = format!("连续三次未更新进度，请检查并补充要求。原下一步：{}", goal.next_step); }
+                goal.evidence = checkpoint.evidence;
+                goal.rounds += 1;
+                if goal.status != "active" { job.config.enabled = false; }
+                if goal.status == "completed" { job.next_due = None; }
+                Ok(output)
+            })
+        } else { result };
         match result {
             Ok(output) => {
                 run.status = "completed".into();
@@ -403,6 +441,7 @@ impl AutomationStore {
                 run.completed_at = Some(now);
             }
             Err(error) => {
+                if let Some(goal) = &mut job.goal { goal.status = "blocked".into(); job.config.enabled = false; }
                 run.error = Some(error);
                 let enabled = self.get(&run.automation_id)?.config.enabled;
                 if enabled && run.attempts <= run.config.max_retries {
@@ -414,7 +453,25 @@ impl AutomationStore {
                 }
             }
         }
-        self.put_run(&run)
+        // Progress and the occurrence outcome commit together; a restart sees both or neither.
+        let tx = self.conn.transaction()?;
+        tx.execute("UPDATE automation_runs SET status=?2,available_at=?3,data=?4 WHERE id=?1",
+            params![run.id,run.status,run.available_at,serde_json::to_string(&run)?])?;
+        tx.execute("UPDATE automations SET data=?2 WHERE id=?1", params![job.id,serde_json::to_string(&job)?])?;
+        tx.commit()?;
+        Ok(())
+    }
+    pub(crate) fn set_goal_conversation(&self, id: &str, conversation_id: String) -> AppResult<()> {
+        let mut job = self.get(id)?;
+        job.goal.as_mut().ok_or("不是长期目标任务")?.conversation_id = Some(conversation_id);
+        self.put(&job)
+    }
+    pub(crate) fn set_goal_stage(&self, id: &str, occurrence_id: String, agent_run_id: String) -> AppResult<()> {
+        let mut job = self.get(id)?;
+        let goal = job.goal.as_mut().ok_or("不是长期目标任务")?;
+        goal.last_occurrence_id = Some(occurrence_id);
+        goal.last_agent_run_id = Some(agent_run_id);
+        self.put(&job)
     }
     pub(super) fn pause_budget(&self, id: &str, error: String) -> AppResult<()> {
         let mut run = self.get_run(id)?;

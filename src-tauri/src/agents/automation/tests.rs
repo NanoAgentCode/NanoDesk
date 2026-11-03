@@ -20,6 +20,77 @@ fn draft(root: &Path) -> AutomationDraft {
     }
 }
 
+fn goal_draft(root: &Path) -> AutomationDraft {
+    let mut d = draft(root);
+    d.max_retries = 0;
+    d.action = Action::Goal { model_config_id: "model".into(), objective: "prepare report".into(), completion_criteria: "report verified".into() };
+    d
+}
+
+#[test]
+fn goal_progress_survives_restart_and_completion_stops_triggers() {
+    let path = std::env::temp_dir().join(format!("goal-{}.sqlite3", Uuid::new_v4()));
+    let id;
+    {
+        let mut store = AutomationStore::open(&path).unwrap();
+        let job = store.save(goal_draft(&std::env::temp_dir()), 100).unwrap();
+        id = job.id;
+        store.enqueue_manual(&id, 100).unwrap();
+        let run = store.claim(100).unwrap().unwrap();
+        assert!(store.enqueue_manual(&id, 100).is_err());
+        store.finish(&run.id, Ok(r#"{"status":"active","summary":"draft written","next_step":"verify","evidence":"draft.md"}"#.into()), 101).unwrap();
+    }
+    {
+        let mut store = AutomationStore::open(&path).unwrap();
+        assert_eq!(store.get(&id).unwrap().goal.unwrap().next_step, "verify");
+        store.tick_job(&id, 160, None).unwrap();
+        let run = store.claim(160).unwrap().unwrap();
+        store.finish(&run.id, Ok(r#"{"status":"completed","summary":"report verified","next_step":"","evidence":"report.md read back"}"#.into()), 161).unwrap();
+        store.tick_job(&id, 1000, None).unwrap();
+        assert!(store.claim(1000).unwrap().is_none());
+        assert!(store.set_enabled(&id, true).is_err());
+        assert_eq!(store.get(&id).unwrap().goal.unwrap().rounds, 2);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn blocked_goal_requires_explicit_resume_and_keeps_progress() {
+    let mut store = AutomationStore::open_memory().unwrap();
+    let job = store.save(goal_draft(&std::env::temp_dir()), 100).unwrap();
+    store.enqueue_manual(&job.id, 100).unwrap();
+    let run = store.claim(100).unwrap().unwrap();
+    store.finish(&run.id, Ok(r#"{"status":"blocked","summary":"draft ready","next_step":"need source","evidence":"draft.md"}"#.into()), 101).unwrap();
+    store.tick_job(&job.id, 1000, None).unwrap();
+    assert!(store.claim(1000).unwrap().is_none());
+    assert!(store.enqueue_manual(&job.id, 1000).is_err());
+    store.set_enabled(&job.id, true).unwrap();
+    assert_eq!(store.get(&job.id).unwrap().goal.unwrap().summary, "draft ready");
+    store.enqueue_manual(&job.id, 1000).unwrap();
+    store.set_enabled(&job.id, false).unwrap();
+    assert!(store.claim(1000).unwrap().is_none());
+}
+
+#[test]
+fn goal_stalls_stop_and_invalid_checkpoints_do_not_replace_progress() {
+    let mut store = AutomationStore::open_memory().unwrap();
+    let job = store.save(goal_draft(&std::env::temp_dir()), 100).unwrap();
+    for now in 100..104 {
+        store.enqueue_manual(&job.id, now).unwrap();
+        let run = store.claim(now).unwrap().unwrap();
+        store.finish(&run.id, Ok(r#"{"status":"active","summary":"same","next_step":"same","evidence":"none"}"#.into()), now).unwrap();
+    }
+    assert!(!store.get(&job.id).unwrap().config.enabled);
+    assert_eq!(store.get(&job.id).unwrap().goal.unwrap().status, "blocked");
+    store.set_enabled(&job.id, true).unwrap();
+    store.enqueue_manual(&job.id, 200).unwrap();
+    let run = store.claim(200).unwrap().unwrap();
+    store.finish(&run.id, Ok("done".into()), 201).unwrap();
+    assert_eq!(store.get_run(&run.id).unwrap().status, "failed");
+    assert_eq!(store.get(&job.id).unwrap().goal.unwrap().summary, "same");
+    assert!(!store.get(&job.id).unwrap().config.enabled);
+}
+
 #[test]
 fn budget_pause_is_not_retried_or_retriggered_and_survives_restart() {
     let root = std::env::temp_dir();

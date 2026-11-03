@@ -28,9 +28,10 @@ export default function AutomationPanel({ setNotice }: { setNotice: (message: st
             <p>让资料处理与日常工作按计划发生</p>
           </div>
         </div>
+        <Group><Button variant="light" onClick={() => edit(undefined, true)}>新建长期目标</Button>
         <Button leftSection={<Plus size={16} />} onClick={() => edit()}>
           新建任务
-        </Button>
+        </Button></Group>
       </header>
       <Text size="sm" c="dimmed">
         应用运行或驻留托盘时执行；完全退出后，按补执行策略在下次启动时处理。每日时间使用创建时保存的时区偏移。
@@ -62,13 +63,20 @@ export default function AutomationPanel({ setNotice }: { setNotice: (message: st
                 <Switch
                   aria-label={`启用 ${job.config.name}`}
                   checked={job.config.enabled}
-                  disabled={busy}
+                  disabled={busy || job.goal?.status === "completed"}
                   onChange={(e) => {
                     void act(() => setAutomationEnabled(job.id, e.currentTarget.checked), "任务状态已更新。");
                   }}
                 />
               </Group>
-              <Badge variant="light">{job.config.action.kind === "ai" ? "AI 办公任务" : "本地脚本"}</Badge>
+              <Badge variant="light">{job.config.action.kind === "goal" ? "长期目标" : job.config.action.kind === "ai" ? "AI 办公任务" : "本地脚本"}</Badge>
+              {job.goal && <div className="automation-goal-progress">
+                <Group gap="xs"><Badge color={job.goal.status === "completed" ? "green" : job.goal.status === "blocked" ? "orange" : "blue"}>{job.goal.status === "completed" ? "目标已完成" : job.goal.status === "blocked" ? "等待处理" : !job.config.enabled ? "已暂停" : "持续推进"}</Badge><Text size="xs" c="dimmed">已推进 {job.goal.rounds} 个阶段</Text></Group>
+                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>{job.goal.summary || "等待首次触发"}</Text>
+                {job.goal.next_step && <Text size="xs" style={{ whiteSpace: "pre-wrap" }}>下一步：{job.goal.next_step}</Text>}
+                {job.goal.evidence && <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>依据：{job.goal.evidence}</Text>}
+                {job.goal.status === "blocked" && <Text size="xs" c="dimmed">编辑目标补充信息或处理阻塞后，打开启用开关继续推进。</Text>}
+              </div>}
               <Text size="sm">{triggerLabel(job.config.trigger)}</Text>
               <Text size="xs" c="dimmed" className="automation-path">
                 {job.config.project_path}
@@ -93,7 +101,7 @@ export default function AutomationPanel({ setNotice }: { setNotice: (message: st
                 >
                   立即执行
                 </Button>
-                <Button size="xs" variant="subtle" disabled={busy} onClick={() => edit(job)}>
+                <Button size="xs" variant="subtle" disabled={busy || job.goal?.status === "completed"} onClick={() => edit(job)}>
                   编辑
                 </Button>
                 <Button

@@ -17,6 +17,7 @@ pub(crate) mod planning;
 mod continuation;
 mod temporary;
 mod repair;
+pub(crate) mod goal;
 
 pub(crate) use ownership::BackgroundAgentManager;
 pub(crate) use lifecycle::restore_waiting_runs;

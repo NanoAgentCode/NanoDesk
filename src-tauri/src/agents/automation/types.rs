@@ -24,6 +24,11 @@ pub enum Trigger {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Action {
+    Goal {
+        model_config_id: String,
+        objective: String,
+        completion_criteria: String,
+    },
     Ai {
         model_config_id: String,
         prompt: String,
@@ -64,6 +69,8 @@ pub struct FileStamp {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Automation {
+    #[serde(default)]
+    pub goal: Option<GoalProgress>,
     pub id: String,
     pub config: AutomationDraft,
     pub next_due: Option<i64>,
@@ -72,6 +79,30 @@ pub struct Automation {
     pub(super) snapshot: Option<BTreeMap<String, FileStamp>>,
     pub(super) pending_paths: BTreeSet<String>,
     pub(super) changed_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GoalProgress {
+    #[serde(default)]
+    pub last_agent_run_id: Option<String>,
+    #[serde(default)]
+    pub last_occurrence_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub status: String,
+    pub summary: String,
+    pub next_step: String,
+    pub evidence: String,
+    pub rounds: u32,
+    pub stalled_rounds: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GoalCheckpoint {
+    pub status: String,
+    pub summary: String,
+    pub next_step: String,
+    pub evidence: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

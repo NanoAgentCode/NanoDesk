@@ -31,6 +31,19 @@ pub(super) fn validate(config: &AutomationDraft, now: i64) -> AppResult<()> {
         _ => (),
     }
     match &config.action {
+        Action::Goal { model_config_id, objective, completion_criteria } => {
+            if model_config_id.trim().is_empty() || objective.trim().is_empty()
+                || completion_criteria.trim().is_empty() || objective.len() > 32768
+                || completion_criteria.len() > 16384 {
+                return Err("请选择模型并填写目标（最多 32KB）和完成条件（最多 16KB）。".into());
+            }
+            if matches!(config.trigger, Trigger::Once { .. }) {
+                return Err("长期目标请选择固定间隔、每日或文件变化触发。".into());
+            }
+            if config.max_retries != 0 {
+                return Err("长期目标不自动重试，避免重复执行已产生的操作。".into());
+            }
+        }
         Action::Command { command } => {
             if command.trim().is_empty() || command.len() > 32768 {
                 return Err("命令不能为空且不能超过 32KB。".into());

@@ -18,6 +18,9 @@ pub(super) async fn execute(app: &AppHandle, run: &AutomationRun) -> AppResult<S
 }
 
 pub(crate) async fn execute_in_state(state: &AppState, run: &AutomationRun, key: Option<String>) -> AppResult<String> {
+    if matches!(run.config.action, Action::Goal { .. }) {
+        return crate::background_agent::goal::execute(state, run).await;
+    }
     let model = match &run.config.action {
         Action::Ai { model_config_id, .. } => Some(state.db.lock().await.get_model_config(model_config_id)?),
         _ => None,
@@ -59,6 +62,7 @@ pub(super) async fn execute_with_config(
 async fn execute_limited(run: &AutomationRun, model: Option<crate::models::ModelConfig>, key: Option<String>, max_output: u32) -> AppResult<String> {
     let root = crate::project_files::project_root(&run.config.project_path)?;
     match &run.config.action {
+        Action::Goal { .. } => Err("长期目标需要后台 Agent 执行上下文。".into()),
         Action::Command { command } => {
             crate::services::execution::execute_command(
                 &run.config.project_path, command, true, key.as_deref(),

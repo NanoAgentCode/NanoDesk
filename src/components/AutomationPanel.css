@@ -59,6 +59,15 @@
 .automation-job.selected {
   border-color: var(--accent-cyan);
 }
+.automation-goal-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-left: 2px solid var(--accent-cyan);
+  background: var(--chat-pane-bg);
+  overflow-wrap: anywhere;
+}
 .automation-title {
   border: 0;
   padding: 0;

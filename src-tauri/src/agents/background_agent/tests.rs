@@ -12,6 +12,126 @@ struct MockModel {
     worker: std::thread::JoinHandle<Vec<serde_json::Value>>,
     peak_requests: Arc<std::sync::atomic::AtomicUsize>,
 }
+
+async fn create_goal(fixture: &Fixture) -> crate::automation::types::Automation {
+    use crate::automation::types::*;
+    fixture.state.automation.lock().await.save(AutomationDraft {
+        id: None, name: "long goal".into(), enabled: true, project_path: fixture.request.project_path.clone(),
+        action: Action::Goal { model_config_id: fixture.request.model_config_id.clone(), objective: "write report, then verify it".into(), completion_criteria: "report content read back and checked".into() },
+        trigger: Trigger::Interval { seconds: 60 }, missed_policy: MissedPolicy::Latest,
+        max_retries: 0, retry_delay_seconds: 60, budget: None,
+    }, 100).unwrap()
+}
+
+#[tokio::test]
+async fn long_goal_uses_real_tools_and_previous_checkpoint_across_stages() {
+    let server = MockModel::start(vec![
+        (vec![r#"<tool_call name="write_file"><path>report.md</path><content>verified content</content></tool_call>"#.into()], 0),
+        (vec![r#"<goal_checkpoint>{"status":"active","summary":"report written","next_step":"read report back","evidence":"write_file succeeded"}</goal_checkpoint>"#.into()], 0),
+        (vec![r#"<tool_call name="read_file"><path>report.md</path></tool_call>"#.into()], 0),
+        (vec![r#"<goal_checkpoint>{"status":"completed","summary":"report verified","next_step":"","evidence":"read_file returned verified content"}</goal_checkpoint>"#.into()], 0),
+    ]);
+    let mut fixture = Fixture::new(&server.url, "auto");
+    Arc::get_mut(&mut fixture.state).unwrap().settings_path = fixture.root.join("settings.json");
+    let job = create_goal(&fixture).await;
+    for now in [100, 160] {
+        fixture.state.automation.lock().await.enqueue_manual(&job.id, now).unwrap();
+        let run = fixture.state.automation.lock().await.claim(now).unwrap().unwrap();
+        let output = tokio::time::timeout(Duration::from_secs(10), crate::automation::execution::execute_in_state(&fixture.state, &run, None)).await.unwrap().unwrap();
+        fixture.state.automation.lock().await.finish(&run.id, Ok(output), now + 1).unwrap();
+        assert!(fixture.state.runtime.lock().await.task_budget(&run.id).unwrap().unwrap().steps >= 2);
+    }
+    assert_eq!(std::fs::read_to_string(fixture.root.join("work/report.md")).unwrap(), "verified content");
+    let job = fixture.state.automation.lock().await.get(&job.id).unwrap();
+    assert!(!job.config.enabled);
+    assert_eq!(job.goal.unwrap().status, "completed");
+    assert!(fixture.state.runtime.lock().await.waiting_execution_requests().unwrap().is_empty());
+    let requests = server.worker.join().unwrap();
+    assert_eq!(requests.len(), 4);
+    let second_stage = requests[2]["messages"].to_string();
+    assert!(second_stage.contains("report written"));
+    assert!(second_stage.contains("read report back"));
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn long_goal_cannot_execute_commands_even_if_model_requests_one() {
+    let server = MockModel::start(vec![(vec![r#"<tool_call name="execute_command"><command>echo unsafe</command></tool_call>"#.into()], 0)]);
+    let mut fixture = Fixture::new(&server.url, "auto");
+    Arc::get_mut(&mut fixture.state).unwrap().settings_path = fixture.root.join("settings.json");
+    let job = create_goal(&fixture).await;
+    fixture.state.automation.lock().await.enqueue_manual(&job.id, 100).unwrap();
+    let run = fixture.state.automation.lock().await.claim(100).unwrap().unwrap();
+    let output = crate::automation::execution::execute_in_state(&fixture.state, &run, None).await.unwrap();
+    fixture.state.automation.lock().await.finish(&run.id, Ok(output), 101).unwrap();
+    let goal = fixture.state.automation.lock().await.get(&job.id).unwrap().goal.unwrap();
+    assert_eq!(goal.status, "blocked");
+    assert!(goal.next_step.contains("只支持项目内文件读写"));
+    assert_eq!(server.worker.join().unwrap().len(), 1);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn long_goal_recovery_preserves_stage_spending_and_user_adjusted_limits() {
+    let fixture = Fixture::new("http://localhost:1/v1", "auto");
+    let job = create_goal(&fixture).await;
+    let occurrence = fixture.state.automation.lock().await.enqueue_manual(&job.id, 100).unwrap();
+    fixture.state.automation.lock().await.set_goal_stage(&job.id, occurrence.id.clone(), fixture.request.run_id.clone()).unwrap();
+    {
+        let runtime = fixture.state.runtime.lock().await;
+        let mut stage = runtime.ensure_task_budget(&fixture.request.run_id, Some(&fixture.request.model_config_id), None).unwrap();
+        stage.steps = 7;
+        stage.elapsed_ms = 1234;
+        runtime.put_task_budget(&fixture.request.run_id, &stage).unwrap();
+        let mut current = runtime.ensure_task_budget(&occurrence.id, Some(&fixture.request.model_config_id), None).unwrap();
+        current.limits.max_steps = 99;
+        runtime.put_task_budget(&occurrence.id, &current).unwrap();
+    }
+    super::goal::sync_budget(&fixture.state, &occurrence).await.unwrap();
+    let record = fixture.state.runtime.lock().await.task_budget(&occurrence.id).unwrap().unwrap();
+    assert_eq!(record.steps, 7);
+    assert_eq!(record.elapsed_ms, 1234);
+    assert_eq!(record.limits.max_steps, 99);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn long_goal_clarification_yields_without_automatically_selecting_an_answer() {
+    let server = MockModel::start(vec![(vec![r#"<clarification>{"questions":[{"id":"source","prompt":"Which source file?","options":[{"id":"a","label":"A","description":"Use A","recommended":true},{"id":"b","label":"B","description":"Use B","recommended":false}],"allow_custom":true}]}</clarification>"#.into()], 0)]);
+    let mut fixture = Fixture::new(&server.url, "auto");
+    Arc::get_mut(&mut fixture.state).unwrap().settings_path = fixture.root.join("settings.json");
+    let job = create_goal(&fixture).await;
+    let run = fixture.state.automation.lock().await.enqueue_manual(&job.id, 100).unwrap();
+    let output = tokio::time::timeout(Duration::from_secs(5), super::goal::execute(&fixture.state, &run)).await.unwrap().unwrap();
+    let checkpoint = crate::automation::goal::parse_checkpoint(&output).unwrap();
+    assert_eq!(checkpoint.status, "blocked");
+    assert!(checkpoint.next_step.contains("Which source file?"));
+    assert!(fixture.state.runtime.lock().await.waiting_execution_requests().unwrap().is_empty());
+    assert_eq!(server.worker.join().unwrap().len(), 1);
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn long_goal_pause_interrupts_stream_and_preserves_a_blocked_checkpoint() {
+    let server = MockModel::start(vec![(vec!["Working on a stage".into(), "Still working".into(), "More work".into()], 1000)]);
+    let mut fixture = Fixture::new(&server.url, "auto");
+    Arc::get_mut(&mut fixture.state).unwrap().settings_path = fixture.root.join("settings.json");
+    let job = create_goal(&fixture).await;
+    fixture.state.automation.lock().await.enqueue_manual(&job.id, 100).unwrap();
+    let run = fixture.state.automation.lock().await.claim(100).unwrap().unwrap();
+    let state = fixture.state.clone();
+    let work_run = run.clone();
+    let work = tokio::spawn(async move { super::goal::execute(&state, &work_run).await });
+    wait_until(|| async { fixture.state.background_agents.list().iter().any(|s| s.stream_message.as_ref().is_some_and(|m| !m.content.is_empty())) }).await;
+    fixture.state.automation.lock().await.set_enabled(&job.id, false).unwrap();
+    let output = tokio::time::timeout(Duration::from_secs(5), work).await.unwrap().unwrap().unwrap();
+    fixture.state.automation.lock().await.finish(&run.id, Ok(output), 101).unwrap();
+    assert!(!fixture.state.automation.lock().await.get(&job.id).unwrap().config.enabled);
+    assert!(fixture.state.background_agents.list().is_empty());
+    assert!(fixture.state.runtime.lock().await.waiting_execution_requests().unwrap().is_empty());
+    server.worker.join().unwrap();
+    fixture.cleanup();
+}
 impl MockModel {
     fn start(turns: Vec<(Vec<String>, u64)>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

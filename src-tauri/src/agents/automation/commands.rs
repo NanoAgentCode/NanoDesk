@@ -12,7 +12,7 @@ pub async fn list_automations(state: State<'_, AppState>) -> AppResult<Vec<serde
         .list()?
         .iter()
         .map(|job| {
-            Ok(serde_json::json!({ "id": job.id, "config": job.config,
+            Ok(serde_json::json!({ "id": job.id, "config": job.config, "goal": job.goal,
             "next_due": job.next_due, "created_at": job.created_at, "last_error": job.last_error }))
         })
         .collect()
@@ -22,9 +22,7 @@ pub async fn save_automation(
     state: State<'_, AppState>,
     draft: AutomationDraft,
 ) -> AppResult<Automation> {
-    if let Action::Ai {
-        model_config_id, ..
-    } = &draft.action
+    if let Action::Ai { model_config_id, .. } | Action::Goal { model_config_id, .. } = &draft.action
     {
         let model = state.db.lock().await.get_model_config(model_config_id)?;
         if !matches!(model.model_kind.as_str(), "chat" | "both") {
@@ -55,6 +53,7 @@ pub async fn list_automation_runs(
     automation_id: Option<String>,
 ) -> AppResult<Vec<AutomationRun>> {
     let mut runs = state.automation.lock().await.runs(automation_id.as_deref())?;
+    for run in &runs { crate::background_agent::goal::sync_budget(&state, run).await?; }
     let runtime = state.runtime.lock().await;
     for run in &mut runs { run.budget = runtime.task_budget(&run.id)?; }
     Ok(runs)
@@ -78,7 +77,8 @@ pub async fn recover_automation_run(
 ) -> AppResult<()> {
     if retry {
         let run = state.automation.lock().await.get_run(&id)?;
-        let model = match &run.config.action { Action::Ai { model_config_id, .. } => Some(model_config_id.as_str()), _ => None };
+        crate::background_agent::goal::sync_budget(&state, &run).await?;
+        let model = match &run.config.action { Action::Ai { model_config_id, .. } | Action::Goal { model_config_id, .. } => Some(model_config_id.as_str()), _ => None };
         state.runtime.lock().await.ensure_task_budget(&id, model, run.config.budget.as_ref())?.check()?;
     }
     state.automation.lock().await.recover(&id, retry, Utc::now().timestamp())

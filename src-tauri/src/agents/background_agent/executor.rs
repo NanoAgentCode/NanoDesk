@@ -44,7 +44,7 @@ pub(super) async fn drive<F>(
 ) -> AppResult<()>
 where F: FnMut(BackgroundAgentSnapshot) {
     let id = request.run_id.clone();
-    let result = drive_inner(state, request, control, key, emit).await;
+    let result = drive_inner(state, request, control, key, emit, false).await;
     if let Err(error) = &result {
         if error.to_string().contains("任务预算") || error.to_string().contains("成本预算") {
             state.runtime.lock().await.pause_chat_task_budget(&id, error.to_string())?;
@@ -54,12 +54,18 @@ where F: FnMut(BackgroundAgentSnapshot) {
     result
 }
 
+pub(super) async fn drive_goal<F>(state: &AppState, request: BackgroundAgentRequest, control: Arc<Control>, emit: F) -> AppResult<()>
+where F: FnMut(BackgroundAgentSnapshot) {
+    drive_inner(state, request, control, None, emit, true).await
+}
+
 async fn drive_inner<F>(
     state: &AppState,
     mut request: BackgroundAgentRequest,
     control: Arc<Control>,
     key: Option<String>,
     mut emit: F,
+    goal_mode: bool,
 ) -> AppResult<()>
 where
     F: FnMut(BackgroundAgentSnapshot),
@@ -93,6 +99,7 @@ where
         let run = state.runtime.lock().await.get_run(&request.run_id)?;
         if !matches!(run.status.as_str(), "running" | "awaiting_tool" | "awaiting_clarification" | "awaiting_plan") { return Ok(()); }
         if run.status == "awaiting_plan" {
+            if goal_mode { return Ok(()); }
             snapshot.status = "awaiting_plan".into();
             snapshot.stream_message = None;
             snapshot.reasoning.clear();
@@ -121,6 +128,9 @@ where
                     )
                 })
                 .ok_or("任务等待工具但没有可执行的工具记录")?;
+            if goal_mode && !matches!(tool.name.as_str(), "read_file" | "write_file") {
+                return Err("长期目标只支持项目内文件读写；其他操作请在普通聊天中执行。".into());
+            }
             if tool.status == "pending_approval" {
                 let args = parse_args_json(&tool.args_json)?;
                 let scopes = state.mcp.lock().await.allowed_tool_scopes();
@@ -155,6 +165,7 @@ where
                         metadata_json:Some(serde_json::json!({"tool_call_id":tool.id,"access_mode":request.access_mode,"risk":policy.risk}).to_string())})?;
                     continue;
                 }
+                if goal_mode { return Err("此文件写入按现有策略需要人工处理；请先处理该操作，再恢复长期目标。".into()); }
                 if snapshot.status != "awaiting_tool" || snapshot.stream_message.is_some() {
                     snapshot.status = "awaiting_tool".into();
                     snapshot.stream_message = None;
@@ -232,6 +243,7 @@ where
             continue;
         }
         if run.status == "awaiting_clarification" {
+            if goal_mode { return Ok(()); }
             let history = state
                 .db
                 .lock()
@@ -501,7 +513,7 @@ where
                     db.append_message(draft)?
                 }
             };
-            if (stream_result.is_ok() && !stopped) || control.paused.load(Ordering::SeqCst) {
+            if !goal_mode && ((stream_result.is_ok() && !stopped) || control.paused.load(Ordering::SeqCst)) {
                 request.replace_message_id = None;
                 state
                     .runtime

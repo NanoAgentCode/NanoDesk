@@ -71,7 +71,11 @@ pub fn start_worker(app: AppHandle) {
                         "task attempt finished",
                         serde_json::json!({ "run_id": run.id, "failed": failed }),
                     );
-                    if finished.is_ok() && succeeded { if let Some(native) = app.native() { crate::task_notifications::notify_completed(native, &run.id, &run.config.name).await; } }
+                    let notify = if matches!(run.config.action, Action::Goal { .. }) {
+                        state.automation.lock().await.get(&run.automation_id).ok()
+                            .and_then(|job| job.goal).is_some_and(|goal| goal.status == "completed")
+                    } else { true };
+                    if finished.is_ok() && succeeded && notify { if let Some(native) = app.native() { crate::task_notifications::notify_completed(native, &run.id, &run.config.name).await; } }
                     let _ = app.emit("automation-changed", &run.id);
                 }
                 Ok(None) => tokio::time::sleep(Duration::from_secs(1)).await,

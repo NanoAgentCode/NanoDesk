@@ -76,19 +76,21 @@ export function useAutomationController(setNotice: (message: string) => void) {
       setBusy(false);
     }
   }
-  function edit(job?: Automation) {
-    setDraft(job ? structuredClone(job.config) : freshDraft());
+  function edit(job?: Automation, goal = false) {
+    const next = job ? structuredClone(job.config) : freshDraft();
+    if (!job && goal) next.action = { kind: "goal", model_config_id: "", objective: "", completion_criteria: "" };
+    setDraft(next);
     setError("");
     setEditing(true);
   }
   async function save(source: AutomationDraft) {
-    if (source.action.kind !== "ai" || source.trigger.kind === "files") {
+    if (source.action.kind !== "goal" && (source.action.kind !== "ai" || source.trigger.kind === "files")) {
       setError("当前 AI 配置暂不支持脚本或文件监听任务。");
       return;
     }
     const next: AutomationDraft = {
       ...source,
-      action: { ...source.action, context_files: source.action.context_files.map((s) => s.trim()).filter(Boolean) }
+      action: source.action.kind === "ai" ? { ...source.action, context_files: source.action.context_files.map((s) => s.trim()).filter(Boolean) } : source.action
     };
     setBusy(true);
     try {

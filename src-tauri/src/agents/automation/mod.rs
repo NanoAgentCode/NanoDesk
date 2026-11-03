@@ -7,6 +7,7 @@ mod files;
 pub(crate) mod commands;
 pub(crate) mod execution;
 mod worker;
+pub(crate) mod goal;
 
 pub(crate) use store::AutomationStore;
 pub(crate) use worker::start_worker;
