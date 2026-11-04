@@ -18,6 +18,12 @@
 .workflow-edges text { fill:var(--mantine-color-teal-6); font-size:12px; }
 .workflow-node { position:absolute; width:240px; padding:14px; background:var(--mantine-color-body); border:1px solid var(--mantine-color-default-border); border-radius:10px; box-shadow:0 3px 12px #0000000a; }
 .workflow-node.selected { outline:2px solid var(--mantine-color-teal-6); }
+.workflow-port { position:absolute; top:60px; transform:translateY(-50%); width:18px; height:18px; padding:0; border:2px solid var(--mantine-color-teal-6); border-radius:50%; background:var(--mantine-color-body); touch-action:none; z-index:3; cursor:crosshair; }
+.workflow-port-input { left:-9px; }
+.workflow-port-output { right:-9px; background:var(--mantine-color-teal-6); }
+.workflow-port:hover,.workflow-port:focus-visible { outline:3px solid var(--mantine-color-teal-2); }
+.workflow-port:disabled { opacity:.4; cursor:not-allowed; }
+.workflow-edges .workflow-connection-preview { stroke-dasharray:6 4; opacity:.7; }
 .workflow-node.running { border-color:var(--mantine-color-blue-5); }
 .workflow-node.success { border-color:var(--mantine-color-teal-6); }
 .workflow-node.error,.workflow-node.blocked { border-color:var(--mantine-color-red-6); }

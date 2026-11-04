@@ -1,17 +1,24 @@
-export type NodeKind = 'ai' | 'tool' | 'condition' | 'merge';
+export type NodeKind = 'ai' | 'condition' | 'merge';
 export interface WorkflowNode {
   id: string; title: string; kind: NodeKind; x: number; y: number;
-  prompt: string; modelId: string; tool: string; args: string;
+  prompt: string; systemPrompt?: string; modelId: string;
   conditionMode: 'rule' | 'ai'; operator: 'contains' | 'equals' | 'gt'; operand: string;
 }
 export interface WorkflowEdge { id: string; source: string; target: string; branch?: 'true' | 'false' }
 export interface Workflow { id: string; name: string; projectPath: string; defaultModelId?: string; nodes: WorkflowNode[]; edges: WorkflowEdge[] }
 export type NodeStatus = 'pending' | 'running' | 'success' | 'error' | 'skipped' | 'blocked' | 'cancelled';
-export interface NodeResult { status: NodeStatus; input?: string; output?: string; error?: string; branch?: boolean }
+export interface NodeResult { status: NodeStatus; input?: string; systemInput?: string; output?: string; error?: string; branch?: boolean }
 export interface WorkflowRun { id: string; workflowId: string; startedAt: string; snapshot?: Workflow; results: Record<string, NodeResult> }
 export interface WorkflowExecutor {
-  ai(modelId: string, prompt: string, signal: AbortSignal): Promise<string>;
-  tool(name: string, args: unknown, signal: AbortSignal): Promise<string>;
+  ai(modelId: string, prompt: string, signal: AbortSignal, systemPrompt?: string, useTools?: boolean): Promise<string>;
+}
+export function migrateWorkflow(w: Workflow): Workflow {
+  return { ...w, nodes: w.nodes.map(node => {
+    const legacy = node as WorkflowNode & { kind: string; tool?: string; args?: string };
+    if ((legacy.kind as string) !== 'tool') return { ...node, systemPrompt: node.systemPrompt ?? '' };
+    const { tool, args, ...rest } = legacy;
+    return { ...rest, kind: 'ai' as const, systemPrompt: '', prompt: `请判断是否需要调用工具完成以下任务，并返回最终结果。\n原工具：${tool ?? ''}\n原参数：${args ?? '{}'}` };
+  }) };
 }
 export function validateWorkflow(w: Workflow): void {
   const ids = new Set(w.nodes.map(n => n.id));
@@ -47,15 +54,6 @@ export function upstream(w: Workflow, id: string): Set<string> {
 export function workflowSignature(w: Workflow): string {
   return JSON.stringify({ ...w, name: '', nodes: w.nodes.map(n => ({ ...n, x: 0, y: 0, title: '' })) });
 }
-export function interpolateArguments(text: string, results: Record<string, NodeResult>, allowed: Set<string>): unknown {
-  const replace = (value: unknown): unknown => {
-    if (typeof value === 'string') return interpolate(value, results, allowed);
-    if (Array.isArray(value)) return value.map(replace);
-    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, replace(v)]));
-    return value;
-  };
-  return replace(JSON.parse(text));
-}
 export async function runWorkflow(
   w: Workflow, executor: WorkflowExecutor, signal: AbortSignal,
   onChange: (results: Record<string, NodeResult>) => void,
@@ -74,14 +72,13 @@ export async function runWorkflow(
     const r: NodeResult = { status: 'running' }; results[n.id] = r; emit();
     try {
       const allowed = upstream(w, n.id);
-      const args = n.kind === 'tool' ? interpolateArguments(n.args, results, allowed) : undefined;
-      r.input = n.kind === 'tool' ? JSON.stringify(args) : interpolate(n.prompt, results, allowed);
+      r.input = interpolate(n.prompt, results, allowed);
+      r.systemInput = interpolate(n.systemPrompt ?? '', results, allowed);
       if (signal.aborted) throw new Error('运行已停止');
       if (n.kind === 'merge') r.output = w.edges.filter(e => e.target === n.id && active(e) && results[e.source].status === 'success').map(e => results[e.source].output ?? '').join('\n\n');
-      else if (n.kind === 'tool') r.output = await executor.tool(n.tool, args, signal);
       else if (n.kind === 'condition') {
         if (n.conditionMode === 'ai') {
-          const answer = (await executor.ai(n.modelId, `${r.input}\n仅输出 true 或 false，禁止其他文字。`, signal)).trim();
+          const answer = (await executor.ai(n.modelId, `${r.input}\n仅输出 true 或 false，禁止其他文字。`, signal, r.systemInput, false)).trim();
           if (answer !== 'true' && answer !== 'false') throw new Error('AI 条件必须返回 true 或 false');
           r.branch = answer === 'true';
         } else {
@@ -90,7 +87,7 @@ export async function runWorkflow(
           r.branch = n.operator === 'contains' ? r.input.includes(operand) : n.operator === 'equals' ? r.input === operand : Number(r.input) > Number(operand);
         }
         r.output = String(r.branch);
-      } else r.output = await executor.ai(n.modelId, r.input, signal);
+      } else r.output = await executor.ai(n.modelId, r.input, signal, r.systemInput);
       r.status = signal.aborted ? 'cancelled' : 'success';
     } catch (e) { r.status = signal.aborted ? 'cancelled' : 'error'; r.error = String(e); }
     emit();

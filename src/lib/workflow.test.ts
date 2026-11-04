@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { interpolateArguments, runWorkflow, validateWorkflow, type Workflow, type WorkflowExecutor, type WorkflowNode } from './workflow';
-const node = (id: string, kind: WorkflowNode['kind'] = 'ai'): WorkflowNode => ({ id, title: id, kind, x: 0, y: 0, prompt: id, modelId: 'model', tool: 'test', args: '{}', conditionMode: 'rule', operator: 'equals', operand: 'yes' });
+import { migrateWorkflow, runWorkflow, validateWorkflow, type Workflow, type WorkflowExecutor, type WorkflowNode } from './workflow';
+const node = (id: string, kind: WorkflowNode['kind'] = 'ai'): WorkflowNode => ({ id, title: id, kind, x: 0, y: 0, prompt: id, modelId: 'model', systemPrompt: '', conditionMode: 'rule', operator: 'equals', operand: 'yes' });
 const graph = (nodes: WorkflowNode[], pairs: [string, string, ('true' | 'false')?][]): Workflow => ({ id: 'w', name: 'test', projectPath: '', nodes, edges: pairs.map(([source, target, branch], i) => ({ id: String(i), source, target, branch })) });
-const executor: WorkflowExecutor = { ai: async (_, p) => p, tool: async () => 'tool output' };
+const executor: WorkflowExecutor = { ai: async (_, p) => p };
 const run = (w: Workflow, ex = executor) => runWorkflow(w, ex, new AbortController().signal, () => {});
 describe('workflow execution', () => {
-  it('executes AI to parallel AI/tool to condition and merge as one workflow', async () => {
+  it('executes AI to parallel AI branches to condition and merge as one workflow', async () => {
     const w = graph([
       node('input'), { ...node('ai'), prompt: '{{input.output}} analysis' },
-      { ...node('tool', 'tool'), args: '{"input":"{{input.output}}"}' },
+      { ...node('tool'), prompt: 'tool output' },
       { ...node('condition', 'condition'), prompt: '{{tool.output}}', operand: 'tool output' },
       { ...node('chosen'), prompt: '{{ai.output}} final' }, node('other'), node('merge', 'merge')
     ], [['input', 'ai'], ['input', 'tool'], ['tool', 'condition'], ['condition', 'chosen', 'true'], ['ai', 'chosen'], ['condition', 'other', 'false'], ['chosen', 'merge'], ['other', 'merge']]);
@@ -16,8 +16,21 @@ describe('workflow execution', () => {
     expect(result.merge.output).toBe('input analysis final');
     expect(result.other.status).toBe('skipped'); expect(result.tool.status).toBe('success');
   });
-  it('interpolates tool JSON strings safely', () => {
-    expect(interpolateArguments('{"text":"{{a.output}}"}', { a: { status: 'success', output: '"quoted"\nline' } }, new Set(['a']))).toEqual({ text: '"quoted"\nline' });
+  it('interpolates and records system and user prompts separately', async () => {
+    const calls: string[][] = [];
+    const ex: WorkflowExecutor = { ai: async (_, user, _signal, system) => { calls.push([system ?? '', user]); return 'ok'; } };
+    const w = graph([{ ...node('a'), systemPrompt: 'Role {{b.output}}', prompt: 'Task {{b.output}}' }, node('b')], [['b', 'a']]);
+    const result = await run(w, ex);
+    expect(calls[1]).toEqual(['Role ok', 'Task ok']);
+    expect(result.a.systemInput).toBe('Role ok'); expect(result.a.input).toBe('Task ok');
+  });
+  it('migrates legacy tool nodes and preserves IDs, positions and connections', () => {
+    const legacy = graph([node('a')], []);
+    (legacy.nodes as unknown[]) .push({ ...node('b'), kind: 'tool', tool: 'read_file', args: '{"path":"a.txt"}', x: 100 });
+    legacy.edges.push({ id: 'edge', source: 'a', target: 'b' });
+    const migrated = migrateWorkflow(legacy);
+    expect(migrated.nodes[1]).toMatchObject({ id: 'b', x: 100, kind: 'ai', systemPrompt: '' });
+    expect(migrated.nodes[1].prompt).toContain('read_file'); expect(migrated.edges).toEqual(legacy.edges);
   });
   it('invalidates downstream results after manually rerunning an upstream node', async () => {
     const result = await runWorkflow(graph([node('a'), node('b')], [['a', 'b']]), executor, new AbortController().signal, () => {}, { nodeId: 'a', previous: { b: { status: 'success', output: 'stale' } } });
@@ -44,8 +57,8 @@ describe('workflow execution', () => {
   });
   it('isolates failure and retries without rerunning successful independent tools', async () => {
     let fail = true, tools = 0;
-    const ex: WorkflowExecutor = { ai: async () => { if (fail) throw new Error('offline'); return 'ok'; }, tool: async () => { tools++; return 'done'; } };
-    const w = graph([node('a'), node('b', 'tool'), node('m', 'merge')], [['a', 'm'], ['b', 'm']]);
+    const ex: WorkflowExecutor = { ai: async (_, prompt) => { if (prompt === 'b') { tools++; return 'done'; } if (fail) throw new Error('offline'); return 'ok'; } };
+    const w = graph([node('a'), node('b'), node('m', 'merge')], [['a', 'm'], ['b', 'm']]);
     const previous = await run(w, ex); expect(previous.m.status).toBe('blocked'); expect(previous.b.status).toBe('success');
     fail = false;
     const result = await runWorkflow(w, ex, new AbortController().signal, () => {}, { previous, retryId: 'a' });
