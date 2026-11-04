@@ -102,6 +102,16 @@ createRoot(document.getElementById('root')!).render(<MantineProvider><WorkflowPa
         page.locator('.workflow-node').first.click()
         expect(page.get_by_label('用户提示词', exact=True)).to_have_value('Write a plan')
         expect(page.get_by_label('系统提示词', exact=True)).to_have_value('Act as an analyst')
+        # Selecting history must show real, readable details in a short window.
+        page.set_viewport_size({'width':1600,'height':720})
+        page.get_by_role('textbox', name='运行记录', exact=True).click()
+        page.get_by_role('option').first.click()
+        recorded_output = page.locator('.workflow-inspector pre').filter(has_text='AI answer').first
+        expect(recorded_output).to_have_text('AI answer')
+        assert recorded_output.evaluate('(el) => el.getBoundingClientRect().height') >= 16, 'History output collapsed to zero height'
+        recorded_output.scroll_into_view_if_needed()
+        expect(recorded_output).to_be_in_viewport()
+        page.set_viewport_size({'width':1600,'height':1000})
         page.get_by_label('用户提示词', exact=True).fill('Updated plan')
         page.locator('.workflow-node').last.get_by_role('button', name='运行节点').click()
         expect(page.locator('#notice')).to_contain_text('先运行上游')
@@ -177,6 +187,29 @@ createRoot(document.getElementById('root')!).render(<MantineProvider><WorkflowPa
         expect(page.locator('.workflow-node').last).to_have_class(__import__('re').compile('success'))
         expect(page.locator('.workflow-inspector')).to_contain_text('AI used file data')
         assert page.evaluate('window.toolExecutions') == 1
+        # Distinct stored runs must render their own values, even with no selected node.
+        page.evaluate('''() => {
+          const key=Object.keys(localStorage).find(k=>k.endsWith('-workflows-v1'));
+          const saved=JSON.parse(localStorage.getItem(key));
+          for (const year of [2000,2001]) {
+            const run=structuredClone(saved.runs[0]);run.id='history-'+year;run.startedAt=year+'-01-01T00:00:00Z';
+            for(const result of Object.values(run.results)){result.status='success';result.input='Input '+year;result.systemInput='System '+year;result.output='Output '+year;}
+            saved.runs.push(run);
+          }
+          localStorage.setItem(key,JSON.stringify(saved));
+        }''')
+        page.reload()
+        page.wait_for_load_state('networkidle')
+        page.set_viewport_size({'width':1600,'height':720})
+        for year in [2000,2001]:
+            page.get_by_role('textbox', name='运行记录', exact=True).click()
+            page.get_by_role('option').filter(has_text=str(year)).click()
+            detail=page.get_by_role('region', name='执行详情', exact=True)
+            expect(detail).to_contain_text('System '+str(year))
+            expect(detail).to_contain_text('Input '+str(year))
+            pre=detail.locator('pre').filter(has_text='Output '+str(year))
+            expect(pre).to_have_text('Output '+str(year))
+            assert pre.evaluate('(el)=>el.getBoundingClientRect().height') >= 16
         assert not errors, errors
         browser.close()
         print('PASS: port wiring, cycle/duplicate protection, cancelled wiring, conditional branches, palette drag for three node types and system/user prompt persistence, zoom/scroll drop coordinates, running lock, persistence, model labels and existing canvas interactions; no browser errors')

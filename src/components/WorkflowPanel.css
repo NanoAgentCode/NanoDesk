@@ -32,6 +32,9 @@
 .workflow-node-heading small { color:var(--mantine-color-teal-6); font-size:11px; }
 .workflow-node p { font-size:12px; opacity:.7; margin:8px 0; }
 .workflow-inspector { width:310px; flex-shrink:0; padding:16px; overflow:auto; border-left:1px solid var(--mantine-color-default-border); display:flex; flex-direction:column; gap:10px; }
+.workflow-inspector > * { flex-shrink:0; }
+.workflow-execution-detail { display:flex; flex-direction:column; gap:10px; }
+.workflow-execution-detail > * { flex-shrink:0; }
 .workflow-inspector h3 { font-size:14px; margin:5px 0; }
 .workflow-inspector h4 { font-size:12px; margin:0; }
 .workflow-inspector pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; max-height:300px; overflow:auto; margin:0; }

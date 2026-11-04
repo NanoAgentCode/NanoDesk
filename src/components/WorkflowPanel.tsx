@@ -44,6 +44,10 @@ export default function WorkflowPanel({ setNotice }: { setNotice: (message: stri
   const [busy, setBusy] = useState(false); const running = useRef(false);
   const [current, setCurrent] = useState<WorkflowRun | null>(null);
   const [historyId, setHistoryId] = useState('');
+  const executionDetailRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (historyId) executionDetailRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [historyId]);
   const controller = useRef<AbortController | null>(null);
   const [allowCommand, setAllowCommand] = useState(false);
   const drag = useRef<{ id: string; x: number; y: number; startX: number; startY: number } | null>(null);
@@ -141,10 +145,10 @@ export default function WorkflowPanel({ setNotice }: { setNotice: (message: stri
         {node.kind !== 'merge' && <Textarea label={node.kind === 'condition' ? '判断内容 / 指令' : '用户提示词'} autosize minRows={5} value={node.prompt} disabled={busy} onChange={e => patchNode({ prompt: e.currentTarget.value })}/>}
         <p className="workflow-hint">系统提示词和用户提示词均支持引用上游：{'{{节点ID.output}}'}。设置项目目录后，AI 自行判断是否调用已接入的工具，沿用现有权限审批；留空则仅生成文本。</p>
         <Button variant="subtle" color="red" disabled={busy} onClick={() => { edit(w => ({ ...w, nodes: w.nodes.filter(n => n.id !== nodeId), edges: w.edges.filter(e => e.source !== nodeId && e.target !== nodeId) })); setNodeId(''); }}>删除节点</Button>
-        {visibleRun?.results[node.id] && <><h3>执行详情</h3>{visibleRun.results[node.id].systemInput && <><h4>系统提示词</h4><pre>{visibleRun.results[node.id].systemInput}</pre></>}<h4>用户输入</h4><pre>{visibleRun.results[node.id].input}</pre><h4>输出</h4><pre>{visibleRun.results[node.id].output}</pre>{visibleRun.results[node.id].error && <pre role="alert">{visibleRun.results[node.id].error}</pre>}</>}
+        {visibleRun?.results[node.id] && <section className="workflow-execution-detail" ref={executionDetailRef} aria-label="执行详情"><h3>执行详情</h3><p className="workflow-hint">{new Date(visibleRun.startedAt).toLocaleString()} · {statuses[visibleRun.results[node.id].status]}</p>{visibleRun.results[node.id].systemInput && <><h4>系统提示词</h4><pre>{visibleRun.results[node.id].systemInput}</pre></>}<h4>用户输入</h4><pre>{visibleRun.results[node.id].input || '（空输入）'}</pre><h4>输出</h4><pre>{visibleRun.results[node.id].output || '（暂无输出）'}</pre>{visibleRun.results[node.id].error && <pre role="alert">{visibleRun.results[node.id].error}</pre>}</section>}
       </> : <p className="workflow-hint">{workflow.nodes.length ? '从节点右侧输出端点拖到另一个节点左侧输入端点建立连线。条件分支沿用上方真 / 假选项；拖动节点标题调整位置。' : '将上方的「＋ AI 提示词」「＋ 条件」或「＋ 汇合」拖到画布创建节点，也可点击添加，再在这里编辑内容。'}</p>}
       <h3>连线</h3>{workflow.edges.map(e => <div className="workflow-edge-row" key={e.id}><span>{workflow.nodes.find(n => n.id === e.source)?.title} → {workflow.nodes.find(n => n.id === e.target)?.title}{e.branch ? ` (${e.branch})` : ''}</span><button aria-label={`删除连线 ${e.id}`} disabled={busy} onClick={() => edit(w => ({ ...w, edges: w.edges.filter(v => v.id !== e.id) }))}>×</button></div>)}
-      <h3>运行记录</h3><Select aria-label="运行记录" clearable placeholder="最新运行" value={historyId || null} onChange={v => setHistoryId(v ?? '')} data={saved.runs.filter(r => r.workflowId === selected).map(r => ({ value: r.id, label: new Date(r.startedAt).toLocaleString() }))}/>
+      <h3>运行记录</h3><Select aria-label="运行记录" clearable placeholder="最新运行" value={historyId || null} onChange={v => { setHistoryId(v ?? ''); const record = saved.runs.find(r => r.id === v); if (record && (!nodeId || !record.results[nodeId])) { const ids = Object.keys(record.results).filter(id => workflow.nodes.some(n => n.id === id)); setNodeId(ids.find(id => record.results[id].input !== undefined || record.results[id].output !== undefined) ?? ids[0] ?? ''); } }} data={saved.runs.filter(r => r.workflowId === selected).map(r => ({ value: r.id, label: new Date(r.startedAt).toLocaleString() }))}/>
       </aside></div>
     </>}
   </section>;
