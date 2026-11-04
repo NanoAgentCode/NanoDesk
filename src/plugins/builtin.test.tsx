@@ -19,6 +19,9 @@ vi.mock("../components/settings/SettingsUsageTab", () => {
 import { appPlugins } from "./builtin";
 
 describe("settings contributions", () => {
+  it("provides the workflow canvas main view", () => {
+    expect(appPlugins.findMainView("workflow")?.label).toBe("工作流");
+  });
   it("combines manual memory and profile into one settings entry", () => {
     expect(appPlugins.findSettings("memory")?.label).toBe("全局记忆");
     expect(appPlugins.findSettings("profile")).toBeUndefined();

@@ -5,6 +5,7 @@ import { APP_PLUGIN_NAMESPACE } from "../config/brand";
 
 const OpsPanel = lazy(() => import("../components/OpsPanel"));
 const AutomationPanel = lazy(() => import("../components/AutomationPanel"));
+const WorkflowPanel = lazy(() => import("../components/WorkflowPanel"));
 const SettingsThemeTab = lazy(() => import("../components/settings/SettingsThemeTab"));
 const SettingsMemoryTab = lazy(() => import("../components/settings/SettingsMemoryTab"));
 const SettingsArchiveTab = lazy(() => import("../components/settings/SettingsArchiveTab"));
@@ -152,6 +153,10 @@ const opsPlugin: FrontendPlugin = {
 };
 
 export const appPlugins = new AppPluginRegistry([
+  {
+    manifest: { id: `${APP_PLUGIN_NAMESPACE}.workflow`, name: "Workflow", version: "0.1.0", capabilities: ["main-view"] },
+    mainViews: [{ id: "workflow", label: "工作流", icon: Route, component: WorkflowPanel }]
+  },
   {
     manifest: { id: `${APP_PLUGIN_NAMESPACE}.automation`, name: "Automation", version: "0.1.0", capabilities: ["main-view"] },
     mainViews: [{ id: "automation", label: "定时任务", icon: CalendarClock, component: AutomationPanel }]
